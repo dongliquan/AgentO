@@ -1,0 +1,172 @@
+import { useEffect } from 'react';
+import { useStore } from '@/store';
+import { runCommand, selectAndReveal, zoomBy } from '@/commands';
+import { reconnectClient } from '@/client';
+import { TopBar } from '@/components/TopBar';
+import { Sidebar } from '@/components/Sidebar';
+import { Board } from '@/components/Board';
+import { SplitView } from '@/components/SplitView';
+import { TabView } from '@/components/TabView';
+import { ViewerTabs } from '@/components/ViewerTabs';
+import { RightPanel } from '@/components/RightPanel';
+import { StatusBar } from '@/components/StatusBar';
+import { Palette } from '@/components/Palette';
+import { NewSessionDialog } from '@/components/NewSessionDialog';
+import { ImportClaudeDialog } from '@/components/ImportClaudeDialog';
+import { Toolbar } from '@/components/Toolbar';
+import { FocusView } from '@/components/FocusView';
+import { PromptDialog } from '@/components/PromptDialog';
+import { Splitter } from '@/components/Splitter';
+
+function handleKey(e: KeyboardEvent): void {
+  const st = useStore.getState();
+  const ctrl = e.ctrlKey || e.metaKey;
+  const k = e.key.toLowerCase();
+
+  if (e.key === 'Escape') {
+    if (st.paletteOpen) {
+      st.closePalette();
+      e.preventDefault();
+    } else if (st.newSessionOpen) {
+      st.closeNewSession();
+      e.preventDefault();
+    } else if (st.importClaude) {
+      st.closeImportClaude();
+      e.preventDefault();
+    } else if (st.focusMode) {
+      st.setFocusMode(false);
+      e.preventDefault();
+    }
+    return;
+  }
+  if (e.key === 'F11') {
+    e.preventDefault();
+    runCommand('view.focus-mode');
+    return;
+  }
+  if (e.key === 'Delete' && !ctrl && !e.shiftKey && !e.altKey) {
+    // Delete removes the selected session (after a confirm) — not while typing (inputs, the terminal's textarea)
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+    if (!st.selectedId) return;
+    e.preventDefault();
+    runCommand('session.close');
+    return;
+  }
+  if (e.key === 'F2') {
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+    e.preventDefault();
+    runCommand('session.rename');
+    return;
+  }
+  if (!ctrl) return;
+
+  if (e.shiftKey && k === 'p') {
+    e.preventDefault();
+    runCommand('go.palette');
+  } else if (e.shiftKey && k === 'w') {
+    e.preventDefault();
+    runCommand('go.waiting-session');
+  } else if (!e.shiftKey && k === 'p') {
+    e.preventDefault();
+    runCommand('go.quick-open');
+  } else if (e.altKey && k === 'b') {
+    e.preventDefault();
+    runCommand('view.right-panel');
+  } else if (!e.shiftKey && k === 'b') {
+    e.preventDefault();
+    runCommand('view.sidebar');
+  } else if (!e.shiftKey && k === 'n') {
+    e.preventDefault();
+    runCommand('session.new');
+  } else if (k === '1') {
+    e.preventDefault();
+    runCommand('view.board');
+  } else if (k === '2') {
+    e.preventDefault();
+    runCommand('view.split');
+  } else if (k === '3') {
+    e.preventDefault();
+    runCommand('view.tabs');
+  } else if (k === '=' || k === '+') {
+    e.preventDefault();
+    zoomBy(1.2);
+  } else if (k === '-' || k === '_') {
+    e.preventDefault();
+    zoomBy(1 / 1.2);
+  } else if (k === '0') {
+    e.preventDefault();
+    runCommand('view.zoom-reset');
+  }
+}
+
+export function App(): JSX.Element {
+  const sidebarOpen = useStore((s) => s.sidebarOpen);
+  const rightOpen = useStore((s) => s.rightOpen);
+  const detached = useStore((s) => s.panelsDetached);
+  const viewMode = useStore((s) => s.viewMode);
+  const centerView = useStore((s) => s.centerView);
+  const focusMode = useStore((s) => s.focusMode);
+  const paletteOpen = useStore((s) => s.paletteOpen);
+  const newSessionOpen = useStore((s) => s.newSessionOpen);
+  const importOpen = useStore((s) => s.importClaude !== null);
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKey);
+    const offs: (() => void)[] = [];
+    try {
+      offs.push(window.desktop.onMenu((cmd) => runCommand(cmd)));
+    } catch (e) {
+      console.warn('[menu] not available', e);
+    }
+    try {
+      const ev = window.desktopEvents;
+      if (ev?.onFocusSession) offs.push(ev.onFocusSession((id) => selectAndReveal(id)));
+      if (ev?.onDaemonRestarted) offs.push(ev.onDaemonRestarted(() => void reconnectClient()));
+    } catch (e) {
+      console.warn('[desktopEvents] not available', e);
+    }
+    return () => {
+      window.removeEventListener('keydown', handleKey);
+      for (const off of offs) off();
+    };
+  }, []);
+
+  // Prevent browser zoom on ctrl+wheel outside the board.
+  useEffect(() => {
+    const onWheel = (e: WheelEvent): void => {
+      if (e.ctrlKey) e.preventDefault();
+    };
+    document.addEventListener('wheel', onWheel, { passive: false });
+    return () => document.removeEventListener('wheel', onWheel);
+  }, []);
+
+  let center: JSX.Element;
+  if (focusMode) center = <FocusView />;
+  else if (centerView === 'viewer') center = <ViewerTabs />;
+  else if (viewMode === 'split') center = <SplitView />;
+  else if (viewMode === 'tabs') center = <TabView />;
+  else center = <Board />;
+
+  return (
+    <div className="app">
+      <TopBar />
+      <div className="app-body">
+        {!detached && sidebarOpen && <Sidebar />}
+        {!detached && sidebarOpen && <Splitter cssVar="--sidebar-w" min={180} max={560} dir={1} />}
+        <div className="center">
+          {!focusMode && <Toolbar />}
+          {center}
+        </div>
+        {!detached && rightOpen && <Splitter cssVar="--right-w" min={260} max={760} dir={-1} />}
+        {!detached && rightOpen && <RightPanel />}
+      </div>
+      <StatusBar />
+      {paletteOpen && <Palette />}
+      {newSessionOpen && <NewSessionDialog />}
+      {importOpen && <ImportClaudeDialog />}
+      <PromptDialog />
+    </div>
+  );
+}

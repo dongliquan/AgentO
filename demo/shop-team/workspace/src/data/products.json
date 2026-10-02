@@ -1,0 +1,10 @@
+[
+  { "id": "p01", "name": "베이직 코튼 티셔츠", "price": 12900, "discountRate": 0, "stock": 30, "rank": 1 },
+  { "id": "p02", "name": "와이드 데님 팬츠", "price": 39900, "discountRate": 20, "stock": 12, "rank": 2 },
+  { "id": "p03", "name": "경량 패딩 조끼", "price": 59000, "discountRate": 30, "stock": 0, "rank": 3 },
+  { "id": "p04", "name": "캔버스 스니커즈", "price": 45000, "discountRate": 0, "stock": 8, "rank": 4 },
+  { "id": "p05", "name": "울 블렌드 머플러", "price": 25000, "discountRate": 10, "stock": 20, "rank": 5 },
+  { "id": "p06", "name": "레더 카드 지갑", "price": 19800, "discountRate": 0, "stock": 0, "rank": 6 },
+  { "id": "p07", "name": "스트라이프 셔츠", "price": 34900, "discountRate": 15, "stock": 5, "rank": 7 },
+  { "id": "p08", "name": "데일리 백팩", "price": 68000, "discountRate": 25, "stock": 3, "rank": 8 }
+]

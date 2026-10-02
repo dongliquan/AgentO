@@ -1,0 +1,38 @@
+appId: app.agento.desktop
+productName: AgentO
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/**
+  - package.json
+extraResources:
+  # tray + window icon at runtime (process.resourcesPath/icon.png)
+  - from: build/icon.png
+    to: icon.png
+  # built-in demo workspace (the "/demo shop" order in the Orders tab)
+  - from: demo/shop-team/workspace
+    to: demo/shop-team/workspace
+asarUnpack:
+  - "**/node_modules/node-pty/**"
+  - "**/node_modules/better-sqlite3/**"
+win:
+  target:
+    - nsis
+    - portable
+  artifactName: ${productName}-${version}-win-${arch}.${ext}
+nsis:
+  # the installer and the single-file portable exe would get the same name
+  artifactName: ${productName}-${version}-win-${arch}-setup.${ext}
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  runAfterFinish: true
+portable:
+  artifactName: ${productName}-${version}-win-${arch}-portable.${ext}
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.developer-tools
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
+npmRebuild: true

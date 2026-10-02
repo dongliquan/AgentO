@@ -1,0 +1,67 @@
+# Release builds: push a tag like v0.2.0 and the Windows installer / portable exe and the macOS dmg / zip (Apple
+# Silicon and Intel) are built on GitHub's runners and attached to a draft GitHub Release.
+# Native modules (node-pty, better-sqlite3) are compiled on each OS, which is why every platform builds on its own.
+#
+# Unsigned for now. To sign later, add repository secrets and drop CSC_IDENTITY_AUTO_DISCOVERY:
+#   Windows: CSC_LINK (base64 .pfx), CSC_KEY_PASSWORD
+#   macOS:   CSC_LINK (base64 .p12), CSC_KEY_PASSWORD, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: --win
+          - os: macos-14 # Apple Silicon
+            target: --mac --arm64
+          - os: macos-13 # Intel
+            target: --mac --x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5 # node-gyp (native modules)
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npx electron-vite build
+      - run: npx electron-builder ${{ matrix.target }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agento-${{ matrix.os }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: artifacts/*
