@@ -150,11 +150,10 @@ export function buildMenu(actions: MenuActions): Menu {
   const agentsMenu: MenuItemConstructorOptions = {
     label: 'Agents',
     submenu: [
-      item('Agent Settings…', 'agents.settings'),
+      item('Connections… (Claude, ChatGPT, Gemini)', 'agents.settings'),
       item('Re-run Auto Detection', 'agents.detect'),
       sep,
-      item('Check Login Status', 'agents.login-status'),
-      item('Install Claude Hooks', 'agents.install-claude-hooks')
+      item('Check Sign-in', 'agents.login-status')
     ]
   };
 

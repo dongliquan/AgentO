@@ -49,6 +49,18 @@ export interface Project {
 /** Project colors, handed out in order to new projects (readable on the light and the dark theme). */
 export const PROJECT_COLORS = ['#2563eb', '#16a34a', '#d97706', '#db2777', '#7c3aed', '#0891b2', '#dc2626', '#65a30d', '#c026d3', '#0d9488'];
 
+/** Agents › Connections: one agent CLI's install / sign-in state on this PC. */
+export interface AgentConnection {
+  kind: AgentKind;
+  label: string;
+  installed: boolean;
+  path?: string;
+  version?: string;
+  /** from the CLI's own sign-in files; null = cannot tell (e.g. macOS keychain) */
+  signedIn: boolean | null;
+  note?: string;
+}
+
 /** A Claude Code session found on disk (~/.claude/projects), e.g. one started in VS Code. */
 export interface ClaudeSessionInfo {
   /** Claude session id (the transcript's file name) */
@@ -211,6 +223,8 @@ export type ClientMessage =
   | { type: 'claude.sessions.list'; path: string }
   /** a message from the user for a session that is not running: it is started (resumed) and gets it when ready */
   | { type: 'session.message'; id: string; text: string }
+  /** Agents › Connections: re-detect the CLIs and report their install / sign-in state (answer: agents.status) */
+  | { type: 'agents.status' }
   /** drag and drop in the tree: into a project / part (another part moves it there), before another session */
   | { type: 'session.move'; id: string; projectId: string; beforeId?: string }
   /** store an image (base64) for an order / message; answered with attachment.saved (same ref) */
@@ -272,6 +286,7 @@ export type ServerMessage =
   | { type: 'project.exported'; name: string; data: string }
   | { type: 'claude.sessions'; path: string; items: ClaudeSessionInfo[] }
   | { type: 'attachment.saved'; ref: string; path: string }
+  | { type: 'agents.status'; items: AgentConnection[] }
   | { type: 'fs.search.result'; ref: string; items: { path: string; root: string }[] }
   /** a team message was just typed into this session (the card replays it in its message box) */
   | { type: 'team.delivered'; sessionId: string; text: string }
@@ -309,6 +324,8 @@ export interface DesktopApi {
   openPath(path: string): Promise<void>;
   openInVsCode(path: string): Promise<void>;
   openExternalTerminal(path: string): Promise<void>;
+  /** Agents › Connections: open a terminal window that installs an agent CLI or signs in to it (fixed commands) */
+  agentTerminal(kind: 'claude' | 'codex' | 'gemini', action: 'install' | 'login'): Promise<void>;
   onMenu(cb: (command: string) => void): () => void;
   notify(title: string, body: string, sessionId?: string): void;
   /** top-level labels of the application menu (for the in-app title bar) */

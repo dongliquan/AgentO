@@ -35,8 +35,6 @@
   --topbar-h: 36px;
   --toolbar-h: 40px;
   --statusbar-h: 24px;
-  --sidebar-w: 248px;
-  --right-w: 300px;
   --panels-left-w: 320px;
   color-scheme: light;
 }
@@ -104,7 +102,9 @@ code, pre, .mono { font-family: var(--mono); }
 /* ---------- app shell ---------- */
 .app { display: flex; flex-direction: column; height: 100%; }
 .app-body { display: flex; flex: 1; min-height: 0; }
-.center { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; background: var(--bg); }
+/* the main window 15 : 50 : 35 — the sidebar and the right panel each take a share of the window (--side-share,
+   --right-share, percent, dragged), the Ground takes what is left */
+.center { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; position: relative; background: var(--bg); }
 
 /* ---------- top bar ---------- */
 .topbar {
@@ -173,7 +173,7 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 
 /* ---------- sidebar ---------- */
 .sidebar {
-  width: var(--sidebar-w); background: var(--panel); border-right: 1px solid var(--border);
+  flex: none; width: max(200px, calc(var(--side-share, 15) * 1vw)); background: var(--panel); border-right: 1px solid var(--border);
   display: flex; flex-direction: column; min-height: 0;
 }
 .sidebar-header {
@@ -546,7 +546,7 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .csv tr:nth-child(even) td { background: color-mix(in srgb, var(--text) 2%, transparent); }
 
 /* ---------- right panel ---------- */
-.rightpanel { width: var(--right-w); background: var(--panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
+.rightpanel { flex: none; width: max(300px, calc(var(--right-share, 35) * 1vw)); background: var(--panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
 .rp-tabs { height: var(--toolbar-h); display: flex; border-bottom: 1px solid var(--border); flex: none; }
 .rp-tabs button { flex: 1; min-width: 0; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 6px; }
 .rp-tabs button.active { color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
@@ -666,6 +666,23 @@ button.tree-pc:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, t
 .tree-row.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
 .tree-row.drop-into { outline: 1px dashed var(--accent); outline-offset: -1px; background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .tree-row[draggable='true'] { cursor: grab; }
+/* Agents › Connections */
+.dialog.agents-dialog { width: 620px; }
+.dialog .actions .grow { flex: 1; }
+.agent-list { display: flex; flex-direction: column; gap: 6px; }
+.agent-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.agent-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.agent-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.agent-name { font-weight: 600; font-size: 13px; }
+.agent-ver { font-size: 11px; }
+.agent-state { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 10px; }
+.agent-state .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.agent-state.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.agent-state.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
+.agent-state.off { color: var(--muted); background: var(--panel2); }
+.agent-path { font-family: var(--mono); font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-note { font-size: 11.5px; color: var(--muted); }
+.agent-actions { flex: none; display: flex; gap: 6px; }
 /* project tree: closed projects at the bottom */
 .tree-closed-head { border-top: 1px solid var(--border); color: var(--muted); font-weight: 600; }
 .tree-closed .label { color: var(--muted); }

@@ -296,12 +296,11 @@ export const COMMANDS: CommandDef[] = [
   { id: 'go.prev-session', label: 'Previous Session', run: () => cycleSession(-1) },
   { id: 'go.waiting-session', label: 'Go to Waiting Session', shortcut: 'Ctrl+Shift+W', run: gotoNextWaiting },
   { id: 'go.next-waiting', label: 'Go to Waiting Session', shortcut: 'Ctrl+Shift+W', run: gotoNextWaiting },
-  { id: 'agents.detect', label: 'Re-detect Agents', run: () => send({ type: 'usage.refresh' }) },
+  { id: 'agents.detect', label: 'Re-detect Agents', run: () => useStore.getState().openAgents() },
   { id: 'usage.refresh', label: 'Refresh Usage', run: () => send({ type: 'usage.refresh' }) },
   { id: 'app.settings', label: 'Settings', run: () => window.alert('Settings are not available yet.') },
-  { id: 'agents.settings', label: 'Agent Settings', run: () => window.alert('Agent settings are not available yet. Edit the daemon agents config file directly.') },
-  { id: 'agents.login-status', label: 'Check Login Status', run: () => send({ type: 'usage.refresh' }) },
-  { id: 'agents.install-claude-hooks', label: 'Install Claude Hooks', run: () => window.alert('Installing Claude hooks is not available yet.') },
+  { id: 'agents.settings', label: 'Agent Connections (Claude, ChatGPT, Gemini)', run: () => useStore.getState().openAgents() },
+  { id: 'agents.login-status', label: 'Check Agent Sign-in', run: () => useStore.getState().openAgents() },
   { id: 'view.theme.light', label: 'Theme: Light', run: () => setThemePref('light') },
   { id: 'view.theme.dark', label: 'Theme: Dark', run: () => setThemePref('dark') },
   { id: 'view.theme.system', label: 'Theme: System', run: () => setThemePref('system') },
@@ -319,7 +318,7 @@ export const COMMANDS: CommandDef[] = [
 const byId = new Map(COMMANDS.map((c) => [c.id, c]));
 
 /** Commands the panels window runs itself; everything else acts on the board and runs in the main window. */
-const PANELS_LOCAL = new Set(['go.palette', 'go.quick-open', 'view.panels-window', 'view.orders', 'project.new', 'view.inbox', 'usage.refresh', 'agents.detect']);
+const PANELS_LOCAL = new Set(['go.palette', 'go.quick-open', 'view.panels-window', 'view.orders', 'project.new', 'view.inbox', 'usage.refresh']);
 
 /** Runs a menu/palette command id. Also accepts 'focus-session:<id>'. */
 export function runCommand(id: string): boolean {

@@ -8,6 +8,7 @@ const desktop: DesktopApi = {
   openPath: (p: string) => ipcRenderer.invoke('shell.openPath', p) as Promise<void>,
   openInVsCode: (p: string) => ipcRenderer.invoke('shell.openVsCode', p) as Promise<void>,
   openExternalTerminal: (p: string) => ipcRenderer.invoke('shell.openTerminal', p) as Promise<void>,
+  agentTerminal: (kind, action) => ipcRenderer.invoke('agents.terminal', kind, action) as Promise<void>,
   onMenu: (cb: (command: string) => void) => {
     const listener = (_e: IpcRendererEvent, command: string) => cb(command);
     ipcRenderer.on('menu', listener);

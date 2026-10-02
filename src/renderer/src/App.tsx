@@ -13,10 +13,11 @@ import { StatusBar } from '@/components/StatusBar';
 import { Palette } from '@/components/Palette';
 import { NewSessionDialog } from '@/components/NewSessionDialog';
 import { ImportClaudeDialog } from '@/components/ImportClaudeDialog';
+import { AgentsDialog } from '@/components/AgentsDialog';
 import { Toolbar } from '@/components/Toolbar';
 import { FocusView } from '@/components/FocusView';
 import { PromptDialog } from '@/components/PromptDialog';
-import { Splitter } from '@/components/Splitter';
+import { ShareSplitter } from '@/components/Splitter';
 
 function handleKey(e: KeyboardEvent): void {
   const st = useStore.getState();
@@ -32,6 +33,9 @@ function handleKey(e: KeyboardEvent): void {
       e.preventDefault();
     } else if (st.importClaude) {
       st.closeImportClaude();
+      e.preventDefault();
+    } else if (st.agentsOpen) {
+      st.closeAgents();
       e.preventDefault();
     } else if (st.focusMode) {
       st.setFocusMode(false);
@@ -154,18 +158,19 @@ export function App(): JSX.Element {
       <TopBar />
       <div className="app-body">
         {!detached && sidebarOpen && <Sidebar />}
-        {!detached && sidebarOpen && <Splitter cssVar="--sidebar-w" min={180} max={560} dir={1} />}
+        {!detached && sidebarOpen && <ShareSplitter cssVar="--side-share" dir={1} fallback={15} min={8} max={30} />}
         <div className="center">
           {!focusMode && <Toolbar />}
           {center}
         </div>
-        {!detached && rightOpen && <Splitter cssVar="--right-w" min={260} max={760} dir={-1} />}
+        {!detached && rightOpen && <ShareSplitter cssVar="--right-share" dir={-1} fallback={35} min={18} max={60} />}
         {!detached && rightOpen && <RightPanel />}
       </div>
       <StatusBar />
       {paletteOpen && <Palette />}
       {newSessionOpen && <NewSessionDialog />}
       {importOpen && <ImportClaudeDialog />}
+      <AgentsDialog />
       <PromptDialog />
     </div>
   );

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, shell, type Tray } from 'electron';
@@ -374,6 +375,39 @@ function registerIpc(): void {
       });
       child.unref();
     }
+  });
+
+  // Agents › Connections: install / sign in, each in its own terminal window. The commands are fixed here — the
+  // renderer only names the agent and the action.
+  ipcMain.handle('agents.terminal', async (_e, kind: string, action: string) => {
+    const win32 = process.platform === 'win32';
+    const commands: Record<string, Record<string, string>> = {
+      claude: {
+        install: win32
+          ? 'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://claude.ai/install.ps1 | iex"'
+          : 'curl -fsSL https://claude.ai/install.sh | bash',
+        login: 'claude'
+      },
+      codex: { install: 'npm install -g @openai/codex', login: 'codex login' },
+      gemini: { install: 'npm install -g @google/gemini-cli', login: 'gemini' }
+    };
+    const command = commands[kind]?.[action];
+    if (!command) throw new Error('Unknown agent action');
+    const title = `AgentO · ${kind} ${action}`;
+    // a clean environment for the CLI (Electron's run-as-node flag must not leak into it)
+    const env = { ...process.env, ELECTRON_RUN_AS_NODE: '' };
+    let child;
+    if (win32) {
+      child = spawn('cmd.exe', ['/c', 'start', `"${title}"`, 'cmd', '/k', command], { detached: true, stdio: 'ignore', windowsHide: false, env, cwd: os.homedir(), shell: false, windowsVerbatimArguments: true });
+    } else if (process.platform === 'darwin') {
+      child = spawn('osascript', ['-e', `tell application "Terminal" to do script "${command.replace(/"/g, '\\"')}"`, '-e', 'tell application "Terminal" to activate'], { detached: true, stdio: 'ignore', env });
+    } else {
+      child = spawn(process.env['TERMINAL'] || 'x-terminal-emulator', ['-e', 'bash', '-lc', `${command}; exec bash`], { detached: true, stdio: 'ignore', env, cwd: os.homedir() });
+    }
+    child.on('error', () => {
+      /* no terminal: nothing to show */
+    });
+    child.unref();
   });
 
   ipcMain.handle('shell.openTerminal', async (_e, p: string) => {

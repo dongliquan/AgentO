@@ -73,7 +73,6 @@ export const MENU_COMMANDS = [
   'agents.settings',
   'agents.detect',
   'agents.login-status',
-  'agents.install-claude-hooks',
   // Go
   'go.palette',
   'go.quick-open',

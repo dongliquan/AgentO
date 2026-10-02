@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ClaudeSessionInfo, FsEntry, InboxItem, Project, Routine, ServerMessage, Session, SessionStatus, UsageInfo } from '@shared/protocol';
+import type { AgentConnection, ClaudeSessionInfo, FsEntry, InboxItem, Project, Routine, ServerMessage, Session, SessionStatus, UsageInfo } from '@shared/protocol';
 import type { AgentDefEx } from '@shared/extra';
 import { emitTerm } from '@/lib/termbus';
 import { arrangeTeam } from '@shared/layout';
@@ -96,6 +96,9 @@ export interface AppState {
   newSessionPreset: NewSessionPreset;
   /** Import Claude Code Sessions dialog (open with an optional folder) and the sessions the daemon found */
   importClaude: { projectId?: string; folderId?: string } | null;
+  /** Agents › Connections dialog and the CLIs' install / sign-in state (null until the daemon answers) */
+  agentsOpen: boolean;
+  agentConnections: AgentConnection[] | null;
   claudeSessions: { path: string; items: ClaudeSessionInfo[] } | null;
   /** the manager's orders marked done (Tasks): order record id → when */
   doneOrders: Record<string, number>;
@@ -139,6 +142,8 @@ export interface AppState {
   openNewSession(preset?: NewSessionPreset): void;
   closeNewSession(): void;
   openImportClaude(at?: { projectId?: string; folderId?: string }): void;
+  openAgents(): void;
+  closeAgents(): void;
   closeImportClaude(): void;
   setActiveTabSession(id: string | null): void;
   autoArrange(): void;
@@ -237,6 +242,8 @@ export const useStore = create<AppState>((set, get) => ({
   newSessionOpen: false,
   newSessionPreset: {},
   importClaude: null,
+  agentsOpen: false,
+  agentConnections: null,
   claudeSessions: null,
   fileSearch: null,
   doneOrders: {},
@@ -331,6 +338,9 @@ export const useStore = create<AppState>((set, get) => ({
         break;
       case 'routines':
         set({ routines: msg.routines });
+        break;
+      case 'agents.status':
+        set({ agentConnections: msg.items });
         break;
       case 'orders.done':
         set({ doneOrders: msg.done, taskOrders: msg.tasks ?? [] });
@@ -484,6 +494,8 @@ export const useStore = create<AppState>((set, get) => ({
   closeNewSession: () => set({ newSessionOpen: false }),
   openImportClaude: (at) => set({ importClaude: at ?? {}, claudeSessions: null }),
   closeImportClaude: () => set({ importClaude: null }),
+  openAgents: () => set({ agentsOpen: true }),
+  closeAgents: () => set({ agentsOpen: false }),
   setActiveTabSession: (id) => set({ activeTabSessionId: id }),
 
   /** Team layout from src/shared/layout.ts (players tall, coaches wide; links run through empty space). */

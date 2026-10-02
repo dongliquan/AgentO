@@ -284,7 +284,7 @@ function CardMenu({ session: s, x, y, onClose }: { session: Session; x: number; 
       {item('Open in VS Code', () => void window.desktop.openInVsCode(s.cwd))}
       {item('External Terminal', () => void window.desktop.openExternalTerminal(s.cwd))}
       {item('Export Log', () => exportSession(s.id))}
-      {s.role === 'player' && !projectHasCoach && item('Make Playing Coach', () => send({ type: 'session.setRole', id: s.id, role: 'coach' }))}
+      {s.role === 'player' && !projectHasCoach && item('Make Coach', () => send({ type: 'session.setRole', id: s.id, role: 'coach' }))}
       {s.role === 'coach' && s.folderId && item('Back to Player', () => send({ type: 'session.setRole', id: s.id, role: 'player' }))}
       <div className="sep" />
       {item('Remove Session', () => {

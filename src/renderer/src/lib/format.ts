@@ -14,7 +14,8 @@ export const ROLE_LABELS: Record<SessionRole, string> = { head: 'Head Coach', co
 
 /** Role label of a session; a coach that works in a project folder is a playing coach. */
 export function roleLabel(s: { role: SessionRole; folderId: string }): string {
-  return s.role === 'coach' && s.folderId ? 'Playing Coach' : ROLE_LABELS[s.role];
+  // a player promoted to coach (it keeps its own work) is labelled like any coach
+  return ROLE_LABELS[s.role];
 }
 
 /**

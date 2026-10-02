@@ -23,6 +23,7 @@ import { Routines } from './routines';
 import { parseDemoCommand, runDemo } from './demo';
 import { exportProject, importProject } from './projectfile';
 import { importClaudeSessions, listClaudeSessions } from './claudeimport';
+import { agentConnections } from './agentstatus';
 
 /** New project from Orders: how the head coach is briefed (plan: report the plan first and wait for the go). */
 const START_ORDER = (plan: boolean, brief: string): string =>
@@ -561,6 +562,10 @@ async function main(): Promise<void> {
         sendTo(ws, { type: 'fs.changed.result', cwd: msg.cwd, entries });
         return;
       }
+      case 'agents.status':
+        agents = detectAgents(); // a CLI installed just now is picked up for new sessions too
+        sendTo(ws, { type: 'agents.status', items: await agentConnections() });
+        return;
       case 'usage.refresh':
         agents = detectAgents();
         broadcast({ type: 'usage', usage: collectUsage() });
