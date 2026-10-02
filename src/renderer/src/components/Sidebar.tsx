@@ -1,4 +1,7 @@
+import { useState } from 'react';
 import { useStore, type TreeFilter } from '@/store';
+import { send } from '@/client';
+import { AgentPicker } from './AgentPicker';
 import { newProject } from '@/commands';
 import { ProjectTree } from './ProjectTree';
 
@@ -12,6 +15,7 @@ export function Sidebar(): JSX.Element {
   const filter = useStore((s) => s.treeFilter);
   const setFilter = useStore((s) => s.setTreeFilter);
   const setRightTab = useStore((s) => s.setRightTab);
+  const [chatAt, setChatAt] = useState<{ x: number; y: number } | null>(null);
 
   return (
     <div className="sidebar">
@@ -24,6 +28,16 @@ export function Sidebar(): JSX.Element {
       <div className="sidebar-header">
         <span>PROJECTS</span>
         <span className="grow" />
+        <button
+          className="icon-btn"
+          title="New Chat — a session just to talk to ChatGPT or Claude"
+          onClick={(e) => {
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            setChatAt({ x: r.left, y: r.bottom + 2 });
+          }}
+        >
+          💬
+        </button>
         <button className="icon-btn" title="New Project" onClick={() => void newProject()}>+</button>
       </div>
       <div className="chips">
@@ -34,6 +48,19 @@ export function Sidebar(): JSX.Element {
         ))}
       </div>
       <ProjectTree />
+      {chatAt && (
+        <AgentPicker
+          x={chatAt.x}
+          y={chatAt.y}
+          kinds={['codex', 'claude']}
+          title="New chat with"
+          onPick={(agent) => {
+            send({ type: 'chat.new', agent });
+            setChatAt(null);
+          }}
+          onClose={() => setChatAt(null)}
+        />
+      )}
     </div>
   );
 }

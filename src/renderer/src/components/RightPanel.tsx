@@ -7,7 +7,8 @@ import { AGENT_LABELS, STATUS_LABELS, projectLabel, roleLabel, displayTitle, bas
 import { useNow } from '@/lib/hooks';
 import { StatusBadge } from './StatusBadge';
 import { AgentIcon } from './AgentIcon';
-import { ChatView } from './ChatView';
+import { ChatView, Composer } from './ChatView';
+import { screenLines } from '@/lib/screen';
 import { TeamLog } from './TeamLog';
 import { MyOrders } from './MyOrders';
 import { TaskList } from './TaskList';
@@ -75,7 +76,23 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<number | undefined>(undefined);
   const termRef = useRef<HTMLPreElement>(null);
-  const termLines = s.agent === 'claude' ? [] : lastLines(buffer, 200).filter((l) => matches(query, l));
+  // a terminal agent (Codex …) draws with cursor moves: show its screen as the terminal does (replayed off-screen)
+  const [screen, setScreen] = useState<string[]>([]);
+  useEffect(() => {
+    if (s.agent === 'claude') return;
+    let live = true;
+    const t = setTimeout(() => {
+      void screenLines(buffer.slice(-200_000), s.cols || 100, Math.max(s.rows || 30, 60)).then((lines) => {
+        if (live) setScreen(lines.map((l) => l.replace(/\s+$/, '')));
+      });
+    }, 150);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [buffer, s.agent, s.cols, s.rows]);
+  const shown = screen.length ? screen : lastLines(buffer, 200);
+  const termLines = s.agent === 'claude' ? [] : shown.filter((l, i, all) => matches(query, l) && (l.trim() || (i > 0 && all[i - 1]!.trim())));
   useHighlight(termRef, query, [buffer]);
   useEffect(() => setQuery(''), [s.id]);
 
@@ -117,7 +134,10 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
         {s.agent === 'claude' ? (
           <ChatView session={s} onShowTerminal={openTerminal} query={query} onMatches={setHits} />
         ) : (
-          <pre className="rp-term-preview" ref={termRef}>{termLines.join('\n') || (query ? 'No matches' : 'No output')}</pre>
+          <div className="rp-term">
+            <pre className="rp-term-preview" ref={termRef}>{termLines.join('\n') || (query ? 'No matches' : 'No output')}</pre>
+            <Composer session={s} />
+          </div>
         )}
       </div>
       <div className={`rp-more ${more ? 'open' : ''}`}>
@@ -296,7 +316,8 @@ function Orders(): JSX.Element {
     return false;
   });
 
-  const canSubmit = text.trim() !== '' && !files.busy && (isNew ? newName.trim() !== '' && newFolders.length > 0 : !!taker);
+  // a new project without a folder gets one (~/AgentO Projects/<name>)
+  const canSubmit = text.trim() !== '' && !files.busy && (isNew ? newName.trim() !== '' : !!taker);
   const submit = (): void => {
     if (!canSubmit) return;
     const body = withAttachments(text.trim(), files.items);
@@ -357,6 +378,9 @@ function Orders(): JSX.Element {
               >
                 + Folder
               </button>
+              {newFolders.length === 0 && (
+                <span className="muted new-folder-hint">No folder: a new one is made — AgentO Projects\{newName.trim() || '<name>'}</span>
+              )}
             </div>
             <label className="new-plan" title="On: the head coach reports its team and plan, and waits for your go. Off: it starts the work right away.">
               <input type="checkbox" checked={planFirst} onChange={(e) => setPlanFirst(e.target.checked)} />

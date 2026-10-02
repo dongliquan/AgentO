@@ -223,6 +223,8 @@ export type ClientMessage =
   | { type: 'claude.sessions.list'; path: string }
   /** a message from the user for a session that is not running: it is started (resumed) and gets it when ready */
   | { type: 'session.message'; id: string; text: string }
+  /** a session just for talking to an agent: in the "Chats" project and its folder (made the first time) */
+  | { type: 'chat.new'; agent: AgentKind }
   /** Agents › Connections: re-detect the CLIs and report their install / sign-in state (answer: agents.status) */
   | { type: 'agents.status' }
   /** drag and drop in the tree: into a project / part (another part moves it there), before another session */
@@ -287,6 +289,8 @@ export type ServerMessage =
   | { type: 'claude.sessions'; path: string; items: ClaudeSessionInfo[] }
   | { type: 'attachment.saved'; ref: string; path: string }
   | { type: 'agents.status'; items: AgentConnection[] }
+  /** answer to chat.new: the new session (the asking window opens it) */
+  | { type: 'chat.created'; id: string }
   | { type: 'fs.search.result'; ref: string; items: { path: string; root: string }[] }
   /** a team message was just typed into this session (the card replays it in its message box) */
   | { type: 'team.delivered'; sessionId: string; text: string }

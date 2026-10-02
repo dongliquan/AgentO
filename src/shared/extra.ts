@@ -24,6 +24,8 @@ export const MENU_COMMANDS = [
   'project.new',
   'project.import',
   'project.export',
+  'session.new-chat.codex',
+  'session.new-chat.claude',
   'session.import-claude',
   'project.add-folder',
   'session.new',

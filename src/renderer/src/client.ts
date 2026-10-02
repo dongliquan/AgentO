@@ -4,6 +4,7 @@ import { useStore } from '@/store';
 import { STATUS_LABELS } from '@/lib/format';
 import { IS_PANELS } from '@/lib/role';
 import { onAttachmentMessage } from '@/lib/attachments';
+import { selectAndReveal } from '@/commands';
 
 let client: DaemonClient | null = null;
 const pendingLists = new Set<string>();
@@ -75,6 +76,14 @@ export async function startClient(): Promise<void> {
       const prev = st.sessions.get(msg.session.id);
       st.apply(msg);
       notifyTransition(prev, msg.session);
+      return;
+    }
+    if (msg.type === 'chat.created') {
+      // its upsert came first: show it on the Ground and in the Session tab
+      setTimeout(() => {
+        selectAndReveal(msg.id);
+        useStore.getState().setRightTab('detail');
+      }, 50);
       return;
     }
     if (msg.type === 'fs.list.result') pendingLists.delete(msg.path);

@@ -3,6 +3,7 @@
  * Standalone Node process (no electron imports). Owns every PTY; UI clients attach via WebSocket.
  */
 import fs from 'node:fs';
+import os from 'node:os';
 import http from 'node:http';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -41,6 +42,10 @@ ${plan ? `5. report_up to the manager, in Korean: the parts, the players, the fi
 
 Brief from the manager:
 ${brief}`;
+
+/** Session › New Chat: the project (and folder name) that holds the chat sessions, and what a chat is called. */
+const CHATS = 'Chats';
+const CHAT_NAMES: Partial<Record<string, string>> = { codex: 'ChatGPT', claude: 'Claude', gemini: 'Gemini' };
 
 /** Organize Team: what the head coach is asked to do with a project's sessions. */
 const ORGANIZE_ORDER = `[Organize the team]
@@ -339,6 +344,24 @@ async function main(): Promise<void> {
       case 'session.move':
         team.moveSession(msg.id, msg.projectId, msg.beforeId);
         return;
+      case 'chat.new': {
+        // one "Chats" project and folder for every chat session, made the first time
+        let chats = store.listProjects().find((p) => !p.parentId && p.name === CHATS);
+        if (!chats) chats = store.createProject(CHATS);
+        if (chats.closed) store.setProjectClosed(chats.id, false);
+        const dir = path.join(os.homedir(), 'AgentO Projects', CHATS);
+        fs.mkdirSync(dir, { recursive: true });
+        const same = (a: string): boolean => path.resolve(a).toLowerCase() === path.resolve(dir).toLowerCase();
+        const folder = chats.folders.find((f) => same(f.path)) ?? store.addFolder(chats.id, dir, CHATS, true);
+        broadcast({ type: 'projects', projects: store.listProjects() });
+        const name = CHAT_NAMES[msg.agent] ?? msg.agent;
+        const projectId = chats.id;
+        const n = sessions.list().filter((s) => s.projectId === projectId && s.agent === msg.agent).length + 1;
+        const session = sessions.create({ projectId, folderId: folder.id, cwd: dir, agent: msg.agent, role: 'player', title: `${name} chat ${n}` });
+        clients.get(ws)?.add(session.id);
+        sendTo(ws, { type: 'chat.created', id: session.id });
+        return;
+      }
       case 'session.message':
         team.message(msg.id, msg.text);
         return;
@@ -430,7 +453,13 @@ async function main(): Promise<void> {
         if (!msg.text.trim()) throw new Error('Write the order for the new project');
         if (store.listProjects().some((p) => !p.parentId && p.name === name)) throw new Error(`A project named "${name}" already exists`);
         const dirs = [...new Set(msg.folders.map((f) => path.resolve(f)))];
-        if (dirs.length === 0) throw new Error('Add at least one folder');
+        // no folder picked: a new one, ~/AgentO Projects/<name> (a name that is not a valid folder name is cleaned up)
+        if (dirs.length === 0) {
+          const safe = name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/[. ]+$/, '') || 'project';
+          const dir = path.join(os.homedir(), 'AgentO Projects', safe);
+          fs.mkdirSync(dir, { recursive: true });
+          dirs.push(dir);
+        }
         for (const d of dirs) if (!fs.existsSync(d) || !fs.statSync(d).isDirectory()) throw new Error(`Folder does not exist: ${d}`);
         const project = store.createProject(name);
         // the team works here on the manager's order: trusted, so new players do not stop at the folder-trust prompt

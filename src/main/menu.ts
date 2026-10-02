@@ -119,6 +119,11 @@ export function buildMenu(actions: MenuActions): Menu {
     label: 'Session',
     submenu: [
       {
+        // a session just to talk to an agent (kept in the "Chats" project)
+        label: 'New Chat',
+        submenu: [item('ChatGPT (Codex)', 'session.new-chat.codex'), item('Claude', 'session.new-chat.claude')]
+      },
+      {
         label: 'New Session',
         submenu: [
           item('Claude Code', 'session.new.claude'),

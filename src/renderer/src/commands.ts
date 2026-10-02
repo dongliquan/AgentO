@@ -241,6 +241,8 @@ export const COMMANDS: CommandDef[] = [
     });
   } },
   { id: 'session.new', label: 'New Session…', shortcut: 'Ctrl+N', run: () => newSessionFor() },
+  { id: 'session.new-chat.codex', label: 'New Chat: ChatGPT (Codex)', run: () => send({ type: 'chat.new', agent: 'codex' }) },
+  { id: 'session.new-chat.claude', label: 'New Chat: Claude', run: () => send({ type: 'chat.new', agent: 'claude' }) },
   { id: 'session.new.claude', label: `New Session: ${AGENT_LABELS.claude}`, run: () => newSessionFor('claude') },
   { id: 'session.new.codex', label: `New Session: ${AGENT_LABELS.codex}`, run: () => newSessionFor('codex') },
   { id: 'session.new.gemini', label: `New Session: ${AGENT_LABELS.gemini}`, run: () => newSessionFor('gemini') },

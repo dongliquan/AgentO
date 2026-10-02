@@ -660,6 +660,7 @@ button.tree-pc:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, t
 .new-folders { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .new-folder { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 2px 4px 2px 8px; border-radius: 5px; background: var(--panel2); font-size: 11.5px; }
 .new-folder .ellipsis { max-width: 260px; }
+.new-folder-hint { font-size: 11px; }
 .attach-x.static { position: static; flex: none; background: color-mix(in srgb, var(--text) 25%, transparent); }
 .new-plan { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); }
 /* drag a session in the tree: before a session (line above it) or into a project / part (outlined) */
@@ -683,6 +684,9 @@ button.tree-pc:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, t
 .agent-path { font-family: var(--mono); font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-note { font-size: 11.5px; color: var(--muted); }
 .agent-actions { flex: none; display: flex; gap: 6px; }
+/* Session tab of a terminal agent: its screen, then the message box */
+.rp-term { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.rp-term .rp-term-preview { flex: 1; min-height: 0; overflow: auto; margin: 0; }
 /* project tree: closed projects at the bottom */
 .tree-closed-head { border-top: 1px solid var(--border); color: var(--muted); font-weight: 600; }
 .tree-closed .label { color: var(--muted); }

@@ -459,7 +459,8 @@ const REPLAY_MAX_MS = 8000;
 const REPLAY_PAUSE_MS = 400;
 const REPLAY_SEND_MS = 700;
 
-function Composer({ session: s }: { session: Session }): JSX.Element {
+/** The message box under a session's conversation — also used for terminal agents (Codex) in the Session tab. */
+export function Composer({ session: s }: { session: Session }): JSX.Element {
   const [text, setText] = useState('');
   const ref = useRef<HTMLTextAreaElement>(null);
   // a team message typed into this session by the daemon, replayed here: typed out, then "sent"
@@ -518,7 +519,9 @@ function Composer({ session: s }: { session: Session }): JSX.Element {
     if (running) {
       // bracketed paste keeps multi-line text as one prompt, then Enter submits
       send({ type: 'session.input', id: s.id, data: `\x1b[200~${body}\x1b[201~` });
-      setTimeout(() => send({ type: 'session.input', id: s.id, data: '\r' }), 60);
+      // Codex folds fast input into one paste and takes an Enter inside it as a newline: submit a little later
+      const delay = s.agent === 'codex' ? Math.min(3000, 600 + body.length) : 60;
+      setTimeout(() => send({ type: 'session.input', id: s.id, data: '\r' }), delay);
     } else send({ type: 'session.message', id: s.id, text: body });
     setText('');
     files.clear();
