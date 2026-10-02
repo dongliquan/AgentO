@@ -409,6 +409,39 @@ export class Team {
     return { path: full, autoTrust: parent.autoTrust === true };
   }
 
+  /**
+   * Move a session into a project / part (keeping its folder and conversation; the folder is registered there), and
+   * put it before `beforeId` among that part's sessions (else last). Same part: only the order changes.
+   */
+  moveSession(id: string, destId: string, beforeId?: string): void {
+    const t = this.sessions.get(id);
+    const projects = this.store.listProjects();
+    const dest = projects.find((p) => p.id === destId);
+    if (!t || !dest) throw new Error('Session or project not found');
+    if (t.role === 'head') throw new Error('The head coach stays at the project level');
+    const fromRoot = this.rootOf(t.projectId);
+    if (t.projectId !== dest.id) {
+      if (!t.folderId) throw new Error(`"${t.title}" is a dedicated coach (its own folder) and cannot be moved`);
+      if (t.role === 'coach') this.sessions.setRole(t.id, 'player'); // a part's coach does not lead the next one
+      const path0 = projects.flatMap((p) => p.folders).find((f) => f.id === t.folderId)?.path;
+      if (!path0) throw new Error(`The folder of "${t.title}" is not registered`);
+      const same = (a: string, b: string): boolean => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
+      const folder = dest.folders.find((f) => same(f.path, path0)) ?? this.store.addFolder(dest.id, path0, path.basename(path0) || path0);
+      this.sessions.moveTo(t.id, dest.id, folder.id);
+      this.onProjects();
+    }
+    // the part's order: everyone but the head coach, the moved one put before `beforeId`
+    const key = (s: StoredSession): number => s.order ?? Number.MAX_SAFE_INTEGER;
+    const members = this.all()
+      .filter((s) => s.projectId === dest.id && s.role !== 'head' && s.id !== id)
+      .sort((a, b) => key(a) - key(b) || a.createdAt - b.createdAt);
+    const at = beforeId ? members.findIndex((s) => s.id === beforeId) : -1;
+    members.splice(at >= 0 ? at : members.length, 0, this.sessions.get(id)!);
+    members.forEach((s, i) => this.sessions.setOrder(s.id, i + 1));
+    this.arrange(this.rootOf(dest.id));
+    if (fromRoot !== this.rootOf(dest.id)) this.arrange(fromRoot);
+  }
+
   /** Lay out one project's cards like Auto Arrange (head coach on top, a block per part). */
   arrange(rootId: string): void {
     const projects = this.store.listProjects();
@@ -631,10 +664,11 @@ export class Team {
   }
 
   /** Team traffic record; `from` is a session or the user ('user'). */
-  private record(target: StoredSession, kind: 'directive' | 'report', from: { id: string; title: string }, message: string, read = true): void {
+  private record(target: StoredSession, kind: 'directive' | 'report', from: { id: string; title: string }, message: string, read = true): string {
     const text = `${from.title} → ${target.title}: ${clip(message.trim(), LOG_TEXT_MAX)}`;
-    this.store.addInbox(target.id, kind, text, read, from.id);
+    const item = this.store.addInbox(target.id, kind, text, read, from.id);
     this.onInbox();
+    return item.id;
   }
 
   /** A prompt printed since the last keystroke is still unanswered (the log keeps old prompts after redraws). */
@@ -803,7 +837,8 @@ export class Team {
   }
 
   /** The user's order (Orders panel, or a routine run named by `via`). Returns the recipients' titles. */
-  order(target: TeamOrderTarget, message: string, via?: string): string[] {
+  /** task: the manager added it as a task (it shows in Tasks even before any work is handed out) */
+  order(target: TeamOrderTarget, message: string, via?: string, task = false): string[] {
     if (!message.trim()) throw new Error('The order is empty');
     const recipients: StoredSession[] = [];
     const closed = (projectId: string): boolean => this.isClosed(projectId);
@@ -828,7 +863,8 @@ export class Team {
         text += '\n\n(You are leading this order for your project: share the work with your teammates — list_sessions, send_to_session.)';
       }
       this.enqueue(r.id, { text, from: 'user' });
-      this.record(r, 'directive', { id: 'user', title: via ? `Manager (you) · ${via}` : 'Manager (you)' }, message);
+      const id = this.record(r, 'directive', { id: 'user', title: via ? `Manager (you) · ${via}` : 'Manager (you)' }, message);
+      if (task) this.store.markTaskOrder(id);
     }
     return recipients.map((r) => r.title);
   }
@@ -913,20 +949,14 @@ export class Team {
       run: (caller, args) => {
         const t = this.target(caller, args);
         const partId = str(args['part_id']);
-        const projects = this.store.listProjects();
-        const dest = projects.find((p) => p.id === partId && (p.id === caller.projectId || p.parentId === caller.projectId));
+        const dest = this.store.listProjects().find((p) => p.id === partId && (p.id === caller.projectId || p.parentId === caller.projectId));
         if (!dest) throw new ToolError('No such part in your project. Use create_part or list_projects.');
-        if (t.role === 'head') throw new ToolError('The head coach stays at the project level');
-        if (!t.folderId) throw new ToolError(`"${t.title}" is a dedicated coach (its own folder) and cannot be moved`);
         if (t.projectId === dest.id) return `"${t.title}" is already in "${dest.name}".`;
-        if (t.role === 'coach') this.sessions.setRole(t.id, 'player'); // a part's coach does not lead the next one
-        const path0 = projects.flatMap((p) => p.folders).find((f) => f.id === t.folderId)?.path;
-        if (!path0) throw new ToolError(`The folder of "${t.title}" is not registered`);
-        const same = (a: string, b: string): boolean => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
-        const folder = dest.folders.find((f) => same(f.path, path0)) ?? this.store.addFolder(dest.id, path0, path.basename(path0) || path0);
-        this.sessions.moveTo(t.id, dest.id, folder.id);
-        this.onProjects();
-        this.arrange(caller.projectId);
+        try {
+          this.moveSession(t.id, dest.id);
+        } catch (e) {
+          throw new ToolError(e instanceof Error ? e.message : String(e));
+        }
         return `Moved "${t.title}" into "${dest.name}".`;
       }
     },

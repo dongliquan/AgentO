@@ -8,3 +8,4 @@ dist
 # local only
 .env
 .env.*
+out-test*

@@ -3,7 +3,7 @@ import { useStore } from '@/store';
 import { send } from '@/client';
 import { useNow } from '@/lib/hooks';
 import { useOpenInbox } from '@/lib/closed';
-import { buildThreads, orderStatus, type LogNode, type OrderStatus } from '@/lib/threads';
+import { buildThreads, isTask, orderStatus, type LogNode, type OrderStatus } from '@/lib/threads';
 import { pcStyle, projectColor, relativeTime, formatDateTime } from '@/lib/format';
 import { OrderCard } from './MyOrders';
 import { useDraft } from '@/lib/draft';
@@ -44,20 +44,20 @@ function orderText(text: string): string {
  * A new task: an order to one project (its head coach, or its lead without one). It shows up in the list as soon as
  * the daemon records it.
  */
-function NewTask({ defaultProject }: { defaultProject?: string }): JSX.Element {
+/** pid: the project picked in the chips above ('' = All: the list shows every project, a new task needs one) */
+function NewTask({ pid, setPid }: { pid: string; setPid: (id: string) => void }): JSX.Element {
   const projects = useStore((s) => s.projects);
   const sessions = useStore((s) => s.sessions);
   const setRightTab = useStore((s) => s.setRightTab);
   const tops = projects.filter((p) => !p.parentId && !p.closed);
-  const [pid, setPid] = useDraft('tasks.project', defaultProject ?? tops[0]?.id ?? '');
   const [text, setText] = useDraft('tasks.text', '');
   const files = useAttachments();
-  const project = tops.find((p) => p.id === pid) ?? tops[0];
+  const project = tops.find((p) => p.id === pid);
   const hasTaker = !!project && [...sessions.values()].some((s) => s.projectId === project.id || projects.some((x) => x.parentId === project.id && x.id === s.projectId));
   const can = !!project && hasTaker && text.trim() !== '' && !files.busy;
   const submit = (): void => {
     if (!can) return;
-    send({ type: 'team.order', target: { kind: 'project', projectId: project.id }, text: withAttachments(text.trim(), files.items) });
+    send({ type: 'team.order', target: { kind: 'project', projectId: project.id }, text: withAttachments(text.trim(), files.items), task: true });
     setText('');
     files.clear();
   };
@@ -70,7 +70,11 @@ function NewTask({ defaultProject }: { defaultProject?: string }): JSX.Element {
   }
   return (
     <div className="new-task">
+      {/* one row of chips: it filters the list below and picks where a new task goes */}
       <div className="new-task-to">
+        <button className={`project-tag all ${!project ? 'on' : ''}`} onClick={() => setPid('')} title="Every project's tasks">
+          All
+        </button>
         {tops.map((p) => (
           <button key={p.id} className={`project-tag ${project?.id === p.id ? 'on' : ''}`} style={pcStyle(projectColor(p.id, projects))} onClick={() => setPid(p.id)}>
             {p.name}
@@ -80,7 +84,14 @@ function NewTask({ defaultProject }: { defaultProject?: string }): JSX.Element {
       <textarea
         value={text}
         rows={2}
-        placeholder={hasTaker ? `New task for ${project?.name} — Ctrl+Enter. Paste or drop images.` : `${project?.name} has no sessions yet: add a head coach first`}
+        placeholder={
+          !project
+            ? 'Pick a project above to add a task'
+            : hasTaker
+              ? `New task for ${project.name} — Ctrl+Enter. Paste or drop images.`
+              : `${project.name} has no sessions yet: add a head coach first`
+        }
+        disabled={!project}
         onChange={(e) => setText(e.target.value)}
         onPaste={(e) => {
           const imgs = imageFiles(e.clipboardData);
@@ -150,9 +161,11 @@ export function TaskList(): JSX.Element {
   const sessions = useStore((s) => s.sessions);
   const projects = useStore((s) => s.projects);
   const done = useStore((s) => s.doneOrders);
+  const taskOrders = useStore((s) => s.taskOrders);
   const now = useNow(15000);
   const [filter, setFilter] = useState<Filter>('open');
-  const [only, setOnly] = useState<string | null>(null);
+  // the project chips at the top: filter the list and pick a new task's project ('' = all projects)
+  const [only, setOnly] = useDraft('tasks.project', '');
   const [open, setOpen] = useState<string | null>(null);
 
   const rootOf = (sessionId: string): string | undefined => {
@@ -161,15 +174,17 @@ export function TaskList(): JSX.Element {
     return p?.parentId ?? p?.id;
   };
   const tasks = useMemo(() => {
+    const explicit = new Set(taskOrders);
+    // tasks only: work handed to coaches / players or added as a task — not every exchange with the head coach
     const list = buildThreads(inbox)
-      .filter((t) => t.item.fromId === 'user')
+      .filter((t) => isTask(t, sessions, explicit))
       .map((t) => ({ node: t, status: (done[t.item.id] ? 'done' : orderStatus(t, sessions)) as TaskStatus, project: rootOf(t.item.sessionId) }));
     return list.sort((a, b) => ORDER.indexOf(a.status) - ORDER.indexOf(b.status) || b.node.item.createdAt - a.node.item.createdAt);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inbox, sessions, projects, done]);
-  const counts = { open: tasks.filter((t) => t.status !== 'done').length, done: tasks.filter((t) => t.status === 'done').length, all: tasks.length };
-  const shown = tasks.filter((t) => (filter === 'all' || (filter === 'done') === (t.status === 'done')) && (!only || t.project === only));
-  const withTasks = projects.filter((p) => !p.parentId && tasks.some((t) => t.project === p.id));
+  }, [inbox, sessions, projects, done, taskOrders]);
+  const inProject = tasks.filter((t) => !only || t.project === only);
+  const counts = { open: inProject.filter((t) => t.status !== 'done').length, done: inProject.filter((t) => t.status === 'done').length, all: inProject.length };
+  const shown = inProject.filter((t) => filter === 'all' || (filter === 'done') === (t.status === 'done'));
 
   const askStatus = (t: LogNode): void => {
     const first = orderText(t.item.text).split('\n')[0]!.slice(0, 160);
@@ -182,7 +197,7 @@ export function TaskList(): JSX.Element {
 
   return (
     <div className="rp-body tasks">
-      <NewTask defaultProject={only ?? undefined} />
+      <NewTask pid={only} setPid={setOnly} />
       <div className="task-filters">
         {(['open', 'done', 'all'] as Filter[]).map((f) => (
           <button key={f} className={`chip ${filter === f ? 'active' : ''}`} onClick={() => setFilter(f)}>
@@ -191,21 +206,6 @@ export function TaskList(): JSX.Element {
         ))}
         <span className="grow" />
       </div>
-      {withTasks.length > 1 && (
-        <div className="task-projects">
-          {withTasks.map((p) => (
-            <button
-              key={p.id}
-              className={`project-tag ${only === p.id ? 'on' : ''}`}
-              style={pcStyle(projectColor(p.id, projects))}
-              onClick={() => setOnly(only === p.id ? null : p.id)}
-              title={only === p.id ? 'Show every project' : `Only ${p.name}`}
-            >
-              {p.name}
-            </button>
-          ))}
-        </div>
-      )}
       {shown.length === 0 ? (
         <div className="muted" style={{ fontSize: 12 }}>{filter === 'open' ? 'Nothing open — every order is done.' : 'No orders here.'}</div>
       ) : (

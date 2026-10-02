@@ -99,6 +99,8 @@ export interface AppState {
   claudeSessions: { path: string; items: ClaudeSessionInfo[] } | null;
   /** the manager's orders marked done (Tasks): order record id → when */
   doneOrders: Record<string, number>;
+  /** orders added as tasks explicitly (Tasks › Add Task, a new project) */
+  taskOrders: string[];
   /** Quick Open file search: the latest answer (ref = the query it answers) */
   fileSearch: { ref: string; items: { path: string; root: string }[] } | null;
   activeTabSessionId: string | null;
@@ -238,6 +240,7 @@ export const useStore = create<AppState>((set, get) => ({
   claudeSessions: null,
   fileSearch: null,
   doneOrders: {},
+  taskOrders: [],
   activeTabSessionId: null,
 
   fsLists: new Map(),
@@ -258,6 +261,7 @@ export const useStore = create<AppState>((set, get) => ({
           sessions,
           inbox: msg.inbox,
           doneOrders: msg.doneOrders ?? {},
+          taskOrders: msg.taskOrders ?? [],
           routines: msg.routines ?? [],
           usage: msg.usage,
           agents: msg.agents as AgentDefEx[],
@@ -329,7 +333,7 @@ export const useStore = create<AppState>((set, get) => ({
         set({ routines: msg.routines });
         break;
       case 'orders.done':
-        set({ doneOrders: msg.done });
+        set({ doneOrders: msg.done, taskOrders: msg.tasks ?? [] });
         break;
       case 'fs.search.result':
         set({ fileSearch: { ref: msg.ref, items: msg.items } });

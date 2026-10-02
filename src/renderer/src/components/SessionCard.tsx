@@ -138,6 +138,7 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
   return (
     <div
       className={cls}
+      data-session-card={s.id}
       style={style}
       data-session-id={s.id}
       onPointerDownCapture={() => {

@@ -508,6 +508,13 @@ export class SessionManager extends EventEmitter {
     this.save(s);
   }
 
+  setOrder(id: string, order: number): void {
+    const s = this.sessions.get(id);
+    if (!s || s.order === order) return;
+    s.order = order;
+    this.save(s, false);
+  }
+
   /** Into another project / part (its working folder stays: the folder is registered there too). */
   moveTo(id: string, projectId: string, folderId: string): void {
     const s = this.sessions.get(id);

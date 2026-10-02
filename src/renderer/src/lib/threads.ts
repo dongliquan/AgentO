@@ -45,6 +45,20 @@ export function prune(n: LogNode, hit: (it: InboxItem) => boolean): LogNode | nu
   return hit(n.item) || children.length > 0 ? { item: n.item, children } : null;
 }
 
+/**
+ * One of the manager's orders that is a task, not just a conversation: it was added as a task, it went straight to a
+ * coach or a player (they do the work), or the one who took it handed work on (a directive to a coach or a player).
+ */
+export function isTask(node: LogNode, sessions: Map<string, Session>, explicit: ReadonlySet<string>): boolean {
+  if (node.item.fromId !== 'user') return false;
+  if (explicit.has(node.item.id)) return true;
+  // a status check or a follow-up from the task list belongs to the task it is about, not a task of its own
+  if (/Status check on this order|\(Follow-up on: /.test(node.item.text)) return false;
+  const to = sessions.get(node.item.sessionId);
+  if (to && to.role !== 'head') return true;
+  return node.children.some((c) => c.item.kind === 'directive');
+}
+
 export type OrderStatus = 'reported' | 'working' | 'waiting' | 'stopped' | 'error' | 'removed';
 
 /**

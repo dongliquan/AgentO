@@ -34,7 +34,8 @@ export interface Rect {
  */
 export function arrangeTeam(sessions: Session[], projects: Project[]): Map<string, Rect> {
   const out = new Map<string, Rect>();
-  const all = [...sessions].sort((a, b) => a.createdAt - b.createdAt);
+  // a part's own order (drag and drop in the tree) first, then creation time
+  const all = [...sessions].sort((a, b) => (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER) || a.createdAt - b.createdAt);
   const L = CARD_LANDSCAPE;
   const P = CARD_PORTRAIT;
   const H = CARD_HEAD;

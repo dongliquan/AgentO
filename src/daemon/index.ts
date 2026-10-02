@@ -335,6 +335,9 @@ async function main(): Promise<void> {
         if (missing) throw new Error(`Opened "${project.name}", but ${missing} of its folders do not exist on this PC — add them again or fix the paths.`);
         return;
       }
+      case 'session.move':
+        team.moveSession(msg.id, msg.projectId, msg.beforeId);
+        return;
       case 'session.message':
         team.message(msg.id, msg.text);
         return;
@@ -359,8 +362,18 @@ async function main(): Promise<void> {
       }
       case 'order.done':
         store.setOrderDone(msg.id, msg.done);
-        broadcast({ type: 'orders.done', done: store.listDoneOrders() });
+        broadcast({ type: 'orders.done', done: store.listDoneOrders(), tasks: store.listTaskOrders() });
         return;
+      case 'project.rename': {
+        const name = msg.name.trim();
+        if (!name) throw new Error('The name is empty');
+        const p = store.listProjects().find((x) => x.id === msg.id);
+        if (!p) throw new Error('Project not found');
+        if (store.listProjects().some((x) => x.id !== p.id && (x.parentId ?? '') === (p.parentId ?? '') && x.name === name)) throw new Error(`"${name}" already exists here`);
+        store.renameProject(p.id, name);
+        broadcast({ type: 'projects', projects: store.listProjects() });
+        return;
+      }
       case 'project.setColor':
         if (!/^#[0-9a-f]{6}$/i.test(msg.color)) throw new Error('Not a color');
         store.setProjectColor(msg.id, msg.color);
@@ -424,7 +437,8 @@ async function main(): Promise<void> {
         broadcast({ type: 'projects', projects: store.listProjects() });
         const head = team.createHead(project.id);
         clients.get(ws)?.add(head.id);
-        team.order({ kind: 'session', sessionId: head.id }, START_ORDER(msg.plan, msg.text.trim()), 'New project');
+        team.order({ kind: 'session', sessionId: head.id }, START_ORDER(msg.plan, msg.text.trim()), 'New project', true);
+        broadcast({ type: 'orders.done', done: store.listDoneOrders(), tasks: store.listTaskOrders() });
         log.info('project started from an order', name, dirs.join(', '));
         return;
       }
@@ -462,7 +476,8 @@ async function main(): Promise<void> {
           });
           return;
         }
-        const to = team.order(msg.target, msg.text);
+        const to = team.order(msg.target, msg.text, undefined, msg.task === true);
+        if (msg.task) broadcast({ type: 'orders.done', done: store.listDoneOrders(), tasks: store.listTaskOrders() });
         log.info('team order to', to);
         return;
       }
@@ -593,7 +608,8 @@ async function main(): Promise<void> {
           usage: collectUsage(),
           agents,
           routines: routines.list(),
-          doneOrders: store.listDoneOrders()
+          doneOrders: store.listDoneOrders(),
+          taskOrders: store.listTaskOrders()
         });
         log.info(`client connected (${msg.client}); clients=${clients.size}`);
         return;

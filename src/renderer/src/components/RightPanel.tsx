@@ -12,7 +12,7 @@ import { TeamLog } from './TeamLog';
 import { MyOrders } from './MyOrders';
 import { TaskList } from './TaskList';
 import { useOpenInbox as useTaskInbox } from '@/lib/closed';
-import { buildThreads, orderStatus } from '@/lib/threads';
+import { buildThreads, isTask, orderStatus } from '@/lib/threads';
 import { lastLines } from '@/lib/ansi';
 import { matches, selecting, useHighlight } from '@/lib/search';
 import { useOpenInbox } from '@/lib/closed';
@@ -32,10 +32,11 @@ export function RightPanel(): JSX.Element {
   const taskInbox = useTaskInbox();
   const sessionsAll = useStore((s) => s.sessions);
   const doneOrders = useStore((s) => s.doneOrders);
-  const toReview = useMemo(
-    () => buildThreads(taskInbox).filter((t) => t.item.fromId === 'user' && !doneOrders[t.item.id] && orderStatus(t, sessionsAll) === 'reported').length,
-    [taskInbox, sessionsAll, doneOrders]
-  );
+  const taskOrders = useStore((s) => s.taskOrders);
+  const toReview = useMemo(() => {
+    const explicit = new Set(taskOrders);
+    return buildThreads(taskInbox).filter((t) => isTask(t, sessionsAll, explicit) && !doneOrders[t.item.id] && orderStatus(t, sessionsAll) === 'reported').length;
+  }, [taskInbox, sessionsAll, doneOrders, taskOrders]);
 
   return (
     <div className="rightpanel">

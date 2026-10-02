@@ -1,8 +1,9 @@
+import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AgentKind, Folder, FsEntry, Project, Session } from '@shared/protocol';
 import { useStore } from '@/store';
 import { requestChanged, requestList, send } from '@/client';
-import { organizeTeam, removeSession, saveProject, selectAndReveal } from '@/commands';
+import { organizeTeam, removeSession, renameProject, renameSession, saveProject, selectAndReveal } from '@/commands';
 import { askText } from '@/lib/prompt';
 import { AGENT_LABELS, basename, fileIcon, roleLabel, displayTitle } from '@/lib/format';
 import { pcStyle, projectColor } from '@/lib/format';
@@ -61,7 +62,8 @@ export function ProjectTree(): JSX.Element {
       arr.push(s);
       m.set(s.projectId, arr);
     }
-    for (const arr of m.values()) arr.sort((a, b) => Number(b.role === 'coach') - Number(a.role === 'coach') || a.createdAt - b.createdAt);
+    const key = (s: Session): number => s.order ?? Number.MAX_SAFE_INTEGER;
+    for (const arr of m.values()) arr.sort((a, b) => Number(b.role === 'coach') - Number(a.role === 'coach') || key(a) - key(b) || a.createdAt - b.createdAt);
     return m;
   }, [sessions]);
   const heads = useMemo(() => [...sessions.values()].filter((s) => s.role === 'head'), [sessions]);
@@ -101,6 +103,7 @@ export function ProjectTree(): JSX.Element {
           className={`tree-row ${isPart ? 'tree-part' : 'tree-project'}`}
           style={{ paddingLeft: depth }}
           onClick={() => toggle(`p:${p.id}`)}
+          {...dropInto(p.id)}
           onContextMenu={(e) => {
             e.preventDefault();
             const f = p.folders[0];
@@ -121,8 +124,18 @@ export function ProjectTree(): JSX.Element {
               }}
             />
           )}
-          <span className="label" style={{ fontWeight: 600 }}>{p.name}</span>
+          <span className="label" style={{ fontWeight: 600 }} onDoubleClick={(e) => { e.stopPropagation(); void renameProject(p.id); }} title="Double-click to rename">{p.name}</span>
           {total > 0 && <span className="muted" style={{ fontSize: 11 }} title={`${total} session(s)`}>{total}</span>}
+          <button
+            className="icon-btn hover-act"
+            title={`Rename ${isPart ? 'part' : 'project'} (or double-click the name)`}
+            onClick={(e) => {
+              e.stopPropagation();
+              void renameProject(p.id);
+            }}
+          >
+            ✎
+          </button>
           {!isPart && (
             <button className="icon-btn hover-act" title="Add Part (e.g. planning, development, QA)" onClick={(e) => { e.stopPropagation(); void addPart(p); }}>
               ⊞
@@ -407,22 +420,79 @@ function FolderNode({ folder, depth = 20, expanded, toggle, filter, onNewSession
   );
 }
 
+/* ---------- drag a session: reorder within its part, or drop it into another part / project ---------- */
+
+const DRAG_TYPE = 'application/x-agento-session';
+
+/** Drop target props for a project / part row: the session goes last in it. */
+function dropInto(projectId: string): React.HTMLAttributes<HTMLDivElement> {
+  return {
+    onDragOver: (e) => {
+      if (!e.dataTransfer.types.includes(DRAG_TYPE)) return;
+      e.preventDefault();
+      e.currentTarget.classList.add('drop-into');
+    },
+    onDragLeave: (e) => e.currentTarget.classList.remove('drop-into'),
+    onDrop: (e) => {
+      e.currentTarget.classList.remove('drop-into');
+      const id = e.dataTransfer.getData(DRAG_TYPE);
+      if (id) {
+        e.preventDefault();
+        send({ type: 'session.move', id, projectId });
+      }
+    }
+  };
+}
+
 function SessionRow({ session: s, depth, folderName }: { session: Session; depth: number; folderName?: string }): JSX.Element {
   const selected = useStore((st) => st.selectedId === s.id);
+  // the head coach stays at the project level; every other session can be dragged
+  const movable = s.role !== 'head';
   return (
     <div
       className={`tree-row ${selected ? 'selected' : ''}`}
       style={{ paddingLeft: depth }}
       onClick={() => selectAndReveal(s.id)}
+      draggable={movable}
+      onDragStart={(e) => {
+        if (!movable) return;
+        e.dataTransfer.setData(DRAG_TYPE, s.id);
+        e.dataTransfer.effectAllowed = 'move';
+      }}
+      onDragOver={(e) => {
+        if (!movable || !e.dataTransfer.types.includes(DRAG_TYPE)) return;
+        e.preventDefault();
+        e.currentTarget.classList.add('drop-before');
+      }}
+      onDragLeave={(e) => e.currentTarget.classList.remove('drop-before')}
+      onDrop={(e) => {
+        e.currentTarget.classList.remove('drop-before');
+        const id = e.dataTransfer.getData(DRAG_TYPE);
+        if (!id || id === s.id) return;
+        e.preventDefault();
+        e.stopPropagation();
+        // dropped on a session: into its part, just before it
+        send({ type: 'session.move', id, projectId: s.projectId, beforeId: s.id });
+      }}
       title={`${AGENT_LABELS[s.agent]} · ${s.status}
 ${s.cwd}`}
     >
       <span className="caret" />
       <span className={`status-dot ${s.status}`} />
       <AgentIcon kind={s.agent} color={s.color} />
-      <span className="label">{displayTitle(s)}</span>
+      <span className="label" onDoubleClick={(e) => { e.stopPropagation(); void renameSession(s.id); }}>{displayTitle(s)}</span>
       {s.role !== 'player' && <span className={`role-tag ${s.role}`}>{roleLabel(s)}</span>}
       {folderName && <span className="muted tree-session-folder">{folderName}</span>}
+      <button
+        className="icon-btn hover-act"
+        title="Rename (F2, or double-click the name)"
+        onClick={(e) => {
+          e.stopPropagation();
+          void renameSession(s.id);
+        }}
+      >
+        ✎
+      </button>
       <button
         className="icon-btn hover-act"
         title="Remove Session (Delete)"

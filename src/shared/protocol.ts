@@ -139,6 +139,8 @@ export interface Session {
   h: number;
   cols: number;
   rows: number;
+  /** its place among its part's sessions (tree order, Ground order); unset = by creation time */
+  order?: number;
 }
 
 export interface UsageInfo {
@@ -199,6 +201,7 @@ export type ClientMessage =
   | { type: 'project.close'; id: string }
   | { type: 'project.open'; id: string }
   | { type: 'project.setColor'; id: string; color: string }
+  | { type: 'project.rename'; id: string; name: string }
   /** Tasks: mark one of the manager's orders (its directive record id) done, or open again */
   | { type: 'order.done'; id: string; done: boolean }
   /** save a project to a file (the daemon answers this client with project.exported) / open a saved one */
@@ -208,6 +211,8 @@ export type ClientMessage =
   | { type: 'claude.sessions.list'; path: string }
   /** a message from the user for a session that is not running: it is started (resumed) and gets it when ready */
   | { type: 'session.message'; id: string; text: string }
+  /** drag and drop in the tree: into a project / part (another part moves it there), before another session */
+  | { type: 'session.move'; id: string; projectId: string; beforeId?: string }
   /** store an image (base64) for an order / message; answered with attachment.saved (same ref) */
   | { type: 'attachment.save'; ref: string; name: string; data: string }
   /**
@@ -224,7 +229,7 @@ export type ClientMessage =
   | { type: 'head.create'; projectId?: string }      // one head coach per top-level project
   | { type: 'coach.create'; projectId: string; agent?: 'claude' | 'codex' | 'gemini' } // one coach per project; default claude
   | { type: 'session.setRole'; id: string; role: 'coach' | 'player' } // player ⇄ playing coach
-  | { type: 'team.order'; target: TeamOrderTarget; text: string }      // the user's order (Orders panel)
+  | { type: 'team.order'; target: TeamOrderTarget; text: string; task?: boolean }      // the user's order; task: added as a task (Tasks › Add Task)
   | { type: 'routine.save'; routine: RoutineInput }   // create (no id) or update
   | { type: 'routine.delete'; id: string }
   | { type: 'routine.run'; id: string }               // run now (counts as a run)
@@ -259,9 +264,9 @@ export interface FsEntry {
 }
 
 export type ServerMessage =
-  | { type: 'welcome'; daemonPid: number; version: string; projects: Project[]; sessions: Session[]; inbox: InboxItem[]; usage: UsageInfo[]; agents: AgentDef[]; routines: Routine[]; doneOrders: Record<string, number> }
-  /** the manager's orders marked done (order record id → when), for the Tasks list */
-  | { type: 'orders.done'; done: Record<string, number> }
+  | { type: 'welcome'; daemonPid: number; version: string; projects: Project[]; sessions: Session[]; inbox: InboxItem[]; usage: UsageInfo[]; agents: AgentDef[]; routines: Routine[]; doneOrders: Record<string, number>; taskOrders: string[] }
+  /** Tasks: the manager's orders marked done (order record id → when) and the ones added as tasks explicitly */
+  | { type: 'orders.done'; done: Record<string, number>; tasks: string[] }
   | { type: 'routines'; routines: Routine[] }
   /** answer to project.export: the .agento file contents */
   | { type: 'project.exported'; name: string; data: string }

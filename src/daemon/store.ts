@@ -57,6 +57,7 @@ interface SessionRow {
   command: string | null;
   args: string | null;
   role: string | null;
+  sort_order: number | null;
 }
 interface InboxRow {
   id: string;
@@ -119,6 +120,10 @@ CREATE TABLE IF NOT EXISTS inbox (
   read INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_inbox_session ON inbox(session_id, created_at);
+CREATE TABLE IF NOT EXISTS order_task (
+  id TEXT PRIMARY KEY,
+  created_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS order_done (
   id TEXT PRIMARY KEY,
   done_at INTEGER NOT NULL
@@ -158,6 +163,7 @@ function rowToSession(r: SessionRow): StoredSession {
     rows: r.rows
   };
   if (r.color != null) s.color = r.color;
+  if (r.sort_order != null) s.order = r.sort_order;
   if (r.pid != null) s.pid = r.pid;
   if (r.resume_id != null) s.resumeId = r.resume_id;
   if (r.exit_code != null) s.exitCode = r.exit_code;
@@ -220,6 +226,7 @@ export class Store {
   /** Columns added after the first release. */
   private migrate(): void {
     const cols = new Set((this.db.prepare('PRAGMA table_info(sessions)').all() as { name: string }[]).map((c) => c.name));
+    if (!cols.has('sort_order')) this.db.exec('ALTER TABLE sessions ADD COLUMN sort_order REAL');
     if (!cols.has('role')) this.db.exec("ALTER TABLE sessions ADD COLUMN role TEXT NOT NULL DEFAULT 'player'");
     const inboxCols = new Set((this.db.prepare('PRAGMA table_info(inbox)').all() as { name: string }[]).map((c) => c.name));
     if (!inboxCols.has('from_id')) this.db.exec('ALTER TABLE inbox ADD COLUMN from_id TEXT');
@@ -287,6 +294,10 @@ export class Store {
   }
 
   /** Deletes the project and its parts. */
+  renameProject(id: string, name: string): void {
+    this.db.prepare('UPDATE projects SET name = ? WHERE id = ?').run(name, id);
+  }
+
   deleteProject(id: string): void {
     this.db.prepare('DELETE FROM projects WHERE parent_id = ?').run(id);
     this.db.prepare('DELETE FROM projects WHERE id = ?').run(id);
@@ -313,6 +324,15 @@ export class Store {
   listDoneOrders(): Record<string, number> {
     const rows = this.db.prepare('SELECT id, done_at FROM order_done').all() as { id: string; done_at: number }[];
     return Object.fromEntries(rows.map((r) => [r.id, r.done_at]));
+  }
+
+  /** The manager's orders added as tasks explicitly (Tasks › Add Task), by order record id. */
+  listTaskOrders(): string[] {
+    return (this.db.prepare('SELECT id FROM order_task').all() as { id: string }[]).map((r) => r.id);
+  }
+
+  markTaskOrder(id: string): void {
+    this.db.prepare('INSERT OR IGNORE INTO order_task (id, created_at) VALUES (?, ?)').run(id, Date.now());
   }
 
   setOrderDone(id: string, done: boolean): void {
@@ -376,15 +396,15 @@ export class Store {
     this.db
       .prepare(
         `INSERT INTO sessions (id, project_id, folder_id, cwd, agent, title, color, status, pid, resume_id,
-           created_at, updated_at, exit_code, x, y, w, h, cols, rows, command, args, role)
+           created_at, updated_at, exit_code, x, y, w, h, cols, rows, command, args, role, sort_order)
          VALUES (@id, @project_id, @folder_id, @cwd, @agent, @title, @color, @status, @pid, @resume_id,
-           @created_at, @updated_at, @exit_code, @x, @y, @w, @h, @cols, @rows, @command, @args, @role)
+           @created_at, @updated_at, @exit_code, @x, @y, @w, @h, @cols, @rows, @command, @args, @role, @sort_order)
          ON CONFLICT(id) DO UPDATE SET
            project_id=excluded.project_id, folder_id=excluded.folder_id, cwd=excluded.cwd, agent=excluded.agent,
            title=excluded.title, color=excluded.color, status=excluded.status, pid=excluded.pid,
            resume_id=excluded.resume_id, updated_at=excluded.updated_at, exit_code=excluded.exit_code,
            x=excluded.x, y=excluded.y, w=excluded.w, h=excluded.h, cols=excluded.cols, rows=excluded.rows,
-           command=excluded.command, args=excluded.args, role=excluded.role`
+           command=excluded.command, args=excluded.args, role=excluded.role, sort_order=excluded.sort_order`
       )
       .run({
         id: s.id,
@@ -408,7 +428,8 @@ export class Store {
         rows: s.rows,
         command: s.command ?? null,
         args: s.args ? JSON.stringify(s.args) : null,
-        role: s.role
+        role: s.role,
+        sort_order: s.order ?? null
       });
   }
 

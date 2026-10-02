@@ -121,10 +121,28 @@ export function removeSession(id: string): void {
   }
 }
 
+/** Rename a session from a prompt (works without its card on the Ground, e.g. in a collapsed group). */
+export async function renameSession(id: string): Promise<void> {
+  const s = useStore.getState().sessions.get(id);
+  if (!s) return;
+  const name = await askText('Rename session', { initial: s.title, placeholder: 'Session name' });
+  if (name && name.trim() && name.trim() !== s.title) send({ type: 'session.update', id, patch: { title: name.trim() } });
+}
+
+/** Rename a project or a part. */
+export async function renameProject(id: string): Promise<void> {
+  const p = useStore.getState().projects.find((x) => x.id === id);
+  if (!p) return;
+  const name = await askText(p.parentId ? 'Rename part' : 'Rename project', { initial: p.name, placeholder: 'Name' });
+  if (name && name.trim() && name.trim() !== p.name) send({ type: 'project.rename', id, name: name.trim() });
+}
+
 export function renameSelected(): void {
   const s = selected();
   if (!s) return;
-  window.dispatchEvent(new CustomEvent('asm:rename', { detail: { sessionId: s.id } }));
+  // a card on screen edits its title in place; without one (a collapsed group, another view) ask instead
+  if (document.querySelector(`[data-session-card="${s.id}"]`)) window.dispatchEvent(new CustomEvent('asm:rename', { detail: { sessionId: s.id } }));
+  else void renameSession(s.id);
 }
 
 export function exportSession(id: string): void {
