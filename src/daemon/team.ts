@@ -23,12 +23,42 @@ import { attachmentsDir, dataDir, ensureDir } from './paths';
 import { TranscriptParser, findTranscript, readTranscriptLines } from './transcript';
 import { log } from './log';
 import { arrangeTeam } from '@shared/layout';
+import { plainTerminalLines } from '@shared/plaintext';
 
 export const MCP_SERVER_NAME = 'agento';
 const MAX_BODY = 1024 * 1024;
 const MAX_WAIT_S = 600;
 /** Team traffic is recorded in full (the Log tab shows it) up to this length. */
 const LOG_TEXT_MAX = 4000;
+
+/**
+ * Token economy for the coordinators (head coaches, coaches — Claude): they split orders and review reports, so
+ * - a lighter model and effort (env AGENTO_COACH_MODEL, default "sonnet"; AGENTO_COACH_EFFORT, default "medium";
+ *   empty = the CLI's default),
+ * - no editing tools (Edit/Write/MultiEdit/NotebookEdit): the work and its output belong in players' contexts,
+ * - auto-compact at AGENTO_COACH_COMPACT_PCT % of the context window (default 60; empty = the CLI's default).
+ * Players keep the CLI defaults. Applies at the next start/resume of a session.
+ */
+const envOr = (k: string, d: string): string => (process.env[k] !== undefined ? process.env[k]!.trim() : d);
+const COORDINATOR_MODEL = envOr('AGENTO_COACH_MODEL', 'sonnet');
+const COORDINATOR_EFFORT = envOr('AGENTO_COACH_EFFORT', 'medium');
+const COORDINATOR_COMPACT_PCT = envOr('AGENTO_COACH_COMPACT_PCT', '60');
+const COORDINATOR_ARGS = (): string[] => [
+  ...(COORDINATOR_MODEL ? ['--model', COORDINATOR_MODEL] : []),
+  ...(COORDINATOR_EFFORT ? ['--effort', COORDINATOR_EFFORT] : []),
+  '--disallowedTools', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit'
+];
+
+/** How a coordinator keeps its context (and so every later call) small — in the head coach and coach instructions. */
+const LEAN_CONTEXT = `## Keep your context small
+
+Everything you read stays in your conversation and is read again on every later call, so:
+- Do not build, test, or run long commands yourself — have a player do it and report the result. If you must run one,
+  keep its output short (\`| tail -n 40\`, \`--quiet\`).
+- Do not read whole large files, images or PDFs; ask a player for a summary or read only the lines you need.
+- \`read_session\` with a small \`max_entries\` (5–10) is usually enough; the "[AgentO] … finished" message already
+  carries the last reply.
+- Editing tools are switched off for you: players change files.`;
 /** Per-call tool timeout given to the CLIs: longer than the longest wait_for_sessions. */
 const TOOL_TIMEOUT_S = MAX_WAIT_S + 60;
 /** Codex reads the bearer token for the MCP endpoint from this env var (set per launch). */
@@ -103,16 +133,9 @@ function codexSandboxChosen(): boolean {
   }
 }
 
+/** Terminal output as plain text: cursor moves become spacing (Claude Code's TUI positions words with CSI n G/C). */
 function plainTerminal(raw: string): string {
-  return raw
-    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
-    .replace(/\x1b[@-Z\\-_]/g, '')
-    .split('\n')
-    .map((l) => {
-      const parts = l.split('\r');
-      return parts[parts.length - 1] || parts.find(Boolean) || '';
-    })
+  return plainTerminalLines(raw)
     .filter((l, i, a) => l.trim() !== '' || (i > 0 && a[i - 1]?.trim() !== ''))
     .join('\n');
 }
@@ -165,7 +188,15 @@ function headMd(project: Project | undefined, projects: Project[]): string {
     ? `You are the **head coach** (PM) of the project "${project.name}" (id ${project.id}). Its parts:
 
 ${parts || '- (no parts yet)'}`
-    : 'You are the **head coach** of the whole team (every project).';
+    : `You are the **head coach of the whole team** — the one head coach that belongs to no project. Orders the manager
+gives without picking a project come to you:
+
+- Decide which project the order is about (\`list_projects\`, \`list_sessions\`, and \`read_session\` on the project head
+  coaches if needed) and \`send_to_session\` it to that project's head coach — or to several, each with its own part.
+- If it fits no existing project, \`create_project\` (name, optional folders, brief): the new project gets its own
+  head coach, which receives your brief as its first order.
+- A project without a head coach: send to its coach or first player (\`list_sessions\` shows roles).
+- You coordinate; you do not implement. When the projects report back, \`report_up\` the joined result to the manager.`;
   return `${GENERATED_MARK}
 # Role: Head Coach${project ? ` — ${project.name}` : ''}
 
@@ -183,9 +214,11 @@ ${scope}
   Review it (\`read_session\`), decide the next step, and \`report_up\` to the manager when an order is done or blocked.
 - Questions you cannot answer yourself go to the manager with \`report_up\`.
 
+${LEAN_CONTEXT}
+
 ## Tools (MCP server "${MCP_SERVER_NAME}")
 
-list_projects · list_sessions · read_session · send_to_session · create_session · wait_for_sessions ·
+${project ? '' : 'create_project · '}list_projects · list_sessions · read_session · send_to_session · create_session · wait_for_sessions ·
 interrupt_session · resume_session · report_up
 `;
 }
@@ -208,6 +241,8 @@ You are the **coach** of the project "${project.name}" (id ${project.id}).
 - When a player finishes what you sent, you get an "[AgentO] … finished" message with its last reply — no need to poll.
   Review, assign the next task, and \`report_up\` when the order is done or blocked.
 - Players may ask you questions; answer them with \`send_to_session\`.
+
+${LEAN_CONTEXT}
 
 ## Project folders
 
@@ -247,6 +282,10 @@ export class Team {
   onDelivered: (sessionId: string, text: string) => void = () => {};
   /** called after the project / part tree changed (a head coach organizing its project) */
   onProjects: () => void = () => {};
+  /** starts a project the way Orders › New project does (project, folders, head coach, brief) — wired by the daemon */
+  startProject: (name: string, folders: string[], brief: string, plan: boolean) => Session = () => {
+    throw new Error('startProject is not wired');
+  };
   /** who gave each session its latest directive (session id or 'user') — report_up goes back there */
   private director = new Map<string, string>();
 
@@ -314,7 +353,8 @@ export class Team {
   /* ---------- lookups ---------- */
 
   private all(): StoredSession[] {
-    return this.sessions.list().map((s) => this.sessions.get(s.id)!);
+    // was list() (a public copy of every session) mapped back to the stored ones — on every scope check and routing step
+    return this.sessions.stored();
   }
 
   /** Top-level project of a project or part ('' — the team-wide head coach — stays ''). */
@@ -543,6 +583,8 @@ export class Team {
    */
   launchEnv(s: StoredSession): Record<string, string> {
     if (s.agent === 'codex') return { [TOKEN_ENV]: this.conn.token };
+    // coordinators compact their conversation early: a long context is re-read on every call
+    if (s.agent === 'claude' && s.role !== 'player' && COORDINATOR_COMPACT_PCT) return { CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: COORDINATOR_COMPACT_PCT };
     if (s.agent === 'gemini' && s.role !== 'player' && !s.folderId) return { GEMINI_CLI_TRUST_WORKSPACE: 'true' };
     return {};
   }
@@ -609,6 +651,7 @@ export class Team {
     // attached images arrive as paths in this folder: readable without a permission prompt
     extras.push('--add-dir', attachmentsDir());
     extras.push('--mcp-config', file, '--allowedTools', `mcp__${MCP_SERVER_NAME}`);
+    if (s.role !== 'player') extras.push(...COORDINATOR_ARGS());
     return extras;
   }
 
@@ -851,14 +894,25 @@ export class Team {
       if (closed(target.projectId)) throw new Error('That project is closed — open it first');
       recipients.push(...this.recipientsFor(target.projectId));
       if (recipients.length === 0) throw new Error('That project has no head coach, coach or players yet');
+    } else if (target.kind === 'projects') {
+      const open = [...new Set(target.projectIds)].filter((id) => !closed(id));
+      if (open.length === 0) throw new Error('Those projects are closed — open them first');
+      for (const id of open) recipients.push(...this.recipientsFor(id));
+      if (recipients.length === 0) throw new Error('Those projects have no head coach, coach or players yet');
     } else {
       const global = this.all().find((s) => s.role === 'head' && s.projectId === '');
       if (global) recipients.push(global);
       else for (const p of this.store.listProjects().filter((x) => !x.parentId && !x.closed)) recipients.push(...this.recipientsFor(p.id));
       if (recipients.length === 0) throw new Error('There is no head coach, coach or player to receive the order');
     }
+    const projectName = (id: string): string => this.store.listProjects().find((p) => p.id === id)?.name ?? id;
     for (const r of recipients) {
       let text = `[Order from ${USER}${via ? ` — ${via}` : ''}]\n${message.trim()}`;
+      if (target.kind === 'projects') {
+        // the same order went to the other projects: each works on its own side; the manager joins the reports
+        const others = [...new Set(target.projectIds)].filter((id) => id !== r.projectId && !closed(id)).map(projectName);
+        if (others.length) text += `\n\n(The same order also went to: ${others.join(', ')}. Handle your project's side of it and report_up as usual.)`;
+      }
       if (r.role === 'player' && target.kind !== 'session') {
         text += '\n\n(You are leading this order for your project: share the work with your teammates — list_sessions, send_to_session.)';
       }
@@ -918,6 +972,41 @@ export class Team {
         for (const f of folders) this.store.addFolder(part.id, f.path, path.basename(f.path) || f.path, f.autoTrust);
         this.onProjects();
         return JSON.stringify({ part_id: part.id, name, created: true, folders: folders.map((f) => f.path) });
+      }
+    },
+    {
+      name: 'create_project',
+      description:
+        "Team head coach only (the head coach that belongs to no project). Start a new project for an order that fits none of the existing ones: " +
+        'the project, its folders (`folders` — existing paths; none: a new folder under ~/AgentO Projects/<name>), and its own head ' +
+        'coach, which gets `brief` as its first order (what to build, how to proceed). With `plan` the new head coach reports its ' +
+        'team and plan to the manager first and waits for the go. Returns the project and head coach ids. For an order that ' +
+        'belongs to an existing project, send_to_session that project\'s head coach instead (list_projects, list_sessions).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          folders: { type: 'array', items: { type: 'string' }, description: 'Optional existing folder paths' },
+          brief: { type: 'string', description: 'The first order for the new head coach' },
+          plan: { type: 'boolean', description: 'Report the plan first and wait for the go (default true)' }
+        },
+        required: ['name', 'brief']
+      },
+      roles: ['head'],
+      run: (caller, args) => {
+        if (caller.projectId) throw new ToolError('Only the team head coach starts projects; you lead one project. Ask the manager with report_up.');
+        const name = str(args['name']).trim();
+        const brief = str(args['brief']).trim();
+        if (!name || !brief) throw new ToolError('Give the project a name and a brief');
+        const folders = Array.isArray(args['folders']) ? (args['folders'] as unknown[]).map(str).filter(Boolean) : [];
+        let head: Session;
+        try {
+          head = this.startProject(name, folders, brief, args['plan'] !== false);
+        } catch (e) {
+          throw new ToolError(e instanceof Error ? e.message : String(e));
+        }
+        const project = this.store.listProjects().find((p) => !p.parentId && p.name === name);
+        return JSON.stringify({ project_id: project?.id ?? '', name, head_coach_id: head.id, head_coach: head.title, folders: project?.folders.map((f) => f.path) ?? [] });
       }
     },
     {
@@ -1021,7 +1110,7 @@ export class Team {
         type: 'object',
         properties: {
           session_id: { type: 'string' },
-          max_entries: { type: 'number', description: 'Conversation entries to return (default 20)' },
+          max_entries: { type: 'number', description: 'Conversation entries to return (default 10; keep it small — it all stays in your context)' },
           source: { type: 'string', enum: ['auto', 'chat', 'terminal'], description: 'Default auto' }
         },
         required: ['session_id']
@@ -1030,7 +1119,7 @@ export class Team {
       run: (caller, args) => {
         const t = this.target(caller, args);
         const source = str(args['source']) || 'auto';
-        const max = Math.max(1, Math.min(200, Math.floor(num(args['max_entries'], 20))));
+        const max = Math.max(1, Math.min(200, Math.floor(num(args['max_entries'], 10))));
         const head = `"${t.title}" — ${ROLE_NAME[t.role]}, status ${t.status}${this.sessions.isLive(t.id) ? '' : ' (not running)'}`;
         if (source !== 'terminal') {
           const entries = this.chat(t);

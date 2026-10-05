@@ -216,7 +216,7 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .status-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
 /* Live states move, finished states stay still: working = ring pulse, starting = quick blink,
    waiting = slow on/off (needs attention), error = blink. done / hibernated are static. */
-.status-dot.working { background: var(--ok); --dot: var(--ok); animation: dot-ring 1.1s ease-out infinite; }
+.status-dot.working { background: var(--ok); --dot: var(--ok); animation: dot-ring 1.1s ease-out infinite, dot-beat 1.1s ease-in-out infinite; }
 .status-dot.starting { background: var(--accent); animation: dot-blink 0.6s steps(2, jump-none) infinite alternate; }
 .status-dot.waiting { background: var(--warn); animation: dot-fade 1.6s ease-in-out infinite; }
 .status-dot.error { background: var(--err); animation: dot-blink 1s steps(2, jump-none) infinite alternate; }
@@ -227,6 +227,8 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
   0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--dot) 70%, transparent); }
   100% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--dot) 0%, transparent); }
 }
+/* the ring (box-shadow) is clipped where the row has overflow: hidden (tree, tabs, badges), so the dot itself beats too */
+@keyframes dot-beat { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(0.7); opacity: 0.55; } }
 @keyframes dot-blink { from { opacity: 1; } to { opacity: 0.2; } }
 @keyframes dot-fade { 0%, 100% { opacity: 1; } 50% { opacity: 0.15; } }
 @media (prefers-reduced-motion: reduce) {
@@ -397,7 +399,7 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .zoom-ctl button:hover { color: var(--text); background: var(--panel2); }
 .zoom-ctl .pct { width: 48px; text-align: center; font-size: 11px; color: var(--text); }
 .minimap {
-  position: absolute; z-index: 20; left: 12px; top: 12px; box-shadow: var(--shadow-sm); width: 160px; height: 100px;
+  position: absolute; z-index: 20; left: 12px; bottom: 12px; box-shadow: var(--shadow-sm); width: 160px; height: 100px;
   background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--border); border-radius: 5px; overflow: hidden;
 }
 .minimap .mm-rect { position: absolute; border-radius: 1px; opacity: 0.8; }
@@ -611,6 +613,25 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .attach-btn { flex: none; align-self: flex-end; }
 /* order card (Orders › My Orders and the Log): status · project, the order, ↳ reports back to the manager */
 .order-head { display: flex; align-items: center; gap: 6px; }
+/* progress of an order: pieces of work handed down, how many came back, who is still on it */
+.order-progress { display: flex; flex-direction: column; gap: 3px; font-size: 11px; }
+.order-progress-row { display: flex; align-items: center; gap: 6px; width: 100%; padding: 2px 4px; border-radius: 4px; color: var(--text); text-align: left; }
+.order-progress-row:hover { background: var(--panel2); }
+.order-progress .bar { flex: none; width: 90px; height: 6px; border-radius: 3px; background: var(--panel2); border: 1px solid var(--border); overflow: hidden; }
+.order-progress .bar > span { display: block; height: 100%; background: var(--accent); transition: width 0.4s ease; }
+.order-progress.complete .bar > span { background: var(--ok); }
+.order-progress .n { font-weight: 600; }
+.order-progress .working { color: var(--accent); }
+.order-progress .caret { color: var(--muted); width: 10px; }
+.order-work { list-style: none; margin: 0 0 0 4px; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.order-work .work { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.order-work .team-chip { cursor: pointer; }
+.order-work .work-task { flex: 1 1 auto; min-width: 60px; color: var(--muted); }
+.order-work .work-state { flex: none; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; color: var(--muted); }
+.order-work .work-state.done { color: var(--ok); } .order-work .work-state.working { color: var(--accent); }
+.order-work .work-state.waiting { color: var(--warn); } .order-work .work-state.error { color: var(--err); }
+.order-work .work-activity { flex: 1 1 40%; min-width: 0; display: inline-flex; align-items: baseline; gap: 2px; color: var(--text); overflow: hidden; }
+.order-work .work-activity .ellipsis { min-width: 0; }
 .order-reports { display: flex; flex-direction: column; gap: 4px; margin-left: 4px; }
 .order-report { display: flex; align-items: flex-start; gap: 4px; }
 .order-report::before { content: '↳'; color: var(--muted); font-size: 12px; line-height: 26px; flex: none; }
@@ -634,6 +655,14 @@ button.tree-pc:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, t
 .new-task-to .project-tag.on { border-color: var(--pc); }
 .new-task-to .project-tag.all { color: var(--text); background: var(--panel2); }
 .new-task-to .project-tag.all.on { border-color: var(--text); }
+/* a project with open work: the background fills left to right with the share of pieces done; a dot while someone works */
+.new-task-to .project-tag { display: inline-flex; align-items: center; gap: 4px; }
+.new-task-to .project-tag .ellipsis { min-width: 0; }
+.new-task-to .project-tag.prog { background: linear-gradient(90deg, color-mix(in srgb, var(--pc) 40%, transparent) var(--pct, 0%), color-mix(in srgb, var(--pc) 13%, transparent) var(--pct, 0%)); }
+/* the dot keeps the status colors (green pulse = working, amber fade = waiting, red blink = error) so states tell apart */
+.new-task-to .project-tag .status-dot { width: 6px; height: 6px; }
+/* Team | All + projects | ＋ New project */
+.new-task-to .chip-sep { flex: none; align-self: stretch; width: 1px; margin: 1px 3px; background: var(--border); }
 .task-follow { display: flex; gap: 6px; }
 .task-follow input { flex: 1; min-width: 0; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-size: 12px; }
 .task-filters { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
@@ -844,3 +873,57 @@ button.tree-pc:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, t
 .layout-toggle { width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border-radius: 4px; color: var(--muted); flex: none; }
 .layout-toggle:hover { background: var(--panel2); color: var(--text); }
 .layout-toggle.on { color: var(--text); }
+
+/* ---------- Manager › Token Usage ---------- */
+.sidebar-manager .manager-usage { margin-left: 2px; color: var(--muted); }
+.sidebar-manager .manager-usage:hover { color: var(--text); }
+.dialog.usage-dialog { position: relative; width: min(1280px, 96vw); max-height: 90vh; padding: 14px 16px; gap: 10px; }
+.usage-dialog .usage-head { padding-right: 32px; }
+.usage-dialog .usage-close { position: absolute; top: 10px; right: 10px; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; }
+.usage-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.usage-head h3 { margin-right: 6px; }
+.usage-head .seg, .usage-table-head .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.usage-head .seg button, .usage-table-head .seg button { font-size: 11.5px; padding: 3px 10px; color: var(--muted); border-right: 1px solid var(--border); }
+.usage-head .seg button:last-child, .usage-table-head .seg button:last-child { border-right: none; }
+.usage-head .seg button.on, .usage-table-head .seg button.on { background: var(--panel2); color: var(--text); font-weight: 600; }
+.usage-outside { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }
+.usage-body { overflow: auto; display: flex; flex-direction: column; gap: 16px; padding-right: 4px; }
+.usage-body section { display: flex; flex-direction: column; gap: 6px; }
+.usage-body h4 { margin: 0; font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+.usage-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.usage-tile { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--panel); }
+.usage-tile .label { font-size: 11px; color: var(--muted); }
+.usage-tile .value { font-size: 22px; font-weight: 650; color: var(--text); line-height: 1.25; font-variant-numeric: tabular-nums; }
+.usage-tile .sub { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.usage-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11.5px; color: var(--text); }
+.usage-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.usage-legend i, .usage-tip i, .usage-table td.name i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; flex: none; }
+.usage-chart { position: relative; }
+.usage-chart svg { display: block; overflow: visible; }
+.usage-chart .grid { stroke: var(--border); stroke-width: 1; }
+.usage-chart .axis { fill: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.usage-chart .seg-rect { stroke: var(--panel); stroke-width: 1; }
+.usage-chart .hit { fill: transparent; }
+.usage-chart .hit.on { fill: color-mix(in srgb, var(--text) 6%, transparent); }
+.usage-tip { position: absolute; top: 0; transform: translateX(-50%); pointer-events: none; z-index: 2; min-width: 180px; max-width: 320px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; box-shadow: var(--shadow-sm); padding: 6px 8px; font-size: 11.5px; }
+.usage-tip .t { font-weight: 600; margin-bottom: 3px; }
+.usage-tip .r { display: flex; align-items: center; gap: 6px; }
+.usage-tip.to-left { transform: translateX(calc(-100% - 12px)); }
+.usage-tip.to-right { transform: translateX(12px); }
+.usage-tip .r span { flex: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.usage-tip .r b { padding-left: 10px; }
+.usage-tip .r b { font-variant-numeric: tabular-nums; }
+.usage-table-head { display: flex; align-items: center; gap: 10px; }
+.usage-table-wrap { max-height: 280px; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
+.usage-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.usage-table th { position: sticky; top: 0; background: var(--panel2); color: var(--muted); font-weight: 600; text-align: left; padding: 5px 8px; white-space: nowrap; }
+.usage-table td { padding: 4px 8px; border-top: 1px solid var(--border); white-space: nowrap; }
+.usage-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.usage-table td.name { display: flex; align-items: center; gap: 6px; max-width: 380px; }
+.usage-table td.name .ellipsis { min-width: 0; }
+.usage-table td.ellipsis { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.usage-table .share { display: flex; align-items: center; gap: 6px; }
+.usage-table .share .bar { width: 80px; height: 6px; border-radius: 3px; background: var(--panel2); overflow: hidden; }
+.usage-table .share .bar > span { display: block; height: 100%; background: var(--accent); }
+.usage-tips { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; line-height: 1.45; }
+.usage-tips b { font-weight: 600; }

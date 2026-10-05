@@ -1,12 +1,13 @@
 import { create } from 'zustand';
-import type { AgentConnection, ClaudeSessionInfo, FsEntry, InboxItem, Project, Routine, ServerMessage, Session, SessionStatus, UsageInfo } from '@shared/protocol';
+import type { AgentConnection, ClaudeSessionInfo, FsEntry, InboxItem, Project, Routine, ServerMessage, Session, SessionStatus, UsageInfo, UsageReport } from '@shared/protocol';
 import type { AgentDefEx } from '@shared/extra';
 import { emitTerm } from '@/lib/termbus';
+import { appendBuffer, dropBuffer, setBuffer } from '@/lib/buffers';
 import { arrangeTeam } from '@shared/layout';
 import { closedSessionIds, openSessions } from '@/lib/closedIds';
 import { applyChatSnapshot, applyChatUpsert, dropChat } from '@/lib/chat';
 
-export const BUFFER_CAP = 200 * 1024;
+export { BUFFER_CAP } from '@/lib/buffers';
 export const ZOOM_MIN = 0.2;
 export const ZOOM_MAX = 2.5;
 export type ViewMode = 'board' | 'split' | 'tabs';
@@ -58,7 +59,6 @@ export interface AppState {
   daemonVersion: string;
   projects: Project[];
   sessions: Map<string, Session>;
-  buffers: Map<string, string>;
   inbox: InboxItem[];
   /** repeating orders (Orders tab) */
   routines: Routine[];
@@ -98,6 +98,8 @@ export interface AppState {
   importClaude: { projectId?: string; folderId?: string } | null;
   /** Agents › Connections dialog and the CLIs' install / sign-in state (null until the daemon answers) */
   agentsOpen: boolean;
+  usageOpen: boolean;
+  usageReport: UsageReport | null;
   agentConnections: AgentConnection[] | null;
   claudeSessions: { path: string; items: ClaudeSessionInfo[] } | null;
   /** the manager's orders marked done (Tasks): order record id → when */
@@ -143,6 +145,8 @@ export interface AppState {
   closeNewSession(): void;
   openImportClaude(at?: { projectId?: string; folderId?: string }): void;
   openAgents(): void;
+  openUsage(): void;
+  closeUsage(): void;
   closeAgents(): void;
   closeImportClaude(): void;
   setActiveTabSession(id: string | null): void;
@@ -151,14 +155,6 @@ export interface AppState {
 
 let idSeq = 0;
 const uid = (prefix = 'id'): string => `${prefix}_${Date.now().toString(36)}_${(idSeq++).toString(36)}`;
-
-function appendBuffer(buffers: Map<string, string>, id: string, data: string): Map<string, string> {
-  const next = new Map(buffers);
-  let b = (next.get(id) ?? '') + data;
-  if (b.length > BUFFER_CAP) b = b.slice(b.length - BUFFER_CAP);
-  next.set(id, b);
-  return next;
-}
 
 /** Per-viewer layout flags (panel visibility) kept in localStorage; always falls back to the default. */
 function readFlag(key: string, def: boolean): boolean {
@@ -209,7 +205,6 @@ export const useStore = create<AppState>((set, get) => ({
   daemonVersion: '',
   projects: [],
   sessions: new Map(),
-  buffers: new Map(),
   inbox: [],
   routines: [],
   delivered: {},
@@ -243,6 +238,8 @@ export const useStore = create<AppState>((set, get) => ({
   newSessionPreset: {},
   importClaude: null,
   agentsOpen: false,
+  usageOpen: false,
+  usageReport: null,
   agentConnections: null,
   claudeSessions: null,
   fileSearch: null,
@@ -312,24 +309,19 @@ export const useStore = create<AppState>((set, get) => ({
         dropChat(msg.id);
         const sessions = new Map(get().sessions);
         sessions.delete(msg.id);
-        const buffers = new Map(get().buffers);
-        buffers.delete(msg.id);
-        const patch: Partial<AppState> = { sessions, buffers };
+        dropBuffer(msg.id);
+        const patch: Partial<AppState> = { sessions };
         if (get().selectedId === msg.id) patch.selectedId = null;
         if (get().activeTabSessionId === msg.id) patch.activeTabSessionId = null;
         set(patch);
         break;
       }
       case 'session.data':
-        set({ buffers: appendBuffer(get().buffers, msg.id, msg.data) });
+        appendBuffer(msg.id, msg.data);
         emitTerm(msg.id, { kind: 'data', data: msg.data });
         break;
       case 'session.scrollback': {
-        const buffers = new Map(get().buffers);
-        let b = msg.data;
-        if (b.length > BUFFER_CAP) b = b.slice(b.length - BUFFER_CAP);
-        buffers.set(msg.id, b);
-        set({ buffers });
+        setBuffer(msg.id, msg.data);
         emitTerm(msg.id, { kind: 'scrollback', data: msg.data });
         break;
       }
@@ -338,6 +330,9 @@ export const useStore = create<AppState>((set, get) => ({
         break;
       case 'routines':
         set({ routines: msg.routines });
+        break;
+      case 'usage.report':
+        set({ usageReport: msg.report });
         break;
       case 'agents.status':
         set({ agentConnections: msg.items });
@@ -495,6 +490,8 @@ export const useStore = create<AppState>((set, get) => ({
   openImportClaude: (at) => set({ importClaude: at ?? {}, claudeSessions: null }),
   closeImportClaude: () => set({ importClaude: null }),
   openAgents: () => set({ agentsOpen: true }),
+  openUsage: () => set({ usageOpen: true }),
+  closeUsage: () => set({ usageOpen: false }),
   closeAgents: () => set({ agentsOpen: false }),
   setActiveTabSession: (id) => set({ activeTabSessionId: id }),
 

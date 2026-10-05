@@ -6,6 +6,8 @@ import { askText } from '@/lib/prompt';
 import { setThemePref } from '@/lib/theme';
 import { IS_PANELS, relay } from '@/lib/role';
 import { openSessions } from '@/lib/closedIds';
+import { kbd } from '@/lib/keys';
+import { getBuffer } from '@/lib/buffers';
 
 export interface CommandDef {
   id: string;
@@ -149,7 +151,7 @@ export function exportSession(id: string): void {
   const st = useStore.getState();
   const s = st.sessions.get(id);
   if (!s) return;
-  const buf = st.buffers.get(id) ?? '';
+  const buf = getBuffer(id) ?? '';
   const blob = new Blob([buf], { type: 'text/plain;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -240,7 +242,7 @@ export const COMMANDS: CommandDef[] = [
       if (p) send({ type: 'folder.add', projectId, path: p });
     });
   } },
-  { id: 'session.new', label: 'New Session…', shortcut: 'Ctrl+N', run: () => newSessionFor() },
+  { id: 'session.new', label: 'New Session…', shortcut: kbd('Ctrl+N'), run: () => newSessionFor() },
   { id: 'session.new-chat.codex', label: 'New Chat: ChatGPT (Codex)', run: () => send({ type: 'chat.new', agent: 'codex' }) },
   { id: 'session.new-chat.claude', label: 'New Chat: Claude', run: () => send({ type: 'chat.new', agent: 'claude' }) },
   { id: 'session.new.claude', label: `New Session: ${AGENT_LABELS.claude}`, run: () => newSessionFor('claude') },
@@ -265,16 +267,16 @@ export const COMMANDS: CommandDef[] = [
   { id: 'session.open-log', label: 'Open Session Log', run: withSelected((s) => exportSession(s.id)) },
   { id: 'terminal.clear', label: 'Clear Terminal', run: withSelected((s) => send({ type: 'session.input', id: s.id, data: '\x0c' })) },
   { id: 'terminal.find', label: 'Find in Terminal', run: withSelected((s) => focusTerminal(s.id)) },
-  { id: 'view.board', label: 'View: Ground', shortcut: 'Ctrl+1', run: () => useStore.getState().setViewMode('board') },
-  { id: 'view.split', label: 'View: Split', shortcut: 'Ctrl+2', run: () => useStore.getState().setViewMode('split') },
-  { id: 'view.tabs', label: 'View: Tabs', shortcut: 'Ctrl+3', run: () => useStore.getState().setViewMode('tabs') },
-  { id: 'view.zoom-in', label: 'Zoom In', shortcut: 'Ctrl+=', run: () => zoomBy(ZOOM_STEP) },
-  { id: 'view.zoom-out', label: 'Zoom Out', shortcut: 'Ctrl+-', run: () => zoomBy(1 / ZOOM_STEP) },
-  { id: 'view.zoom-reset', label: 'Reset Zoom', shortcut: 'Ctrl+0', run: () => useStore.getState().setZoom(1) },
+  { id: 'view.board', label: 'View: Ground', shortcut: kbd('Ctrl+1'), run: () => useStore.getState().setViewMode('board') },
+  { id: 'view.split', label: 'View: Split', shortcut: kbd('Ctrl+2'), run: () => useStore.getState().setViewMode('split') },
+  { id: 'view.tabs', label: 'View: Tabs', shortcut: kbd('Ctrl+3'), run: () => useStore.getState().setViewMode('tabs') },
+  { id: 'view.zoom-in', label: 'Zoom In', shortcut: kbd('Ctrl+='), run: () => zoomBy(ZOOM_STEP) },
+  { id: 'view.zoom-out', label: 'Zoom Out', shortcut: kbd('Ctrl+-'), run: () => zoomBy(1 / ZOOM_STEP) },
+  { id: 'view.zoom-reset', label: 'Reset Zoom', shortcut: kbd('Ctrl+0'), run: () => useStore.getState().setZoom(1) },
   { id: 'view.zoom-fit', label: 'Fit All', run: fitAll },
   { id: 'view.auto-arrange', label: 'Auto Arrange', run: autoArrange },
-  { id: 'view.sidebar', label: 'Toggle Sidebar', shortcut: 'Ctrl+B', run: () => useStore.getState().toggleSidebar() },
-  { id: 'view.right-panel', label: 'Toggle Right Panel', shortcut: 'Ctrl+Alt+B', run: () => useStore.getState().toggleRight() },
+  { id: 'view.sidebar', label: 'Toggle Sidebar', shortcut: kbd('Ctrl+B'), run: () => useStore.getState().toggleSidebar() },
+  { id: 'view.right-panel', label: 'Toggle Right Panel', shortcut: kbd('Ctrl+Alt+B'), run: () => useStore.getState().toggleRight() },
   { id: 'view.inbox', label: 'Show Inbox', run: () => useStore.getState().setActivity('inbox') },
   { id: 'view.orders', label: 'Orders (give the team an order)', run: () => {
     const st = useStore.getState();
@@ -282,7 +284,7 @@ export const COMMANDS: CommandDef[] = [
     if (!IS_PANELS && st.panelsDetached) relay({ kind: 'command', id: 'view.orders' });
     else st.setRightTab('orders');
   } },
-  { id: 'view.panels-window', label: 'Panels in Separate Window', shortcut: 'Ctrl+Shift+B', run: () => window.panels?.toggle() },
+  { id: 'view.panels-window', label: 'Panels in Separate Window', shortcut: kbd('Ctrl+Shift+B'), run: () => window.panels?.toggle() },
   { id: 'view.focus-mode', label: 'Focus Mode', shortcut: 'F11', run: () => {
     const st = useStore.getState();
     if (st.focusMode) st.setFocusMode(false);
@@ -292,12 +294,12 @@ export const COMMANDS: CommandDef[] = [
     if (document.fullscreenElement) void document.exitFullscreen();
     else void document.documentElement.requestFullscreen();
   } },
-  { id: 'go.palette', label: 'Command Palette', shortcut: 'Ctrl+Shift+P', run: () => useStore.getState().openPalette('command') },
-  { id: 'go.quick-open', label: 'Quick Open', shortcut: 'Ctrl+P', run: () => useStore.getState().openPalette('quick') },
+  { id: 'go.palette', label: 'Command Palette', shortcut: kbd('Ctrl+Shift+P'), run: () => useStore.getState().openPalette('command') },
+  { id: 'go.quick-open', label: 'Quick Open', shortcut: kbd('Ctrl+P'), run: () => useStore.getState().openPalette('quick') },
   { id: 'go.next-session', label: 'Next Session', run: () => cycleSession(1) },
   { id: 'go.prev-session', label: 'Previous Session', run: () => cycleSession(-1) },
-  { id: 'go.waiting-session', label: 'Go to Waiting Session', shortcut: 'Ctrl+Shift+W', run: gotoNextWaiting },
-  { id: 'go.next-waiting', label: 'Go to Waiting Session', shortcut: 'Ctrl+Shift+W', run: gotoNextWaiting },
+  { id: 'go.waiting-session', label: 'Go to Waiting Session', shortcut: kbd('Ctrl+Shift+W'), run: gotoNextWaiting },
+  { id: 'go.next-waiting', label: 'Go to Waiting Session', shortcut: kbd('Ctrl+Shift+W'), run: gotoNextWaiting },
   { id: 'agents.detect', label: 'Re-detect Agents', run: () => useStore.getState().openAgents() },
   { id: 'usage.refresh', label: 'Refresh Usage', run: () => send({ type: 'usage.refresh' }) },
   { id: 'app.settings', label: 'Settings', run: () => window.alert('Settings are not available yet.') },
@@ -313,7 +315,7 @@ export const COMMANDS: CommandDef[] = [
     window.alert(`AgentO\nDaemon version: ${st.daemonVersion || '-'} · PID ${st.daemonPid ?? '-'}\nConnection: ${st.connected ? 'connected' : 'disconnected'}`);
   } },
   { id: 'help.shortcuts', label: 'Show Keyboard Shortcuts', run: () => window.alert(
-    ['Ctrl+N  New session', 'Ctrl+B  Sidebar', 'Ctrl+1/2/3  Board/Split/Tabs', 'Ctrl+= / Ctrl+- / Ctrl+0  Zoom in/out/reset', 'Ctrl+P  Quick open', 'Ctrl+Shift+P  Commands', 'Ctrl+Shift+W  Waiting session', 'F2  Rename', 'F11  Focus mode', 'Esc  Close'].join('\n')
+    ['Ctrl+N  New session', 'Ctrl+B  Sidebar', 'Ctrl+1/2/3  Board/Split/Tabs', 'Ctrl+= / Ctrl+- / Ctrl+0  Zoom in/out/reset', 'Ctrl+P  Quick open', 'Ctrl+Shift+P  Commands', 'Ctrl+Shift+W  Waiting session', 'F2  Rename', 'F11  Focus mode', 'Esc  Close'].map(kbd).join('\n')
   ) }
 ];
 

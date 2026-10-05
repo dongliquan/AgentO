@@ -555,9 +555,10 @@ Windows 에서 Codex 는 npm 의 `codex.cmd` 를 거쳐 실행되어, 따옴표�
 <tr style="background:#ffffff"><td rowspan="3" valign="top"><b>소통</b></td><td><code>send_to_session</code></td><td>✓</td><td>✓</td><td>✓</td><td>대기열로 전달. 기본은 지시(끝나면 자동 보고), <code>directive=false</code> 면 단순 답변</td></tr>
 <tr style="background:#ffffff"><td><code>report_up</code></td><td>✓</td><td>✓</td><td>✓</td><td>마지막으로 지시한 쪽에 보고·질문 (3.3.3)</td></tr>
 <tr style="background:#ffffff"><td><code>wait_for_sessions</code></td><td>✓</td><td>✓</td><td>✓</td><td>대상이 쉴 때까지 대기 (기본 120초, 최대 600초). 자동 보고가 있어 보통은 필요 없음</td></tr>
-<tr style="background:#f8f9fa"><td rowspan="3" valign="top"><b>운영</b></td><td><code>create_session</code></td><td>✓</td><td>✓</td><td>—</td><td>프로젝트 폴더에 Claude 선수 생성, 첫 프롬프트를 주면 지시로 추적. 코치는 자기 프로젝트만</td></tr>
+<tr style="background:#f8f9fa"><td rowspan="4" valign="top"><b>운영</b></td><td><code>create_session</code></td><td>✓</td><td>✓</td><td>—</td><td>프로젝트 폴더에 Claude 선수 생성, 첫 프롬프트를 주면 지시로 추적. 코치는 자기 프로젝트만</td></tr>
 <tr style="background:#f8f9fa"><td><code>interrupt_session</code></td><td>✓</td><td>✓</td><td>—</td><td>작업 중단 — Claude 는 Esc, 그 외는 Ctrl+C</td></tr>
 <tr style="background:#f8f9fa"><td><code>resume_session</code></td><td>✓</td><td>✓</td><td>—</td><td>꺼진 세션을 다시 띄우고 입력 대기까지 최대 30초 기다림</td></tr>
+<tr style="background:#f8f9fa"><td><code>create_project</code></td><td>✓ 팀 전체 수석코치만</td><td>—</td><td>—</td><td>프로젝트 없이 내린 지시가 기존 프로젝트에 맞지 않을 때 새 프로젝트(폴더·수석코치) 생성, brief 를 첫 지시로 전달 (Orders › New project 와 같은 경로)</td></tr>
 </tbody>
 </table>
 
@@ -606,7 +607,7 @@ Windows 에서 Codex 는 npm 의 `codex.cmd` 를 거쳐 실행되어, 따옴표�
 |---|---|
 | `SessionRole` | `'head' \| 'coach' \| 'player'` |
 | `Session.role` | 필수 필드. 수석코치는 `projectId = ''`, 수석코치·전담 코치는 `folderId = ''` |
-| `TeamOrderTarget` | `{ kind: 'all' }` · `{ kind: 'project'; projectId }` · `{ kind: 'session'; sessionId }` |
+| `TeamOrderTarget` | `{ kind: 'all' }` · `{ kind: 'project'; projectId }` · `{ kind: 'projects'; projectIds }`(여러 프로젝트에 같은 지시, 각 수신자에게 다른 수신 프로젝트를 알림) · `{ kind: 'session'; sessionId }` |
 | `InboxItem.kind` | `'directive'`(지시·위임) · `'report'`(보고·질문·완료) 추가 |
 | `InboxItem.fromId` | 지시·보고를 보낸 세션 id 또는 `'user'` — Ground 연결선의 근거 |
 | `ClientMessage` | `head.create` · `coach.create { projectId, agent? }` · `session.setRole { id, role }` · `team.order { target, text }` |

@@ -15,6 +15,7 @@ import {
 } from './daemon-launcher';
 import type { FocusSessionEvent, PanelsRelay } from '@shared/extra';
 import type { MenuNode } from '@shared/protocol';
+import { fixPathFromLoginShell } from '@shared/loginpath';
 
 /** Windows AppUserModelId (taskbar grouping/icon). Declared before bootstrap() runs below. */
 const APP_ID = 'app.agento.desktop';
@@ -458,10 +459,17 @@ function registerIpc(): void {
 /* ---------- bootstrap ---------- */
 
 async function bootstrap(): Promise<void> {
+  // macOS: a Finder/Dock launch gets launchd's minimal PATH; the login shell's PATH is needed for `code` and the daemon's CLIs
+  fixPathFromLoginShell();
   if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
   registerToastIdentity();
 
   await app.whenReady();
+  // macOS dev run: the Dock shows Electron's own icon (BrowserWindow.icon is ignored there); the packaged .app has icon.icns
+  if (process.platform === 'darwin' && !app.isPackaged) {
+    const png = iconFile('png');
+    if (png) app.dock?.setIcon(png);
+  }
   registerIpc();
 
   try {

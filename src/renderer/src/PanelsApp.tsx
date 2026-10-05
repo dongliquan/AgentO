@@ -10,10 +10,11 @@ import { StatusBar } from '@/components/StatusBar';
 import { Palette } from '@/components/Palette';
 import { NewSessionDialog } from '@/components/NewSessionDialog';
 import { PromptDialog } from '@/components/PromptDialog';
+import { UsageDialog } from '@/components/UsageDialog';
 import { Splitter } from '@/components/Splitter';
 import logo from '@/assets/logo.png';
 
-const isMac = window.desktop?.platform === 'darwin';
+import { isMac, kbd } from '@/lib/keys';
 
 function handleKey(e: KeyboardEvent): void {
   const st = useStore.getState();
@@ -62,7 +63,7 @@ export function PanelsApp(): JSX.Element {
         <span className="panels-title">AgentO Panels</span>
         <span className="grow" />
         {!connected && <div className="conn">Daemon disconnected</div>}
-        <button className="btn sm ghost no-drag" title="Put the panels back into the main window (Ctrl+Shift+B)" onClick={() => window.panels.toggle()}>
+        <button className="btn sm ghost no-drag" title={kbd('Put the panels back into the main window (Ctrl+Shift+B)')} onClick={() => window.panels.toggle()}>
           Dock to Main Window
         </button>
       </div>
@@ -75,6 +76,7 @@ export function PanelsApp(): JSX.Element {
       {paletteOpen && <Palette />}
       {newSessionOpen && <NewSessionDialog />}
       <PromptDialog />
+      <UsageDialog />
     </div>
   );
 }

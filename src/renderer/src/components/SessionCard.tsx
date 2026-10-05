@@ -12,6 +12,7 @@ import { StatusBadge } from './StatusBadge';
 import { TerminalView } from './TerminalView';
 import { ChatView } from './ChatView';
 import { AgentIcon } from './AgentIcon';
+import { useBuffer } from '@/lib/buffers';
 
 export type CardLayout = 'board' | 'static' | 'fill';
 
@@ -215,7 +216,7 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
 }
 
 function Preview({ sessionId }: { sessionId: string }): JSX.Element {
-  const buf = useStore((st) => st.buffers.get(sessionId));
+  const buf = useBuffer(sessionId);
   const lines = useMemo(() => lastLines(buf ?? '', 6), [buf]);
   if (lines.length === 0) return <div className="card-preview empty">No output</div>;
   return <div className="card-preview">{lines.join('\n')}</div>;

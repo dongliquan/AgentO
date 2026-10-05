@@ -7,6 +7,7 @@ import { FileCard } from './FileCard';
 import { Minimap } from './Minimap';
 import { GroundLinks } from './GroundLinks';
 import { GroundGroups, useGroupLayout } from './GroundGroups';
+import { kbd } from '@/lib/keys';
 
 const GRID = 24;
 
@@ -183,14 +184,14 @@ export function Board(): JSX.Element {
         <div className="board-empty">
           <div style={{ fontSize: 15 }}>No sessions yet</div>
           <div style={{ fontSize: 12 }}>Start an agent session with + on a folder at left, or the button below.</div>
-          <button className="btn primary" onClick={() => newSessionFor()}>+ New Session (Ctrl+N)</button>
+          <button className="btn primary" onClick={() => newSessionFor()}>{kbd('+ New Session (Ctrl+N)')}</button>
         </div>
       )}
       <Minimap containerRef={ref} />
       <div className="zoom-ctl">
-        <button onClick={() => zoomBy(1 / 1.2)} title="Zoom Out (Ctrl+-)">−</button>
+        <button onClick={() => zoomBy(1 / 1.2)} title={kbd('Zoom Out (Ctrl+-)')}>−</button>
         <button className="pct" onClick={fitAll} title="Fit All (click)">{Math.round(zoom * 100)}%</button>
-        <button onClick={() => zoomBy(1.2)} title="Zoom In (Ctrl+=)">+</button>
+        <button onClick={() => zoomBy(1.2)} title={kbd('Zoom In (Ctrl+=)')}>+</button>
       </div>
     </div>
   );

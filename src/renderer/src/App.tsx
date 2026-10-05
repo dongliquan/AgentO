@@ -14,6 +14,7 @@ import { Palette } from '@/components/Palette';
 import { NewSessionDialog } from '@/components/NewSessionDialog';
 import { ImportClaudeDialog } from '@/components/ImportClaudeDialog';
 import { AgentsDialog } from '@/components/AgentsDialog';
+import { UsageDialog } from '@/components/UsageDialog';
 import { Toolbar } from '@/components/Toolbar';
 import { FocusView } from '@/components/FocusView';
 import { PromptDialog } from '@/components/PromptDialog';
@@ -171,6 +172,7 @@ export function App(): JSX.Element {
       {newSessionOpen && <NewSessionDialog />}
       {importOpen && <ImportClaudeDialog />}
       <AgentsDialog />
+      <UsageDialog />
       <PromptDialog />
     </div>
   );

@@ -3,11 +3,12 @@ import type { InboxItem } from '@shared/protocol';
 import { useStore } from '@/store';
 import { useNow } from '@/lib/hooks';
 import { matches, useHighlight } from '@/lib/search';
-import { useOpenInbox } from '@/lib/closed';
-import { buildThreads, count, descendants, orderStatus, prune, withManager, type LogNode, type OrderStatus } from '@/lib/threads';
+import { useOpenInbox, threadsOf } from '@/lib/closed';
+import { count, descendants, orderStatus, prune, withManager, type LogNode, type OrderStatus } from '@/lib/threads';
 import { TeamFeedItem } from './TeamFeedItem';
 import { pcStyle, projectColor } from '@/lib/format';
 import { SearchBox } from './SearchBox';
+import { OrderProgress } from './OrderProgress';
 
 const SHOWN = 5;
 
@@ -63,6 +64,7 @@ export function OrderCard({
         </div>
       )}
       <TeamFeedItem item={node.item} sessions={sessions} now={now} query={query} defaultOpen={latest} />
+      {mine && <OrderProgress node={node} open={latest} />}
       {!hideReports && reports.length > 0 && (
         <div className="order-reports">
           {reports.map((it) => (
@@ -92,7 +94,7 @@ export function MyOrders({ projectIds }: { projectIds?: Set<string> }): JSX.Elem
 
   const titleOf = (id?: string): string | undefined => (id === 'user' ? 'Manager (you)' : id ? sessions.get(id)?.title : undefined);
   const orders = useMemo(() => {
-    const mine = buildThreads(inbox)
+    const mine = threadsOf(inbox)
       .filter((t) => t.item.fromId === 'user')
       .filter((t) => !projectIds || projectIds.has(sessions.get(t.item.sessionId)?.projectId ?? ''))
       .reverse();

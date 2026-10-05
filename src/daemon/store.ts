@@ -213,6 +213,20 @@ function rowToInbox(r: InboxRow): InboxItem {
 
 export class Store {
   private db: Database.Database;
+  /** prepared statements by SQL text: better-sqlite3 compiles a statement on every prepare() */
+  private stmts = new Map<string, Database.Statement>();
+  /**
+   * listProjects() result, rebuilt only after a project or folder write. The team logic asks for it many times per
+   * event (scope checks, routing); callers treat the projects as read-only.
+   */
+  private projectsCache: Project[] | null = null;
+  private inboxInserts = 0;
+
+  private stmt(sql: string): Database.Statement {
+    let st = this.stmts.get(sql);
+    if (!st) this.stmts.set(sql, (st = this.db.prepare(sql)));
+    return st;
+  }
 
   constructor(file: string = dbPath()) {
     ensureDir(dataDir());
@@ -251,8 +265,14 @@ export class Store {
   /* ---------- projects ---------- */
 
   listProjects(): Project[] {
-    const projects = this.db.prepare('SELECT * FROM projects ORDER BY created_at').all() as ProjectRow[];
-    const folders = this.db.prepare('SELECT * FROM folders ORDER BY rowid').all() as FolderRow[];
+    if (!this.projectsCache) this.projectsCache = this.readProjects();
+    // a fresh array each call (callers filter/sort it); the project objects are shared and read-only
+    return this.projectsCache.slice();
+  }
+
+  private readProjects(): Project[] {
+    const projects = this.stmt('SELECT * FROM projects ORDER BY created_at').all() as ProjectRow[];
+    const folders = this.stmt('SELECT * FROM folders ORDER BY rowid').all() as FolderRow[];
     const byProject = new Map<string, Folder[]>();
     for (const f of folders) {
       const list = byProject.get(f.project_id) ?? [];
@@ -272,49 +292,54 @@ export class Store {
 
   /** The first project color no project uses yet (then they repeat, least used first). */
   private nextColor(): string {
-    const used = (this.db.prepare('SELECT color FROM projects WHERE parent_id IS NULL AND color IS NOT NULL').all() as { color: string }[]).map((r) => r.color);
+    const used = (this.stmt('SELECT color FROM projects WHERE parent_id IS NULL AND color IS NOT NULL').all() as { color: string }[]).map((r) => r.color);
     const count = (c: string): number => used.filter((u) => u === c).length;
     return [...PROJECT_COLORS].sort((a, b) => count(a) - count(b) || PROJECT_COLORS.indexOf(a) - PROJECT_COLORS.indexOf(b))[0]!;
   }
 
   setProjectColor(id: string, color: string): void {
-    this.db.prepare('UPDATE projects SET color = ? WHERE id = ? AND parent_id IS NULL').run(color, id);
+    this.projectsCache = null;
+    this.stmt('UPDATE projects SET color = ? WHERE id = ? AND parent_id IS NULL').run(color, id);
   }
 
   setProjectClosed(id: string, closed: boolean): void {
-    this.db.prepare('UPDATE projects SET closed = ? WHERE id = ?').run(closed ? 1 : 0, id);
+    this.projectsCache = null;
+    this.stmt('UPDATE projects SET closed = ? WHERE id = ?').run(closed ? 1 : 0, id);
   }
 
   /** parentId: create a part of that (top-level) project */
   createProject(name: string, parentId?: string): Project {
+    this.projectsCache = null;
     const color = parentId ? undefined : this.nextColor();
     const p: Project = { id: randomUUID(), name, createdAt: Date.now(), folders: [], ...(parentId ? { parentId } : {}), ...(color ? { color } : {}) };
-    this.db.prepare('INSERT INTO projects (id, name, created_at, parent_id, color) VALUES (?, ?, ?, ?, ?)').run(p.id, p.name, p.createdAt, parentId ?? null, color ?? null);
+    this.stmt('INSERT INTO projects (id, name, created_at, parent_id, color) VALUES (?, ?, ?, ?, ?)').run(p.id, p.name, p.createdAt, parentId ?? null, color ?? null);
     return p;
   }
 
   /** Deletes the project and its parts. */
   renameProject(id: string, name: string): void {
-    this.db.prepare('UPDATE projects SET name = ? WHERE id = ?').run(name, id);
+    this.projectsCache = null;
+    this.stmt('UPDATE projects SET name = ? WHERE id = ?').run(name, id);
   }
 
   deleteProject(id: string): void {
-    this.db.prepare('DELETE FROM projects WHERE parent_id = ?').run(id);
-    this.db.prepare('DELETE FROM projects WHERE id = ?').run(id);
+    this.projectsCache = null;
+    this.stmt('DELETE FROM projects WHERE parent_id = ?').run(id);
+    this.stmt('DELETE FROM projects WHERE id = ?').run(id);
   }
 
   /* ---------- folders ---------- */
 
   addFolder(projectId: string, folderPath: string, name: string, autoTrust = false): Folder {
+    this.projectsCache = null;
     const f: Folder = { id: randomUUID(), projectId, path: folderPath, name, ...(autoTrust ? { autoTrust } : {}) };
-    this.db
-      .prepare('INSERT INTO folders (id, project_id, path, name, auto_trust) VALUES (?, ?, ?, ?, ?)')
+    this.stmt('INSERT INTO folders (id, project_id, path, name, auto_trust) VALUES (?, ?, ?, ?, ?)')
       .run(f.id, f.projectId, f.path, f.name, autoTrust ? 1 : 0);
     return f;
   }
 
   getFolder(id: string): Folder | undefined {
-    const r = this.db.prepare('SELECT * FROM folders WHERE id = ?').get(id) as FolderRow | undefined;
+    const r = this.stmt('SELECT * FROM folders WHERE id = ?').get(id) as FolderRow | undefined;
     return r ? rowToFolder(r) : undefined;
   }
 
@@ -322,36 +347,35 @@ export class Store {
 
   /** The manager's orders marked done (Tasks), by order record id. */
   listDoneOrders(): Record<string, number> {
-    const rows = this.db.prepare('SELECT id, done_at FROM order_done').all() as { id: string; done_at: number }[];
+    const rows = this.stmt('SELECT id, done_at FROM order_done').all() as { id: string; done_at: number }[];
     return Object.fromEntries(rows.map((r) => [r.id, r.done_at]));
   }
 
   /** The manager's orders added as tasks explicitly (Tasks › Add Task), by order record id. */
   listTaskOrders(): string[] {
-    return (this.db.prepare('SELECT id FROM order_task').all() as { id: string }[]).map((r) => r.id);
+    return (this.stmt('SELECT id FROM order_task').all() as { id: string }[]).map((r) => r.id);
   }
 
   markTaskOrder(id: string): void {
-    this.db.prepare('INSERT OR IGNORE INTO order_task (id, created_at) VALUES (?, ?)').run(id, Date.now());
+    this.stmt('INSERT OR IGNORE INTO order_task (id, created_at) VALUES (?, ?)').run(id, Date.now());
   }
 
   setOrderDone(id: string, done: boolean): void {
-    if (done) this.db.prepare('INSERT OR REPLACE INTO order_done (id, done_at) VALUES (?, ?)').run(id, Date.now());
-    else this.db.prepare('DELETE FROM order_done WHERE id = ?').run(id);
+    if (done) this.stmt('INSERT OR REPLACE INTO order_done (id, done_at) VALUES (?, ?)').run(id, Date.now());
+    else this.stmt('DELETE FROM order_done WHERE id = ?').run(id);
   }
 
   listRoutines(): Routine[] {
-    return (this.db.prepare('SELECT * FROM routines ORDER BY created_at').all() as RoutineRow[]).map(rowToRoutine);
+    return (this.stmt('SELECT * FROM routines ORDER BY created_at').all() as RoutineRow[]).map(rowToRoutine);
   }
 
   getRoutine(id: string): Routine | undefined {
-    const r = this.db.prepare('SELECT * FROM routines WHERE id = ?').get(id) as RoutineRow | undefined;
+    const r = this.stmt('SELECT * FROM routines WHERE id = ?').get(id) as RoutineRow | undefined;
     return r ? rowToRoutine(r) : undefined;
   }
 
   saveRoutine(r: Routine): void {
-    this.db
-      .prepare(
+    this.stmt(
         `INSERT INTO routines (id, name, target, text, every_min, daily_at, enabled, next_at, runs, last_run_at, created_at)
          VALUES (@id, @name, @target, @text, @every_min, @daily_at, @enabled, @next_at, @runs, @last_run_at, @created_at)
          ON CONFLICT(id) DO UPDATE SET name=excluded.name, target=excluded.target, text=excluded.text,
@@ -374,27 +398,27 @@ export class Store {
   }
 
   deleteRoutine(id: string): void {
-    this.db.prepare('DELETE FROM routines WHERE id = ?').run(id);
+    this.stmt('DELETE FROM routines WHERE id = ?').run(id);
   }
 
   removeFolder(id: string): void {
-    this.db.prepare('DELETE FROM folders WHERE id = ?').run(id);
+    this.projectsCache = null;
+    this.stmt('DELETE FROM folders WHERE id = ?').run(id);
   }
 
   /* ---------- sessions ---------- */
 
   listSessions(): StoredSession[] {
-    return (this.db.prepare('SELECT * FROM sessions ORDER BY created_at').all() as SessionRow[]).map(rowToSession);
+    return (this.stmt('SELECT * FROM sessions ORDER BY created_at').all() as SessionRow[]).map(rowToSession);
   }
 
   getSession(id: string): StoredSession | undefined {
-    const r = this.db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as SessionRow | undefined;
+    const r = this.stmt('SELECT * FROM sessions WHERE id = ?').get(id) as SessionRow | undefined;
     return r ? rowToSession(r) : undefined;
   }
 
   upsertSession(s: StoredSession): void {
-    this.db
-      .prepare(
+    this.stmt(
         `INSERT INTO sessions (id, project_id, folder_id, cwd, agent, title, color, status, pid, resume_id,
            created_at, updated_at, exit_code, x, y, w, h, cols, rows, command, args, role, sort_order)
          VALUES (@id, @project_id, @folder_id, @cwd, @agent, @title, @color, @status, @pid, @resume_id,
@@ -434,21 +458,20 @@ export class Store {
   }
 
   removeSession(id: string): void {
-    this.db.prepare('DELETE FROM sessions WHERE id = ?').run(id);
-    this.db.prepare('DELETE FROM inbox WHERE session_id = ?').run(id);
+    this.stmt('DELETE FROM sessions WHERE id = ?').run(id);
+    this.stmt('DELETE FROM inbox WHERE session_id = ?').run(id);
   }
 
   /* ---------- inbox ---------- */
 
   listInbox(limit = 500): InboxItem[] {
-    return (this.db.prepare('SELECT * FROM inbox ORDER BY created_at DESC LIMIT ?').all(limit) as InboxRow[]).map(
+    return (this.stmt('SELECT * FROM inbox ORDER BY created_at DESC LIMIT ?').all(limit) as InboxRow[]).map(
       rowToInbox
     );
   }
 
   lastInboxForSession(sessionId: string): InboxItem | undefined {
-    const r = this.db
-      .prepare('SELECT * FROM inbox WHERE session_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1')
+    const r = this.stmt('SELECT * FROM inbox WHERE session_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1')
       .get(sessionId) as InboxRow | undefined;
     return r ? rowToInbox(r) : undefined;
   }
@@ -456,17 +479,14 @@ export class Store {
   /** createdAt: keep the original time (records from an opened project file) */
   addInbox(sessionId: string, kind: InboxItem['kind'], text: string, read = false, fromId?: string, createdAt = Date.now()): InboxItem {
     const item: InboxItem = { id: randomUUID(), sessionId, kind, text, createdAt, read, ...(fromId ? { fromId } : {}) };
-    this.db
-      .prepare('INSERT INTO inbox (id, session_id, kind, text, created_at, read, from_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    this.stmt('INSERT INTO inbox (id, session_id, kind, text, created_at, read, from_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(item.id, item.sessionId, item.kind, item.text, item.createdAt, read ? 1 : 0, fromId ?? null);
-    // keep the table bounded
-    this.db.exec(
-      'DELETE FROM inbox WHERE id IN (SELECT id FROM inbox ORDER BY created_at DESC LIMIT -1 OFFSET 2000)'
-    );
+    // keep the table bounded (checked every 50 inserts: a sorted delete on each insert is wasted work)
+    if (++this.inboxInserts % 50 === 0) this.stmt('DELETE FROM inbox WHERE id IN (SELECT id FROM inbox ORDER BY created_at DESC LIMIT -1 OFFSET 2000)').run();
     return item;
   }
 
   markInboxRead(id: string): void {
-    this.db.prepare('UPDATE inbox SET read = 1 WHERE id = ?').run(id);
+    this.stmt('UPDATE inbox SET read = 1 WHERE id = ?').run(id);
   }
 }

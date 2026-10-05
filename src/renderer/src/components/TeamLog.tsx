@@ -3,12 +3,12 @@ import type { InboxItem, Session } from '@shared/protocol';
 import { useStore } from '@/store';
 import { useNow } from '@/lib/hooks';
 import { matches, useHighlight } from '@/lib/search';
-import { useOpenInbox } from '@/lib/closed';
+import { useOpenInbox, threadsOf } from '@/lib/closed';
 import { TeamFeedItem } from './TeamFeedItem';
 import { OrderCard } from './MyOrders';
 import { SearchBox } from './SearchBox';
 
-import { buildThreads, count, descendants, prune, withManager, type LogNode } from '@/lib/threads';
+import { count, descendants, prune, withManager, type LogNode } from '@/lib/threads';
 
 /** Expand / collapse every thread at once: a new nonce re-applies `open` to each node. */
 interface Bulk {
@@ -91,7 +91,7 @@ export function TeamLog(): JSX.Element {
   const [shown, setShown] = useState(15);
   const body = useRef<HTMLDivElement>(null);
 
-  const threads = useMemo(() => buildThreads(inbox).reverse(), [inbox]);
+  const threads = useMemo(() => [...threadsOf(inbox)].reverse(), [inbox]);
   const titleOf = (id: string | undefined, map: Map<string, Session>): string | undefined =>
     id === 'user' ? 'Manager (you)' : id ? map.get(id)?.title : undefined;
   const searching = query.trim() !== '';

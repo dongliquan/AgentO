@@ -5,6 +5,7 @@ import { AGENT_LABELS } from '@/lib/format';
 import { AgentIcon } from './AgentIcon';
 import { useNow } from '@/lib/hooks';
 import { useClosedSessionIds } from '@/lib/closed';
+import { kbd } from '@/lib/keys';
 
 /** "claude-opus-5-5" → "Opus 5.5" */
 function shortModel(id: string | undefined): string | null {
@@ -65,7 +66,7 @@ export function StatusBar(): JSX.Element {
       </span>
       {waiting > 0 && (
         <span className="seg click" style={{ color: 'var(--warn)' }} onClick={gotoNextWaiting}>
-          Go to waiting session (Ctrl+Shift+W)
+          {kbd('Go to waiting session (Ctrl+Shift+W)')}
         </span>
       )}
       <span className="spacer" />

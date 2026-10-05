@@ -126,6 +126,11 @@ export class SessionManager extends EventEmitter {
     return this.sessions.get(id);
   }
 
+  /** Every session as stored (no copies) — for the team logic's lookups; callers do not mutate them. */
+  stored(): StoredSession[] {
+    return [...this.sessions.values()];
+  }
+
   scrollback(id: string): string {
     return this.buffers.get(id) ?? '';
   }

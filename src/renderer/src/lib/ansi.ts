@@ -1,15 +1,11 @@
-const CSI = /\x1b\[[0-9;?]*[ -\/]*[@-~]/g;
-const OSC = /\x1b\][^\x07]*\x07/g;
-const OTHER = /\x1b[()][A-Za-z0-9]|\x1b[=>]|\x1b[78]|\x1b[DEHM]/g;
+import { plainTerminalText } from '@shared/plaintext';
 
-/** Strip ANSI CSI/OSC escape sequences and control characters (except \n and \t). */
+/**
+ * Terminal output → plain text. Cursor moves (CSI n C / n G, \r) become spacing instead of being dropped: Claude Code's
+ * TUI positions every word with them on macOS/Linux, so a plain strip glues the words together.
+ */
 export function stripAnsi(s: string): string {
-  return s
-    .replace(OSC, '')
-    .replace(CSI, '')
-    .replace(OTHER, '')
-    .replace(/\r/g, '')
-    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
+  return plainTerminalText(s);
 }
 
 /** Last `n` non-empty plain-text lines of a terminal buffer. */

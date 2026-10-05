@@ -125,6 +125,7 @@ export type RoutineInput = Pick<Routine, 'name' | 'target' | 'text' | 'everyMinu
 export type TeamOrderTarget =
   | { kind: 'all' }                          // every project's head coach (or, without one, each part's lead)
   | { kind: 'project'; projectId: string }   // project: its head coach (or its parts' leads) · part: its coach (or first player)
+  | { kind: 'projects'; projectIds: string[] } // several projects at once: each one's recipients, told which other projects got it too
   | { kind: 'session'; sessionId: string };
 
 export interface Session {
@@ -203,6 +204,48 @@ export interface ChatEntry {
   tool?: ChatTool;
 }
 
+/* ---------- token usage report (Manager › Usage) ---------- */
+
+/** Tokens of one session (or one outside-AgentO transcripts folder) in one hour, per model. */
+export interface UsageBucket {
+  /** AgentO session id, or "outside:<transcripts dir>" */
+  key: string;
+  /** start of the hour (ms) */
+  hour: number;
+  model: string;
+  input: number;
+  output: number;
+  cacheWrite: number;
+  cacheRead: number;
+  /** API calls (assistant messages) */
+  turns: number;
+}
+
+export interface UsageSessionInfo {
+  key: string;
+  title: string;
+  /** head · coach · player · outside */
+  role: string;
+  agent: string;
+  projectId: string;
+  /** largest / latest context (input + cache) of one call, in tokens */
+  maxContext: number;
+  lastContext: number;
+  /** team messages received ([Order from …] / [AgentO] …) and their size in chars */
+  teamMessages: number;
+  teamMessageBytes: number;
+  /** tool calls and the size of their results (chars), largest first */
+  tools: { tool: string; calls: number; bytes: number }[];
+}
+
+export interface UsageReport {
+  generatedAt: number;
+  since: number;
+  days: number;
+  buckets: UsageBucket[];
+  sessions: UsageSessionInfo[];
+}
+
 /* ---------- client -> daemon ---------- */
 
 export type ClientMessage =
@@ -246,6 +289,7 @@ export type ClientMessage =
   | { type: 'coach.create'; projectId: string; agent?: 'claude' | 'codex' | 'gemini' } // one coach per project; default claude
   | { type: 'session.setRole'; id: string; role: 'coach' | 'player' } // player ⇄ playing coach
   | { type: 'team.order'; target: TeamOrderTarget; text: string; task?: boolean }      // the user's order; task: added as a task (Tasks › Add Task)
+  | { type: 'usage.report'; days: number; outside: boolean }   // Manager › Usage: token report for the last `days` days
   | { type: 'routine.save'; routine: RoutineInput }   // create (no id) or update
   | { type: 'routine.delete'; id: string }
   | { type: 'routine.run'; id: string }               // run now (counts as a run)
@@ -283,6 +327,7 @@ export type ServerMessage =
   | { type: 'welcome'; daemonPid: number; version: string; projects: Project[]; sessions: Session[]; inbox: InboxItem[]; usage: UsageInfo[]; agents: AgentDef[]; routines: Routine[]; doneOrders: Record<string, number>; taskOrders: string[] }
   /** Tasks: the manager's orders marked done (order record id → when) and the ones added as tasks explicitly */
   | { type: 'orders.done'; done: Record<string, number>; tasks: string[] }
+  | { type: 'usage.report'; report: UsageReport }
   | { type: 'routines'; routines: Routine[] }
   /** answer to project.export: the .agento file contents */
   | { type: 'project.exported'; name: string; data: string }

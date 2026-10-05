@@ -9,7 +9,7 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket, type RawData } from 'ws';
-import { DAEMON_PORT_DEFAULT, type ClientMessage, type ServerMessage } from '@shared/protocol';
+import { DAEMON_PORT_DEFAULT, type ClientMessage, type ServerMessage, type Session } from '@shared/protocol';
 import type { DaemonInfoFile } from '@shared/extra';
 import { attachmentsDir, dataDir, ensureDir, daemonJsonPath, logsDir } from './paths';
 import { log } from './log';
@@ -25,6 +25,8 @@ import { parseDemoCommand, runDemo } from './demo';
 import { exportProject, importProject } from './projectfile';
 import { importClaudeSessions, listClaudeSessions } from './claudeimport';
 import { agentConnections } from './agentstatus';
+import { usageReport } from './usagereport';
+import { fixPathFromLoginShell } from '@shared/loginpath';
 
 /** New project from Orders: how the head coach is briefed (plan: report the plan first and wait for the go). */
 const START_ORDER = (plan: boolean, brief: string): string =>
@@ -167,6 +169,8 @@ async function main(): Promise<void> {
   ensureDir(dataDir());
   logsDir();
   log.info(`daemon starting v${VERSION} pid ${process.pid} data=${dataDir()}`);
+  // macOS: launched from Finder/Dock the PATH is launchd's minimal one; take the login shell's so the agent CLIs resolve.
+  if (process.platform === 'darwin') log.info(`PATH from login shell: ${fixPathFromLoginShell()}`);
 
   const existing = readDaemonJson();
   if (existing && existing.pid !== process.pid && pidAlive(existing.pid)) {
@@ -249,6 +253,32 @@ async function main(): Promise<void> {
   sessions.launchEnv = (s) => team.launchEnv(s);
   team.onDelivered = (sessionId, text) => broadcast({ type: 'team.delivered', sessionId, text });
   team.onProjects = () => broadcast({ type: 'projects', projects: store.listProjects() });
+  /** Orders › New project, and the team head coach's create_project tool: project + folders + head coach + the brief as its first order */
+  const startProject = (rawName: string, folders: string[], text: string, plan: boolean, via = 'New project'): Session => {
+    const name = rawName.trim();
+    if (!name) throw new Error('Give the project a name');
+    if (!text.trim()) throw new Error('Write the order for the new project');
+    if (store.listProjects().some((p) => !p.parentId && p.name === name)) throw new Error(`A project named "${name}" already exists`);
+    const dirs = [...new Set(folders.map((f) => path.resolve(f)))];
+    // no folder picked: a new one, ~/AgentO Projects/<name> (a name that is not a valid folder name is cleaned up)
+    if (dirs.length === 0) {
+      const safe = name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/[. ]+$/, '') || 'project';
+      const dir = path.join(os.homedir(), 'AgentO Projects', safe);
+      fs.mkdirSync(dir, { recursive: true });
+      dirs.push(dir);
+    }
+    for (const d of dirs) if (!fs.existsSync(d) || !fs.statSync(d).isDirectory()) throw new Error(`Folder does not exist: ${d}`);
+    const project = store.createProject(name);
+    // the team works here on the manager's order: trusted, so new players do not stop at the folder-trust prompt
+    for (const d of dirs) store.addFolder(project.id, d, path.basename(d) || d, true);
+    broadcast({ type: 'projects', projects: store.listProjects() });
+    const head = team.createHead(project.id);
+    team.order({ kind: 'session', sessionId: head.id }, START_ORDER(plan, text.trim()), via, true);
+    broadcast({ type: 'orders.done', done: store.listDoneOrders(), tasks: store.listTaskOrders() });
+    log.info('project started from an order', name, dirs.join(', '), via);
+    return head;
+  };
+  team.startProject = (name, folders, brief, plan) => startProject(name, folders, brief, plan, 'New project · Head Coach');
   const routines = new Routines(store, team, (list) => broadcast({ type: 'routines', routines: list }));
   server.on('request', (req, res) => {
     if (!team.handleHttp(req, res)) res.writeHead(404).end();
@@ -319,7 +349,10 @@ async function main(): Promise<void> {
         }
         const memberIds = new Set(members.map((s) => s.id));
         for (const r of routines.list()) {
-          const hit = (r.target.kind === 'project' && ids.has(r.target.projectId)) || (r.target.kind === 'session' && memberIds.has(r.target.sessionId));
+          const hit =
+            (r.target.kind === 'project' && ids.has(r.target.projectId)) ||
+            (r.target.kind === 'projects' && r.target.projectIds.some((id) => ids.has(id))) ||
+            (r.target.kind === 'session' && memberIds.has(r.target.sessionId));
           if (!hit || !r.enabled) continue;
           routines.save({ id: r.id, name: r.name, target: r.target, text: r.text, enabled: false, ...(r.dailyAt ? { dailyAt: r.dailyAt } : { everyMinutes: r.everyMinutes ?? 60 }) });
         }
@@ -448,28 +481,8 @@ async function main(): Promise<void> {
         return;
       }
       case 'project.start': {
-        const name = msg.name.trim();
-        if (!name) throw new Error('Give the project a name');
-        if (!msg.text.trim()) throw new Error('Write the order for the new project');
-        if (store.listProjects().some((p) => !p.parentId && p.name === name)) throw new Error(`A project named "${name}" already exists`);
-        const dirs = [...new Set(msg.folders.map((f) => path.resolve(f)))];
-        // no folder picked: a new one, ~/AgentO Projects/<name> (a name that is not a valid folder name is cleaned up)
-        if (dirs.length === 0) {
-          const safe = name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/[. ]+$/, '') || 'project';
-          const dir = path.join(os.homedir(), 'AgentO Projects', safe);
-          fs.mkdirSync(dir, { recursive: true });
-          dirs.push(dir);
-        }
-        for (const d of dirs) if (!fs.existsSync(d) || !fs.statSync(d).isDirectory()) throw new Error(`Folder does not exist: ${d}`);
-        const project = store.createProject(name);
-        // the team works here on the manager's order: trusted, so new players do not stop at the folder-trust prompt
-        for (const d of dirs) store.addFolder(project.id, d, path.basename(d) || d, true);
-        broadcast({ type: 'projects', projects: store.listProjects() });
-        const head = team.createHead(project.id);
+        const head = startProject(msg.name, msg.folders, msg.text, msg.plan);
         clients.get(ws)?.add(head.id);
-        team.order({ kind: 'session', sessionId: head.id }, START_ORDER(msg.plan, msg.text.trim()), 'New project', true);
-        broadcast({ type: 'orders.done', done: store.listDoneOrders(), tasks: store.listTaskOrders() });
-        log.info('project started from an order', name, dirs.join(', '));
         return;
       }
       case 'team.organize': {
@@ -479,6 +492,15 @@ async function main(): Promise<void> {
         const head = sessions.list().find((s) => s.role === 'head' && s.projectId === top.id) ?? team.createHead(top.id);
         clients.get(ws)?.add(head.id);
         team.order({ kind: 'session', sessionId: head.id }, ORGANIZE_ORDER, 'Organize Team');
+        return;
+      }
+      case 'usage.report': {
+        const report = usageReport(
+          sessions.list().map((s) => ({ id: s.id, ...(s.resumeId ? { resumeId: s.resumeId } : {}), title: s.title, role: s.role, agent: s.agent, projectId: s.projectId })),
+          Math.min(90, Math.max(1, Math.floor(msg.days) || 7)),
+          msg.outside
+        );
+        sendTo(ws, { type: 'usage.report', report });
         return;
       }
       case 'head.create': {

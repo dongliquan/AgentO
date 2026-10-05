@@ -2,13 +2,14 @@ import { useMemo, useState } from 'react';
 import { useStore } from '@/store';
 import { send } from '@/client';
 import { useNow } from '@/lib/hooks';
-import { useOpenInbox } from '@/lib/closed';
-import { buildThreads, isTask, orderStatus, type LogNode, type OrderStatus } from '@/lib/threads';
+import { useOpenInbox, threadsOf } from '@/lib/closed';
+import { isTask, orderStatus, type LogNode, type OrderStatus } from '@/lib/threads';
 import { pcStyle, projectColor, relativeTime, formatDateTime } from '@/lib/format';
 import { OrderCard } from './MyOrders';
 import { useDraft } from '@/lib/draft';
 import { imageFiles, useAttachments, withAttachments } from '@/lib/attachments';
 import { AttachButton, AttachmentBar } from './AttachmentBar';
+import { kbd } from '@/lib/keys';
 
 type TaskStatus = OrderStatus | 'done';
 type Filter = 'open' | 'done' | 'all';
@@ -88,7 +89,7 @@ function NewTask({ pid, setPid }: { pid: string; setPid: (id: string) => void })
           !project
             ? 'Pick a project above to add a task'
             : hasTaker
-              ? `New task for ${project.name} — Ctrl+Enter. Paste or drop images.`
+              ? kbd(`New task for ${project.name} — Ctrl+Enter. Paste or drop images.`)
               : `${project.name} has no sessions yet: add a head coach first`
         }
         disabled={!project}
@@ -176,7 +177,7 @@ export function TaskList(): JSX.Element {
   const tasks = useMemo(() => {
     const explicit = new Set(taskOrders);
     // tasks only: work handed to coaches / players or added as a task — not every exchange with the head coach
-    const list = buildThreads(inbox)
+    const list = threadsOf(inbox)
       .filter((t) => isTask(t, sessions, explicit))
       .map((t) => ({ node: t, status: (done[t.item.id] ? 'done' : orderStatus(t, sessions)) as TaskStatus, project: rootOf(t.item.sessionId) }));
     return list.sort((a, b) => ORDER.indexOf(a.status) - ORDER.indexOf(b.status) || b.node.item.createdAt - a.node.item.createdAt);

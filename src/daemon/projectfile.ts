@@ -119,6 +119,8 @@ export function exportProject(d: ProjectFileDeps, projectId: string): { name: st
     let target: RoutineOut['target'] | undefined;
     if (r.target.kind === 'project' && ids.has(r.target.projectId)) target = { kind: 'project', part: r.target.projectId === top.id ? null : r.target.projectId };
     if (r.target.kind === 'session' && memberIds.has(r.target.sessionId)) target = { kind: 'session', session: r.target.sessionId };
+    // a routine for several projects: saved here as this project's own (the other projects keep theirs)
+    if (r.target.kind === 'projects' && r.target.projectIds.includes(top.id)) target = { kind: 'project', part: null };
     if (!target) continue;
     routines.push({ name: r.name, target, text: r.text, ...(r.dailyAt ? { dailyAt: r.dailyAt } : { everyMinutes: r.everyMinutes ?? 60 }) });
   }

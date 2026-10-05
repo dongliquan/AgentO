@@ -11,6 +11,7 @@ import { matches, useHighlight } from '@/lib/search';
 import { CopyButton } from './SearchBox';
 import { imageFiles, useAttachments, withAttachments } from '@/lib/attachments';
 import { AttachButton, AttachmentBar } from './AttachmentBar';
+import { getBuffer, useBuffer } from '@/lib/buffers';
 
 /** Searchable text of a transcript entry: its text, or a tool's name, input and result. */
 function entryText(e: ChatEntry): string {
@@ -53,7 +54,8 @@ export function ChatView({
   useHighlight(scroller, query, [entries]);
   const working = s.status === 'working' || s.status === 'starting';
   // A numbered choice (permission / trust prompt) is only visible in the TUI, so sniff the terminal tail.
-  const tail = useStore((st) => (s.status === 'waiting' ? st.buffers.get(s.id)?.slice(-6000) : undefined));
+  // only while waiting: a choice prompt can be on screen (no subscription otherwise)
+  const tail = useBuffer(s.id, s.status === 'waiting')?.slice(-6000);
   const choice = useMemo(() => {
     if (!tail) return false;
     const t = lastLines(tail, 14).join('\n');
@@ -150,7 +152,7 @@ function rel(p: string, cwd: string): string {
   return a.toLowerCase().startsWith(`${b.toLowerCase()}/`) ? a.slice(b.length + 1) : p;
 }
 
-function toolSummary(t: ChatTool, cwd: string): { title: string; detail: string } {
+export function toolSummary(t: ChatTool, cwd: string): { title: string; detail: string } {
   const i = t.input;
   switch (t.name) {
     case 'Bash':
@@ -398,10 +400,14 @@ function WaitingBar({ session: s, tail, onShowTerminal }: { session: Session; ta
   const [choice, setChoice] = useState<ReturnType<typeof readChoice>>(null);
   useEffect(() => {
     let live = true;
-    const raw = useStore.getState().buffers.get(s.id) ?? tail;
+    const raw = getBuffer(s.id) ?? tail;
     const t = setTimeout(() => {
       void screenLines(raw.slice(-200_000), s.cols || 100, s.rows || 30).then((lines) => {
-        if (live) setChoice(readChoice(lines.length ? lines : lastLines(tail, 30)));
+        if (!live) return;
+        // the replayed screen first; when it cannot be read (or is empty), the plain-text tail — words spaced by the shared converter
+        const found = (lines.length ? readChoice(lines) : null) ?? readChoice(lastLines(tail, 30));
+        if (!found) console.warn('[chat] choice prompt not read; screen tail:', lines.slice(-12), 'plain tail:', lastLines(tail, 12));
+        setChoice(found);
       });
     }, 120);
     return () => {

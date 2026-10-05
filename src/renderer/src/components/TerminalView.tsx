@@ -1,11 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { useStore } from '@/store';
 import { send } from '@/client';
 import { onTerm } from '@/lib/termbus';
 import { isAppShortcut } from '@/lib/keys';
 import { TERMINAL_THEME } from '@/lib/theme';
+import { getBuffer } from '@/lib/buffers';
 
 
 interface Props {
@@ -46,7 +46,7 @@ export function TerminalView({ sessionId, fitKey, autoFocus }: Props): JSX.Eleme
     });
 
     // instant replay from store buffer
-    const buf = useStore.getState().buffers.get(sessionId);
+    const buf = getBuffer(sessionId);
     if (buf) term.write(buf);
 
     const doFit = (): void => {

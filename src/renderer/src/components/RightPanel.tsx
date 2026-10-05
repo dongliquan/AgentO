@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { InboxItem, Routine, Session } from '@shared/protocol';
+import type { InboxItem, Routine, Session, TeamOrderTarget } from '@shared/protocol';
 import { unreadCount, useStore } from '@/store';
 import { requestChanged, send } from '@/client';
 import { exportSession, focusTerminal, removeSession, selectAndReveal } from '@/commands';
@@ -12,8 +12,9 @@ import { screenLines } from '@/lib/screen';
 import { TeamLog } from './TeamLog';
 import { MyOrders } from './MyOrders';
 import { TaskList } from './TaskList';
-import { useOpenInbox as useTaskInbox } from '@/lib/closed';
-import { buildThreads, isTask, orderStatus } from '@/lib/threads';
+import { useOpenInbox as useTaskInbox, threadsOf } from '@/lib/closed';
+import { isTask, orderStatus } from '@/lib/threads';
+import { orderProgress } from '@/lib/progress';
 import { lastLines } from '@/lib/ansi';
 import { matches, selecting, useHighlight } from '@/lib/search';
 import { useOpenInbox } from '@/lib/closed';
@@ -22,6 +23,8 @@ import { useDraft } from '@/lib/draft';
 import { pcStyle, projectColor } from '@/lib/format';
 import { imageFiles, useAttachments, withAttachments } from '@/lib/attachments';
 import { AttachButton, AttachmentBar } from './AttachmentBar';
+import { kbd } from '@/lib/keys';
+import { useBuffer } from '@/lib/buffers';
 
 export function RightPanel(): JSX.Element {
   const rightTab = useStore((s) => s.rightTab);
@@ -36,7 +39,7 @@ export function RightPanel(): JSX.Element {
   const taskOrders = useStore((s) => s.taskOrders);
   const toReview = useMemo(() => {
     const explicit = new Set(taskOrders);
-    return buildThreads(taskInbox).filter((t) => isTask(t, sessionsAll, explicit) && !doneOrders[t.item.id] && orderStatus(t, sessionsAll) === 'reported').length;
+    return threadsOf(taskInbox).filter((t) => isTask(t, sessionsAll, explicit) && !doneOrders[t.item.id] && orderStatus(t, sessionsAll) === 'reported').length;
   }, [taskInbox, sessionsAll, doneOrders, taskOrders]);
 
   return (
@@ -68,7 +71,7 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
   const changed = useStore((st) => st.changed.get(s.cwd));
   const openFileCard = useStore((st) => st.openFileCard);
   const openViewerTab = useStore((st) => st.openViewerTab);
-  const buffer = useStore((st) => (s.agent === 'claude' ? '' : st.buffers.get(s.id) ?? ''));
+  const buffer = useBuffer(s.id, s.agent !== 'claude') ?? '';
   const project = projects.find((p) => p.id === s.projectId);
   const folder = project?.folders.find((f) => f.id === s.folderId);
   const entries = timeline.filter((t) => t.sessionId === s.id).slice(-20).reverse();
@@ -264,9 +267,48 @@ function Orders(): JSX.Element {
   const sessions = useStore((s) => s.sessions);
   const selectedId = useStore((s) => s.selectedId);
   const allRoutines = useStore((s) => s.routines);
+  const doneOrders = useStore((s) => s.doneOrders);
+  const inboxAll = useOpenInbox();
   const now = useNow(15000);
   const tops = projects.filter((p) => !p.parentId && !p.closed);
-  const [tab, setTab] = useDraft<string>('orders.project', tops[0]?.id ?? 'new');
+  /**
+   * Per project: open work (orders not marked done and not fully reported) as pieces done / total, and the state now —
+   * error (a session failed) · working (someone is on it) · waiting (open work but nobody running: it needs an answer or a nudge)
+   */
+  const progressOf = useMemo(() => {
+    const m = new Map<string, { done: number; total: number; working: boolean; state: 'working' | 'waiting' | 'error' | null }>();
+    const rootOf = (sessionId: string): string | undefined => {
+      const s = sessions.get(sessionId);
+      const p = s ? projects.find((x) => x.id === s.projectId) : undefined;
+      return p?.parentId ?? p?.id;
+    };
+    for (const t of threadsOf(inboxAll)) {
+      if (t.item.fromId !== 'user' || doneOrders[t.item.id]) continue;
+      const root = rootOf(t.item.sessionId);
+      if (!root) continue;
+      const pr = orderProgress(t, sessions);
+      if (pr.total === 0 || pr.done === pr.total) continue;
+      const cur = m.get(root) ?? { done: 0, total: 0, working: false, state: null };
+      cur.done += pr.done;
+      cur.total += pr.total;
+      cur.working ||= pr.working > 0;
+      m.set(root, cur);
+    }
+    for (const [root, cur] of m) {
+      const own = new Set([root, ...projects.filter((p) => p.parentId === root).map((p) => p.id)]);
+      const members = [...sessions.values()].filter((s) => own.has(s.projectId));
+      cur.state = members.some((s) => s.status === 'error')
+        ? 'error'
+        : members.some((s) => s.status === 'working' || s.status === 'starting')
+          ? 'working'
+          : 'waiting';
+    }
+    return m;
+  }, [inboxAll, sessions, projects, doneOrders]);
+  // 'new' = start a project · 'order' = give an order to the picked projects (one or several — they get the same order)
+  // 'team' = not tied to a project: the team's head coach routes it (to a project's head coach, or starts a new project)
+  const [tab, setTab] = useDraft<'new' | 'order' | 'team'>('orders.mode', tops.length ? 'order' : 'new');
+  const [picked, setPicked] = useDraft<string[]>('orders.projects', tops[0] ? [tops[0].id] : []);
   // the order being written survives switching tabs (and restarts) until it is given
   const [text, setText] = useDraft('orders.text', '');
   // repeat: off = one order now; every = every N minutes; daily = every day at HH:MM
@@ -285,39 +327,77 @@ function Orders(): JSX.Element {
   const selProject = sel ? projects.find((p) => p.id === sel.projectId) : undefined;
   const selRoot = selProject?.parentId ?? selProject?.id;
   useEffect(() => {
-    if (selRoot && tops.some((t) => t.id === selRoot)) setTab(selRoot);
+    if (tab !== 'team' && selRoot && tops.some((t) => t.id === selRoot) && picked.length <= 1 && picked[0] !== selRoot) {
+      setPicked([selRoot]);
+      setTab('order');
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selRoot]);
   useEffect(() => {
     if (!pendingName) return;
     const made = tops.find((t) => t.name === pendingName);
     if (made) {
-      setTab(made.id);
+      setPicked([made.id]);
+      setTab('order');
       setPendingName('');
     }
-  }, [pendingName, tops, setTab]);
-  const current = tops.find((t) => t.id === tab);
-  // a remembered tab whose project was closed or deleted: the first open project
+  }, [pendingName, tops, setTab, setPicked]);
+  /** projects whose head coach is working right now (one pass over the sessions, not one per chip) */
+  const busyHeads = useMemo(() => {
+    const ids = new Set<string>();
+    for (const s of sessions.values()) if (s.role === 'head' && (s.status === 'working' || s.status === 'starting')) ids.add(s.projectId);
+    return ids;
+  }, [sessions]);
+  /** the picked projects that still exist and are open (a closed or deleted one drops out) */
+  const currents = tops.filter((t) => picked.includes(t.id));
   useEffect(() => {
-    if (tab !== 'new' && !current && !pendingName) setTab(tops[0]?.id ?? 'new');
-  }, [tab, current, tops, pendingName, setTab]);
-  const isNew = !current;
+    if (currents.length !== picked.length) setPicked(currents.map((t) => t.id));
+    if (tab === 'order' && currents.length === 0 && !pendingName) {
+      if (tops[0]) setPicked([tops[0].id]);
+      else setTab('new');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, currents.length, picked.length, tops.length, pendingName]);
+  const isTeam = tab === 'team';
+  const isNew = tab === 'new' || (!isTeam && currents.length === 0);
+  /** the team-wide head coach (no project): takes the orders given without a project; made with the first such order */
+  const teamHead = [...sessions.values()].find((s) => s.role === 'head' && !s.projectId);
+  const allPicked = tops.length > 1 && currents.length === tops.length;
+  /** click: toggle (the last one stays); the All chip picks every open project */
+  const toggle = (id: string): void => {
+    setTab('order');
+    if (picked.includes(id)) {
+      if (picked.length > 1) setPicked(picked.filter((x) => x !== id));
+    } else setPicked([...picked, id]);
+  };
 
-  const tree = new Set(current ? [current.id, ...projects.filter((p) => p.parentId === current.id).map((p) => p.id)] : []);
+  const scope = isTeam ? tops : currents;
+  const tree = new Set(scope.flatMap((c) => [c.id, ...projects.filter((p) => p.parentId === c.id).map((p) => p.id)]));
+  if (isTeam) tree.add(''); // the team head coach's own orders
   const members = [...sessions.values()].filter((s) => tree.has(s.projectId)).sort((a, b) => a.createdAt - b.createdAt);
-  const head = members.find((s) => s.role === 'head');
-  /** without a head coach the project's order goes to its parts' leads (coach, else first player) */
-  const leads = head ? [] : members.filter((s) => s.role === 'coach');
-  const taker = head ?? leads[0] ?? members.find((s) => s.role === 'player');
+  /** who takes the order in each picked project: its head coach, else its parts' leads (coach, else first player) */
+  const takers = currents.map((c) => {
+    const own = new Set([c.id, ...projects.filter((p) => p.parentId === c.id).map((p) => p.id)]);
+    const ms = members.filter((s) => own.has(s.projectId));
+    const head = ms.find((s) => s.role === 'head');
+    const leads = head ? [] : ms.filter((s) => s.role === 'coach');
+    return { project: c, head, leads, taker: head ?? leads[0] ?? ms.find((s) => s.role === 'player') };
+  });
+  const missing = takers.filter((t) => !t.taker);
   const routines = allRoutines.filter((r) => {
     const t = r.target;
+    if (t.kind === 'all') return isTeam;
     if (t.kind === 'project') return tree.has(t.projectId);
+    if (t.kind === 'projects') return t.projectIds.some((id) => tree.has(id));
     if (t.kind === 'session') return members.some((s) => s.id === t.sessionId);
     return false;
   });
+  /** one project: a plain project order (as before); several: the same order to each, told about the others */
+  const target = (): TeamOrderTarget =>
+    isTeam ? { kind: 'all' } : currents.length === 1 ? { kind: 'project', projectId: currents[0]!.id } : { kind: 'projects', projectIds: currents.map((c) => c.id) };
 
   // a new project without a folder gets one (~/AgentO Projects/<name>)
-  const canSubmit = text.trim() !== '' && !files.busy && (isNew ? newName.trim() !== '' : !!taker);
+  const canSubmit = text.trim() !== '' && !files.busy && (isNew ? newName.trim() !== '' : isTeam ? true : currents.length > 0 && missing.length === 0);
   const submit = (): void => {
     if (!canSubmit) return;
     const body = withAttachments(text.trim(), files.items);
@@ -326,19 +406,23 @@ function Orders(): JSX.Element {
       setPendingName(newName.trim());
       setNewName('');
       setNewFolders([]);
-    } else if (repeat === 'off') send({ type: 'team.order', target: { kind: 'project', projectId: current.id }, text: body });
-    else
-      send({
+    } else {
+      // a team order needs the team head coach: created now, the order reaches it once it is up
+      if (isTeam && !teamHead) send({ type: 'head.create', projectId: '' });
+      if (repeat === 'off') send({ type: 'team.order', target: target(), text: body });
+      else
+        send({
         type: 'routine.save',
         routine: {
           name: text.trim().split('\n')[0]!.slice(0, 40),
-          target: { kind: 'project', projectId: current.id },
+          target: target(),
           text: body,
           enabled: true,
           runNow: true,
           ...(repeat === 'every' ? { everyMinutes: Math.max(1, every) } : { dailyAt: at })
         }
       });
+    }
     setText('');
     files.clear();
   };
@@ -348,13 +432,39 @@ function Orders(): JSX.Element {
       {/* the same card as Tasks › New task: project chips, the order, attachments and the send row */}
       <div className="new-task orders-card">
       <div className="new-task-to" role="tablist">
-        {tops.map((p) => (
-          <button key={p.id} role="tab" className={`project-tag ${tab === p.id ? 'on' : ''}`} style={pcStyle(projectColor(p.id, projects))} onClick={() => setTab(p.id)} title={p.name}>
-            {p.name}
+        <button role="tab" className={`project-tag all ${isTeam ? 'on' : ''}`} onClick={() => setTab('team')} title="Not tied to a project: the team's head coach decides which project it is for, or starts a new one">
+          Team
+        </button>
+        <span className="chip-sep" aria-hidden="true" />
+        {tops.length > 1 && (
+          <button role="tab" className={`project-tag all ${!isNew && !isTeam && allPicked ? 'on' : ''}`} onClick={() => { setTab('order'); setPicked(tops.map((t) => t.id)); }} title="The same order to every open project">
+            All
           </button>
-        ))}
-        <button role="tab" className={`project-tag new ${isNew ? 'on' : ''}`} onClick={() => setTab('new')} title="Start a new project: AgentO sets up the project and its head coach">
-          ＋ New project
+        )}
+        {tops.map((p) => {
+          const pr = progressOf.get(p.id);
+          // "in progress" = the project's head coach is working right now (players working alone do not count)
+          const headBusy = busyHeads.has(p.id);
+          const pct = pr ? Math.round((pr.done / pr.total) * 100) : 0;
+          const stateText = pr?.state === 'working' ? 'working now' : pr?.state === 'waiting' ? 'waiting — nobody is running; it may need an answer or a nudge' : pr?.state === 'error' ? 'a session failed' : '';
+          const info = `${pr ? ` — ${pr.done}/${pr.total} pieces done · ${stateText}` : ''}${headBusy ? ' · head coach working' : ''}`;
+          return (
+            <button
+              key={p.id}
+              role="tab"
+              className={`project-tag ${!isNew && !isTeam && picked.includes(p.id) ? 'on' : ''} ${pr ? 'prog' : ''}`}
+              style={{ ...pcStyle(projectColor(p.id, projects)), '--pct': `${pct}%` } as React.CSSProperties}
+              onClick={() => toggle(p.id)}
+              title={`${p.name}${info} — click to add or remove it from the order`}
+            >
+              {headBusy && <span className="status-dot working" />}
+              <span className="ellipsis">{p.name}</span>
+            </button>
+          );
+        })}
+        {tops.length > 0 && <span className="chip-sep" aria-hidden="true" />}
+        <button role="tab" className={`project-tag new ${isNew ? 'on' : ''}`} onClick={() => setTab('new')} title="New project: AgentO sets up the project and its head coach">
+          ＋
         </button>
       </div>
       <div className="orders-form">
@@ -387,21 +497,37 @@ function Orders(): JSX.Element {
               Report the plan first and wait for my go
             </label>
           </div>
+        ) : isTeam ? (
+          <div className="order-to">
+            <span className="muted">To</span>
+            {teamHead ? (
+              <span className="team-chip head" title="Routes the order to the right project's head coach, or starts a new project">{teamHead.title}</span>
+            ) : (
+              <span className="muted" title="Routes the order to the right project's head coach, or starts a new project">Head Coach (team) — created with your first order</span>
+            )}
+            <span className="grow" />
+          </div>
         ) : (
           <div className="order-to">
             <span className="muted">To</span>
-            {taker ? (
-              <span className={`team-chip ${taker.role}`}>{taker.title}</span>
-            ) : (
-              <span className="muted">no sessions yet</span>
+            {takers.map(({ project, taker, head, leads }) =>
+              taker ? (
+                <span key={project.id} className={`team-chip ${taker.role}`} title={currents.length > 1 ? `${project.name}: ${taker.title}${!head && leads.length > 1 ? ` and ${leads.length - 1} other coach(es)` : ''}` : undefined}>
+                  {taker.title}
+                  {!head && leads.length > 1 && <span className="muted"> +{leads.length - 1}</span>}
+                </span>
+              ) : (
+                <span key={project.id} className="muted">
+                  {currents.length > 1 ? `${project.name}: ` : ''}no sessions yet
+                </span>
+              )
             )}
-            {!head && leads.length > 1 && <span className="muted">and {leads.length - 1} other coach{leads.length > 2 ? 'es' : ''}</span>}
             <span className="grow" />
-            {!head && (
-              <button className="btn sm ghost" onClick={() => send({ type: 'head.create', projectId: current.id })} title="Add the project's head coach: it splits your orders among the parts">
-                + Head Coach
+            {takers.filter((t) => !t.head).map(({ project }) => (
+              <button key={project.id} className="btn sm ghost" onClick={() => send({ type: 'head.create', projectId: project.id })} title={`Add ${project.name}'s head coach: it splits your orders among the parts`}>
+                + Head Coach{currents.length > 1 ? ` · ${project.name}` : ''}
               </button>
-            )}
+            ))}
           </div>
         )}
         <textarea
@@ -409,7 +535,11 @@ function Orders(): JSX.Element {
           placeholder={
             isNew
               ? 'Brief for the new project: what to build, how to proceed. The head coach designs the team. Paste or drop images.'
-              : 'Your order. The team splits the work, and you get a report here when it is done. Paste or drop images.'
+              : isTeam
+                ? 'Any order, no project needed: the team head coach works out which project it belongs to — or starts a new one — and reports back here. Paste or drop images.'
+                : currents.length > 1
+                ? `Your order to ${currents.length} projects at once: each team handles its own side, and you get a report from each. Paste or drop images.`
+                : 'Your order. The team splits the work, and you get a report here when it is done. Paste or drop images.'
           }
           onChange={(e) => setText(e.target.value)}
           onPaste={(e) => {
@@ -447,9 +577,9 @@ function Orders(): JSX.Element {
           {!isNew && repeat === 'every' && <input type="number" min={1} value={every} onChange={(e) => setEvery(Number(e.target.value) || 1)} />}
           {!isNew && repeat === 'daily' && <input type="time" value={at} onChange={(e) => setAt(e.target.value)} />}
           <span className="grow" />
-          <span className="orders-hint">Ctrl+Enter</span>
+          <span className="orders-hint">{kbd('Ctrl+Enter')}</span>
           <button className="btn sm primary" disabled={!canSubmit} onClick={submit}>
-            {isNew ? 'Start Project' : repeat === 'off' ? 'Give Order' : 'Create Routine'}
+            {isNew ? 'Start Project' : repeat === 'off' ? (currents.length > 1 ? `Give Order · ${currents.length} projects` : 'Give Order') : 'Create Routine'}
           </button>
         </div>
       </div>

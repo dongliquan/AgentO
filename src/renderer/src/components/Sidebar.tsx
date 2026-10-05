@@ -24,6 +24,22 @@ export function Sidebar(): JSX.Element {
         <span className="manager-ico">♛</span>
         <span className="label">Manager (You)</span>
         <span className="role-tag manager">MANAGER</span>
+        <button
+          className="icon-btn manager-usage"
+          title="Token usage — by project, time, session, role and model"
+          onClick={(e) => {
+            e.stopPropagation();
+            useStore.getState().openUsage();
+          }}
+        >
+          {/* outline bar chart, drawn like the toolbar icons (16px, currentColor) */}
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+            <path d="M2.5 13.5h11" stroke="currentColor" strokeLinecap="round" fill="none" />
+            <rect x="3.5" y="8" width="2" height="4" rx="0.5" fill="none" stroke="currentColor" />
+            <rect x="7" y="5" width="2" height="7" rx="0.5" fill="none" stroke="currentColor" />
+            <rect x="10.5" y="2.5" width="2" height="9.5" rx="0.5" fill="none" stroke="currentColor" />
+          </svg>
+        </button>
       </div>
       <div className="sidebar-header">
         <span>PROJECTS</span>

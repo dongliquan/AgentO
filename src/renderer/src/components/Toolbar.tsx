@@ -1,5 +1,6 @@
 import { useStore, type ViewMode } from '@/store';
 import { autoArrange, fitAll, newSessionFor } from '@/commands';
+import { kbd } from '@/lib/keys';
 
 const MODES: { id: ViewMode; label: string }[] = [
   { id: 'board', label: 'Ground' },
@@ -56,13 +57,13 @@ export function Toolbar(): JSX.Element {
   return (
     <div className="toolbar">
       {!detached && (
-        <button className={`icon-btn layout-toggle ${sidebarOpen ? 'on' : ''}`} title={`${sidebarOpen ? 'Hide' : 'Show'} Sidebar (Ctrl+B)`} onClick={toggleSidebar}>
+        <button className={`icon-btn layout-toggle ${sidebarOpen ? 'on' : ''}`} title={kbd(`${sidebarOpen ? 'Hide' : 'Show'} Sidebar (Ctrl+B)`)} onClick={toggleSidebar}>
           <PanelIcon side="left" open={sidebarOpen} />
         </button>
       )}
       <div className="segmented">
         {MODES.map((m) => (
-          <button key={m.id} className={viewMode === m.id && centerView === 'sessions' ? 'active' : ''} onClick={() => setViewMode(m.id)} title={`Ctrl+${MODES.indexOf(m) + 1}`}>
+          <button key={m.id} className={viewMode === m.id && centerView === 'sessions' ? 'active' : ''} onClick={() => setViewMode(m.id)} title={kbd(`Ctrl+${MODES.indexOf(m) + 1}`)}>
             {m.label}
           </button>
         ))}
@@ -87,13 +88,13 @@ export function Toolbar(): JSX.Element {
       <button className="btn ghost" onClick={fitAll} disabled={viewMode !== 'board'}>Fit All</button>
       <button className="btn primary" onClick={() => newSessionFor()}>+ New Session</button>
       {!detached && (
-        <button className={`icon-btn layout-toggle ${rightOpen ? 'on' : ''}`} title={`${rightOpen ? 'Hide' : 'Show'} Details Panel (Ctrl+Alt+B)`} onClick={toggleRight}>
+        <button className={`icon-btn layout-toggle ${rightOpen ? 'on' : ''}`} title={kbd(`${rightOpen ? 'Hide' : 'Show'} Details Panel (Ctrl+Alt+B)`)} onClick={toggleRight}>
           <PanelIcon side="right" open={rightOpen} />
         </button>
       )}
       <button
         className={`icon-btn layout-toggle ${detached ? 'on' : ''}`}
-        title={detached ? 'Dock Panels to This Window (Ctrl+Shift+B)' : 'Open Panels in Separate Window (Ctrl+Shift+B)'}
+        title={kbd(detached ? 'Dock Panels to This Window (Ctrl+Shift+B)' : 'Open Panels in Separate Window (Ctrl+Shift+B)')}
         onClick={() => window.panels?.toggle()}
       >
         <PopOutIcon open={detached} />

@@ -143,7 +143,7 @@ export function buildMenu(actions: MenuActions): Menu {
       item('Duplicate', 'session.duplicate'),
       item('Rename', 'session.rename'),
       sep,
-      item('Reveal Working Folder in Explorer', 'session.open-folder'),
+      item(isMac ? 'Reveal Working Folder in Finder' : 'Reveal Working Folder in Explorer', 'session.open-folder'),
       item('Open in VS Code', 'session.open-vscode'),
       item('Open in External Terminal', 'session.open-terminal'),
       sep,
