@@ -5,7 +5,7 @@ import { useStore } from '@/store';
 import { send } from '@/client';
 import { startDrag } from '@/lib/drag';
 import { groupLayout, shownRect, type GroupLayout } from '@/lib/groups';
-import { pcStyle, projectColor } from '@/lib/format';
+import { pcStyle, projectColor, statusClass, statusLabel } from '@/lib/format';
 
 const PAD = 24;
 /** room above the cards for the label */
@@ -101,7 +101,7 @@ function CollapsedBox({ project, members, box, label }: { project: Project; memb
       {label}
       <div className="collapsed-dots">
         {members.map((s) => (
-          <span key={s.id} className={`status-dot ${s.status}`} title={`${s.title} · ${s.status}`} />
+          <span key={s.id} className={`status-dot ${statusClass(s)}`} title={`${s.title} · ${statusLabel(s)}`} />
         ))}
         <span className="muted">{working ? `${working} working` : 'idle'}</span>
       </div>

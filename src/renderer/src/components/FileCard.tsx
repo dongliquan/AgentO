@@ -5,6 +5,10 @@ import { requestRead } from '@/client';
 import { basename, extname, fileIcon } from '@/lib/format';
 import { startDrag } from '@/lib/drag';
 import { CodeView } from './CodeView';
+import { languageOf } from '@/lib/highlight';
+import { MarkdownView } from './MarkdownView';
+import { JsonTree } from './JsonTree';
+import { CsvTable } from './CsvTable';
 
 const MIN_W = 260;
 const MIN_H = 160;
@@ -45,6 +49,8 @@ function FileCardImpl({ card, selected }: { card: FileCardModel; selected: boole
   };
 
   const name = basename(card.path);
+  const ext = extname(name);
+  const renderable = ext === 'md' || ext === 'markdown' || ext === 'json' || ext === 'csv' || ext === 'tsv';
   return (
     <div
       className={`card file ${selected ? 'selected' : ''}`}
@@ -59,8 +65,9 @@ function FileCardImpl({ card, selected }: { card: FileCardModel; selected: boole
         {git && <span className={`git-letter ${git}`}>{git}</span>}
         <span style={{ flex: 1 }} />
         <div className="segmented">
-          <button className={card.mode === 'diff' ? 'active' : ''} onClick={() => update(card.id, { mode: 'diff' })}>diff</button>
+          {renderable && <button className={card.mode === 'view' ? 'active' : ''} onClick={() => update(card.id, { mode: 'view' })}>View</button>}
           <button className={card.mode === 'raw' ? 'active' : ''} onClick={() => update(card.id, { mode: 'raw' })}>Raw</button>
+          <button className={card.mode === 'diff' ? 'active' : ''} onClick={() => update(card.id, { mode: 'diff' })}>diff</button>
         </div>
         <button className="card-menu-btn" title="Close" onClick={() => close(card.id)}>×</button>
       </div>
@@ -75,7 +82,17 @@ function FileCardImpl({ card, selected }: { card: FileCardModel; selected: boole
         ) : (
           <>
             {file.truncated && <div className="diff-note">File is truncated.</div>}
-            <CodeView content={file.content} maxLines={2000} />
+            {card.mode === 'view' && renderable ? (
+              ext === 'md' || ext === 'markdown' ? (
+                <MarkdownView content={file.content} />
+              ) : ext === 'json' ? (
+                <JsonTree content={file.content} />
+              ) : (
+                <CsvTable content={file.content} ext={ext} />
+              )
+            ) : (
+              <CodeView content={file.content} maxLines={2000} lang={languageOf(card.path)} />
+            )}
           </>
         )}
       </div>

@@ -3,15 +3,18 @@ import type { PanelsRelay, WindowRole } from '@shared/extra';
 
 export interface DesktopEvents {
   /** fired when a notification is clicked */
-  onFocusSession(cb: (sessionId: string) => void): () => void;
+  onFocusSession(cb: (sessionId: string, command?: string) => void): () => void;
   /** fired after Help › Restart Daemon succeeds; re-read getDaemonInfo() and reconnect */
   onDaemonRestarted(cb: () => void): () => void;
+  onFindResult(cb: (r: { matches: number; active: number }) => void): () => void;
 }
 
 /** Detached panels window (left sidebar + right panel in one window). */
 export interface PanelsApi {
   /** which window this renderer runs in */
   role: WindowRole;
+  /** the file a 'viewer' window shows */
+  file?: string;
   /** open the panels window, or close it when already open */
   toggle(): void;
   isOpen(): Promise<boolean>;

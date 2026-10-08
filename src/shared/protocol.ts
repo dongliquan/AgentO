@@ -140,6 +140,12 @@ export interface Session {
   title: string;
   color?: string;
   status: SessionStatus;
+  /** waiting on a question (trust / permission / confirmation prompt) — not just idle after finishing its turn */
+  attention?: boolean;
+  /** Claude: tokens the conversation carries now (re-read on every turn) — from the transcript's last call */
+  context?: number;
+  /** Claude: earlier conversations of this session (before a fresh start / restart), newest last */
+  prevResumeIds?: string[];
   pid?: number;
   resumeId?: string;
   createdAt: number;
@@ -266,6 +272,16 @@ export type ClientMessage =
   | { type: 'claude.sessions.list'; path: string }
   /** a message from the user for a session that is not running: it is started (resumed) and gets it when ready */
   | { type: 'session.message'; id: string; text: string }
+  /** type a message into a running session now: bracketed paste + Enter, Enter again if it did not submit */
+  | { type: 'session.paste'; id: string; text: string }
+  /** fresh start: the session writes a handoff note, then starts over as a new conversation that reads it */
+  | { type: 'session.fresh'; id: string }
+  /** go back to the conversation before the last fresh start / restart (the current one is kept in prevResumeIds) */
+  | { type: 'session.restorePrev'; id: string }
+  /** the session the manager has selected in this window (null: none) — never cleared automatically under them */
+  | { type: 'ui.select'; id: string | null }
+  /** what the user typed into a session's composer (delivered by the renderer): kept in the log, its answer reported */
+  | { type: 'session.note'; id: string; text: string }
   /** a session just for talking to an agent: in the "Chats" project and its folder (made the first time) */
   | { type: 'chat.new'; agent: AgentKind }
   /** Agents › Connections: re-detect the CLIs and report their install / sign-in state (answer: agents.status) */
@@ -287,7 +303,8 @@ export type ClientMessage =
   | { type: 'session.create'; projectId: string; folderId: string; agent: AgentKind; title?: string; command?: string; args?: string[]; cols?: number; rows?: number }
   | { type: 'head.create'; projectId?: string }      // one head coach per top-level project
   | { type: 'coach.create'; projectId: string; agent?: 'claude' | 'codex' | 'gemini' } // one coach per project; default claude
-  | { type: 'session.setRole'; id: string; role: 'coach' | 'player' } // player ⇄ playing coach
+  /** player ⇄ playing coach; quiet: a stopped session is not woken for the note (it rides along with its next work) */
+  | { type: 'session.setRole'; id: string; role: 'coach' | 'player'; quiet?: boolean }
   | { type: 'team.order'; target: TeamOrderTarget; text: string; task?: boolean }      // the user's order; task: added as a task (Tasks › Add Task)
   | { type: 'usage.report'; days: number; outside: boolean }   // Manager › Usage: token report for the last `days` days
   | { type: 'routine.save'; routine: RoutineInput }   // create (no id) or update
@@ -347,6 +364,8 @@ export type ServerMessage =
   | { type: 'chat.snapshot'; id: string; entries: ChatEntry[]; available: boolean }
   | { type: 'chat.upsert'; id: string; entries: ChatEntry[] }
   | { type: 'inbox'; items: InboxItem[] }
+  /** what changed since the last inbox message: new or changed rows (read flag), and rows that dropped out */
+  | { type: 'inbox.delta'; upsert: InboxItem[]; remove: string[] }
   | { type: 'usage'; usage: UsageInfo[] }
   | { type: 'fs.list.result'; path: string; entries: FsEntry[] }
   | { type: 'fs.read.result'; path: string; content: string; truncated: boolean }
@@ -373,10 +392,22 @@ export interface DesktopApi {
   openPath(path: string): Promise<void>;
   openInVsCode(path: string): Promise<void>;
   openExternalTerminal(path: string): Promise<void>;
+  /** an https page in the system browser */
+  openUrl(url: string): Promise<void>;
+  /** find in this window's page (Chromium find-in-page: rendered Markdown, code, tables); next: continue the same search */
+  find(text: string, forward: boolean, next: boolean): void;
+  stopFind(): void;
+  /** an image file as a data: URL (null when unreadable or over 25 MB) */
+  fileDataUrl(path: string): Promise<string | null>;
+  /** show a file in its own viewer window (an open window for the same file comes to the front) */
+  openFileWindow(path: string): void;
+  /** a web page's icon as a data: URL (null when it cannot be fetched) */
+  webFavicon(url: string): Promise<string | null>;
   /** Agents › Connections: open a terminal window that installs an agent CLI or signs in to it (fixed commands) */
   agentTerminal(kind: 'claude' | 'codex' | 'gemini', action: 'install' | 'login'): Promise<void>;
   onMenu(cb: (command: string) => void): () => void;
-  notify(title: string, body: string, sessionId?: string): void;
+  /** command: a palette/menu command id the main window runs when the notification is clicked (else: reveal sessionId) */
+  notify(title: string, body: string, sessionId?: string, command?: string): void;
   /** top-level labels of the application menu (for the in-app title bar) */
   menuLabels(): Promise<string[]>;
   /** pop up the submenu of a top-level menu at window coordinates */

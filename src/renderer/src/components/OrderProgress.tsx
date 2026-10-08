@@ -13,6 +13,7 @@ import { useBuffer } from '@/lib/buffers';
 
 const STATE_LABEL: Record<WorkState, string> = {
   done: 'done',
+  replaced: 'sent again',
   working: 'working',
   waiting: 'idle',
   stopped: 'stopped',
@@ -21,7 +22,7 @@ const STATE_LABEL: Record<WorkState, string> = {
 };
 
 /** What a session is doing right now: its running tool, else its last words, else the end of its terminal. */
-function Activity({ session: s }: { session: Session }): JSX.Element | null {
+export function Activity({ session: s }: { session: Session }): JSX.Element | null {
   const chat = useChats((st) => st.chats[s.id]);
   const buf = useBuffer(s.id);
   const now = useNow(15000);

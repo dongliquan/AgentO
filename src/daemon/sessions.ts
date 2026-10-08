@@ -12,6 +12,10 @@ import { defaultShell, findClaudeResumeId, getAgentDef, resolveCommand } from '.
 import { findTranscript } from './transcript';
 import { logsDir } from './paths';
 import { cardSize } from '@shared/layout';
+import { plainTerminalLines } from '@shared/plaintext';
+import { PROMPT_RE } from '@shared/prompts';
+import { contextSize } from './freshstart';
+import { discoverCodexId, findCodexRollout, readCodex } from './codex';
 import { log } from './log';
 
 const RING_BUFFER_BYTES = 200 * 1024;
@@ -36,6 +40,8 @@ export interface CreateSessionOpts {
   rows?: number;
   /** Claude only: first prompt, passed on the command line of the first launch */
   prompt?: string;
+  /** Ground position of the card (default: the first free slot) */
+  at?: { x: number; y: number };
 }
 
 interface Live {
@@ -49,6 +55,8 @@ interface Live {
   logStream: fs.WriteStream | null;
   /** output since the last input was written (what is on screen now — a prompt shown here is still unanswered) */
   sinceInput: string;
+  /** asksSomething's last answer and the screen text it was for */
+  asked?: { text: string; value: boolean };
 }
 
 export interface SessionManagerEvents {
@@ -79,6 +87,8 @@ export class SessionManager extends EventEmitter {
   private live = new Map<string, Live>();
   private buffers = new Map<string, string>();
   private waitingSince = new Map<string, number>();
+  /** first message of a restarted conversation (fresh start), used when its old process has exited */
+  private restartPrompt = new Map<string, string>();
   private hibernateTimer: NodeJS.Timeout | null = null;
 
   constructor(private store: Store) {
@@ -91,6 +101,16 @@ export class SessionManager extends EventEmitter {
         s.updatedAt = Date.now();
         store.upsertSession(s);
       }
+      // head coach cards were larger than a coach's: shrink a stored one about its centre
+      const head = cardSize('head');
+      if (s.role === 'head' && (s.w > head.w * 1.2 || s.h > head.h * 1.2)) {
+        s.x = Math.round(s.x + (s.w - head.w) / 2);
+        s.w = head.w;
+        s.h = head.h;
+        store.upsertSession(s);
+      }
+      if (s.agent === 'claude') s.context = contextSize(s.cwd, s.resumeId);
+      else if (s.agent === 'codex' && s.resumeId) s.context = codexContext(s.resumeId);
       this.sessions.set(s.id, s);
       this.buffers.set(s.id, this.loadLogTail(s.id));
     }
@@ -103,6 +123,12 @@ export class SessionManager extends EventEmitter {
   override emit<K extends keyof SessionManagerEvents>(event: K, ...args: Parameters<SessionManagerEvents[K]>): boolean {
     return super.emit(event, ...args);
   }
+
+  /** The manager is using it (selected in a window, or typed into it lately); set by the server. */
+  inUse: (id: string) => boolean = () => false;
+
+  /** Sessions that must not be auto-hibernated now (a fresh start under way); set by the team. */
+  keepAwake: (id: string) => boolean = () => false;
 
   /** Optional hook so the server can tell us which sessions have a UI attached. */
   isAttached: (id: string) => boolean = () => false;
@@ -138,7 +164,19 @@ export class SessionManager extends EventEmitter {
   private publicSession(s: StoredSession): Session {
     // Extra fields (command/args) are harmless for the renderer, but keep the wire shape tidy.
     const { command: _c, args: _a, ...rest } = s;
-    return rest;
+    return { ...rest, attention: this.asksSomething(s) };
+  }
+
+  /** Waiting, with a question on screen that came after the last input (idle after a finished turn is not this). */
+  private asksSomething(s: StoredSession): boolean {
+    if (s.status !== 'waiting') return false;
+    const live = this.live.get(s.id);
+    if (!live) return false;
+    // saves (card moves, reorders) repeat this: render the screen again only when it printed something new
+    if (live.asked && live.asked.text === live.sinceInput) return live.asked.value;
+    const value = PROMPT_RE.test(plainTerminalLines(live.sinceInput.slice(-20_000)).join('\n').slice(-1500));
+    live.asked = { text: live.sinceInput, value };
+    return value;
   }
 
   private logPath(id: string): string {
@@ -177,6 +215,13 @@ export class SessionManager extends EventEmitter {
     if (s.status === status) return;
     const prev = s.status;
     s.status = status;
+    // a turn ended: how big the conversation is now (what the next turn re-reads)
+    if (s.agent === 'claude' && (status === 'waiting' || status === 'hibernated')) s.context = contextSize(s.cwd, s.resumeId);
+    if (s.agent === 'codex' && (status === 'waiting' || status === 'hibernated')) {
+      // Codex prints no session id: find its rollout once it has written one, then it can hibernate / resume like Claude
+      if (!s.resumeId) this.discoverCodex(s);
+      if (s.resumeId) s.context = codexContext(s.resumeId);
+    }
     if (status === 'waiting') this.waitingSince.set(s.id, Date.now());
     else this.waitingSince.delete(s.id);
     this.save(s);
@@ -235,7 +280,11 @@ export class SessionManager extends EventEmitter {
       // A pinned id with no transcript yet (nothing was sent) cannot be resumed: start it fresh under the same id.
       if (mode === 'resume' && s.resumeId && !findTranscript(s.cwd, s.resumeId)) mode = 'fresh';
       if (mode === 'fresh') {
-        if (!s.resumeId || findTranscript(s.cwd, s.resumeId)) s.resumeId = randomUUID();
+        if (!s.resumeId || findTranscript(s.cwd, s.resumeId)) {
+          // the conversation it leaves stays reachable (Restore earlier conversation)
+          if (s.resumeId) s.prevResumeIds = [...(s.prevResumeIds ?? []).filter((x) => x !== s.resumeId), s.resumeId].slice(-10);
+          s.resumeId = randomUUID();
+        }
         args = [...args, '--session-id', s.resumeId];
       }
     }
@@ -386,7 +435,9 @@ export class SessionManager extends EventEmitter {
     if (intent === 'restart') {
       this.save(s, false);
       setTimeout(() => {
-        if (this.sessions.has(id) && !this.live.has(id)) this.safeSpawn(s, 'fresh');
+        const prompt = this.restartPrompt.get(id);
+        this.restartPrompt.delete(id);
+        if (this.sessions.has(id) && !this.live.has(id)) this.safeSpawn(s, 'fresh', prompt);
       }, 100);
       return;
     }
@@ -403,18 +454,52 @@ export class SessionManager extends EventEmitter {
     this.emit('inbox', item);
   }
 
-  /** First grid cell (3 columns) that doesn't overlap existing cards in the same project (team sessions: any card). */
+  /**
+   * Where a new card goes on the Ground. A player joins its project (parts included): the first grid cell (3 columns)
+   * from the project's top-left that touches no card and stays out of every other project's area. A project's first
+   * card, or one that finds no such cell, goes to the right of everything. Team sessions: first cell clear of any card.
+   */
   private freeSlot(projectId: string | null, w: number, h: number): { x: number; y: number } {
     const GAP = 40;
-    const others = [...this.sessions.values()].filter((o) => projectId === null || o.projectId === projectId);
-    const hits = (x: number, y: number): boolean =>
-      others.some((o) => x < o.x + o.w && o.x < x + w && y < o.y + o.h && o.y < y + h);
-    for (let i = 0; i < 300; i++) {
-      const x = GAP + (i % 3) * (w + GAP);
-      const y = GAP + Math.floor(i / 3) * (h + GAP);
-      if (!hits(x, y)) return { x, y };
+    const all = [...this.sessions.values()];
+    const overlaps = (x: number, y: number, b: { x: number; y: number; w: number; h: number }): boolean =>
+      x < b.x + b.w && b.x < x + w && y < b.y + b.h && b.y < y + h;
+    if (projectId === null) {
+      for (let i = 0; i < 300; i++) {
+        const x = GAP + (i % 3) * (w + GAP);
+        const y = GAP + Math.floor(i / 3) * (h + GAP);
+        if (!all.some((o) => overlaps(x, y, o))) return { x, y };
+      }
+      return { x: GAP, y: GAP };
     }
-    return { x: GAP, y: GAP };
+    if (all.length === 0) return { x: GAP, y: GAP };
+    const projects = this.store.listProjects();
+    const rootOf = (id: string): string => projects.find((p) => p.id === id)?.parentId || id;
+    const root = rootOf(projectId);
+    const own = all.filter((o) => rootOf(o.projectId) === root);
+    // other projects' areas, with room for their group frame (GroundGroups draws a padded box around the cards)
+    const PAD = 160;
+    const areas = new Map<string, { x0: number; y0: number; x1: number; y1: number }>();
+    for (const o of all) {
+      const r = rootOf(o.projectId);
+      if (r === root) continue;
+      const a = areas.get(r) ?? { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+      areas.set(r, { x0: Math.min(a.x0, o.x), y0: Math.min(a.y0, o.y), x1: Math.max(a.x1, o.x + o.w), y1: Math.max(a.y1, o.y + o.h) });
+    }
+    const boxes = [...areas.values()].map((a) => ({ x: a.x0 - PAD, y: a.y0 - PAD, w: a.x1 - a.x0 + PAD * 2, h: a.y1 - a.y0 + PAD * 2 }));
+    const clear = (x: number, y: number): boolean => !all.some((o) => overlaps(x, y, o)) && !boxes.some((b) => overlaps(x, y, b));
+    if (own.length) {
+      const x0 = Math.min(...own.map((o) => o.x));
+      const y0 = Math.min(...own.map((o) => o.y));
+      for (let i = 0; i < 60; i++) {
+        const x = x0 + (i % 3) * (w + GAP);
+        const y = y0 + Math.floor(i / 3) * (h + GAP);
+        if (clear(x, y)) return { x, y };
+      }
+    }
+    const right = Math.max(...all.map((o) => o.x + o.w)) + PAD * 2;
+    const top = own.length ? Math.min(...own.map((o) => o.y)) : Math.min(...all.map((o) => o.y));
+    return { x: right, y: top };
   }
 
   /* ---------- public operations ---------- */
@@ -424,7 +509,7 @@ export class SessionManager extends EventEmitter {
     const now = Date.now();
     const role = opts.role ?? 'player';
     const size = cardSize(role);
-    const pos = this.freeSlot(role === 'player' ? opts.projectId : null, size.w, size.h);
+    const pos = opts.at ?? this.freeSlot(role === 'player' ? opts.projectId : null, size.w, size.h);
     const s: StoredSession = {
       id: randomUUID(),
       projectId: opts.projectId,
@@ -537,17 +622,61 @@ export class SessionManager extends EventEmitter {
   paste(id: string, text: string, submit = true): void {
     const live = this.live.get(id);
     if (!live) throw new Error('Session is not running');
+    const s = this.sessions.get(id);
+    // Claude writes a prompt to its transcript the moment it takes it: where the transcript ends now
+    const transcript = s?.resumeId ? (s.agent === 'claude' ? findTranscript(s.cwd, s.resumeId) : s.agent === 'codex' ? findCodexRollout(s.resumeId) : undefined) : undefined;
+    const from = transcript ? fileSize(transcript) : 0;
     live.sinceInput = '';
     live.proc.write(`\x1b[200~${text.replace(/\r\n?/g, '\n')}\x1b[201~`);
     if (submit) {
       // Codex folds fast input into one paste and takes an Enter inside that burst as a newline: wait until the paste
       // has landed (longer for longer text) before submitting
-      const s = this.sessions.get(id);
       const delay = s?.agent === 'codex' ? Math.min(3000, 600 + text.length) : 150;
+      const first = probeOf(text);
       setTimeout(() => {
-        if (this.live.get(id) === live) live.proc.write('\r');
+        if (this.live.get(id) !== live) return;
+        live.proc.write('\r');
+        this.confirmSubmit(id, live, { first, transcript, from }, 0);
       }, delay);
     }
+  }
+
+  /**
+   * An Enter can get lost: a CLI still starting up, or Claude Code still taking in a paste ("Pasting…" — an image path
+   * in the text makes it attach the image first, which takes a while; an Enter meanwhile is dropped). Until the message
+   * is taken, press Enter again a few times. An extra Enter on an empty prompt does nothing.
+   */
+  private confirmSubmit(id: string, live: Live, sent: { first: string; transcript?: string; from: number }, tries: number): void {
+    const WAITS = [1500, 3000, 5000, 8000, 12000];
+    if (tries >= WAITS.length) return;
+    setTimeout(() => {
+      if (this.live.get(id) !== live || this.taken(id, sent)) return;
+      // busy: it took the message (or is still taking in the paste) — look again later, press nothing now
+      if (this.sessions.get(id)?.status === 'waiting') {
+        log.warn('session: the message was not submitted, pressing Enter again', id);
+        live.proc.write('\r');
+      }
+      this.confirmSubmit(id, live, sent, tries + 1);
+    }, WAITS[tries]);
+  }
+
+  /**
+   * Whether the session took the message: Claude — a user turn was written to its transcript since; other CLIs — the
+   * input line at the bottom of the screen no longer holds the text (best effort).
+   */
+  private taken(id: string, sent: { first: string; transcript?: string; from: number }): boolean {
+    if (sent.transcript) {
+      const added = readFrom(sent.transcript, sent.from, 2 * 1024 * 1024);
+      if (added === null) return true;
+      // its own text, as the transcript stores it (a tool result is also a "user" line — not proof)
+      return sent.first ? added.includes(JSON.stringify(sent.first).slice(1, -1)) : /"type"\s*:\s*"user"/.test(added);
+    }
+    if (!sent.first) return true;
+    const tail = plainTerminalLines((this.buffers.get(id) ?? '').slice(-30_000)).slice(-25);
+    for (let i = tail.length - 1; i >= 0; i--) {
+      if (/^\s*[\u276f\u203a]\s?/.test(tail[i]!)) return !tail.slice(i, i + 3).join(' ').includes(sent.first);
+    }
+    return true;
   }
 
   resize(id: string, cols: number, rows: number): void {
@@ -586,21 +715,67 @@ export class SessionManager extends EventEmitter {
     this.killProc(live);
   }
 
-  restart(id: string): void {
+  /** Start over as a new conversation; `prompt` (Claude) is its first message. */
+  restart(id: string, prompt?: string): void {
     const s = this.sessions.get(id);
     if (!s) throw new Error('Session not found');
     const live = this.live.get(id);
     if (live) {
+      if (prompt) this.restartPrompt.set(id, prompt);
       live.intent = 'restart'; // onExit re-spawns
       this.killProc(live);
       return;
     }
-    this.spawn(s, 'fresh');
+    this.spawn(s, 'fresh', prompt);
   }
 
-  private safeSpawn(s: StoredSession, mode: 'fresh' | 'resume'): void {
+  /** Back to the conversation before the last fresh start / restart; the current one joins the earlier list. */
+  restorePrevious(id: string): void {
+    const s = this.sessions.get(id);
+    if (!s) throw new Error('Session not found');
+    const prev = s.prevResumeIds?.[s.prevResumeIds.length - 1];
+    if (!prev) throw new Error('This session has no earlier conversation');
+    const swap = (): void => {
+      s.prevResumeIds = [...(s.prevResumeIds ?? []).filter((x) => x !== prev), ...(s.resumeId ? [s.resumeId] : [])].slice(-10);
+      s.resumeId = prev;
+      s.context = undefined;
+      this.save(s);
+      this.spawn(s, 'resume');
+    };
+    const live = this.live.get(id);
+    if (!live) return swap();
+    live.intent = 'hibernate';
+    this.killProc(live);
+    // start the earlier conversation once the current process is gone
+    const started = Date.now();
+    const wait = (): void => {
+      if (!this.live.has(id)) swap();
+      else if (Date.now() - started < 15_000) setTimeout(wait, 200);
+    };
+    setTimeout(wait, 200);
+  }
+
+  /** A running Codex session's id, from the rollout it started in its folder (ids other sessions use are skipped). */
+  private discoverCodex(s: StoredSession): void {
+    const live = this.live.get(s.id);
+    if (!live) return;
+    const taken = new Set([...this.sessions.values()].filter((o) => o.agent === 'codex' && o.resumeId).map((o) => o.resumeId as string));
+    const id = discoverCodexId(s.cwd, live.startedAt, taken);
+    if (id) {
+      s.resumeId = id;
+      log.info('codex session id found', s.id, id);
+    }
+  }
+
+  /** How long the session has been waiting (idle) without a break, in ms; 0 when it is not waiting. */
+  idleFor(id: string): number {
+    const since = this.waitingSince.get(id);
+    return since ? Date.now() - since : 0;
+  }
+
+  private safeSpawn(s: StoredSession, mode: 'fresh' | 'resume', prompt?: string): void {
     try {
-      this.spawn(s, mode);
+      this.spawn(s, mode, prompt);
     } catch (e) {
       log.warn('spawn failed', s.id, e);
     }
@@ -627,6 +802,7 @@ export class SessionManager extends EventEmitter {
       const found = findClaudeResumeId(s.cwd, live.startedAt);
       if (found) s.resumeId = found;
     }
+    if (!s.resumeId && s.agent === 'codex') this.discoverCodex(s);
     if (!s.resumeId) {
       throw new Error('Cannot hibernate: resume ID is not known yet');
     }
@@ -675,7 +851,7 @@ export class SessionManager extends EventEmitter {
       const s = this.sessions.get(id);
       if (!s || s.status !== 'waiting' || !this.live.has(id)) continue;
       if (now - since < limit) continue;
-      if (this.isAttached(id)) continue;
+      if (this.isAttached(id) || this.keepAwake(id)) continue;
       try {
         this.hibernate(id);
         log.info('auto-hibernated', id);
@@ -710,4 +886,48 @@ export class SessionManager extends EventEmitter {
     if (this.hibernateTimer) clearInterval(this.hibernateTimer);
     this.hibernateTimer = null;
   }
+}
+
+function fileSize(p: string): number {
+  try {
+    return fs.statSync(p).size;
+  } catch {
+    return 0;
+  }
+}
+
+/** The text a file gained after `from` (at most `max` bytes); null when it cannot be read. */
+function readFrom(p: string, from: number, max: number): string | null {
+  try {
+    const size = fs.statSync(p).size;
+    if (size <= from) return '';
+    const len = Math.min(max, size - from);
+    const buf = Buffer.alloc(len);
+    const fd = fs.openSync(p, 'r');
+    try {
+      fs.readSync(fd, buf, 0, len, from);
+    } finally {
+      fs.closeSync(fd);
+    }
+    return buf.toString('utf8');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A piece of the message to look for in the transcript: its longest plain word run from the first lines (letters and
+ * digits only), so quoting / escaping / paste wrappers in how the transcript stores it do not matter.
+ */
+function probeOf(text: string): string {
+  const head = text.split('\n').filter((l) => l.trim()).slice(0, 3).join(' ');
+  const runs = head.match(/[\p{L}\p{N}]+(?: [\p{L}\p{N}]+)*/gu) ?? [];
+  const best = runs.sort((a, b) => b.length - a.length)[0] ?? '';
+  return best.slice(0, 24);
+}
+
+/** The latest Codex call's input tokens (its conversation size), from the end of its rollout. */
+function codexContext(id: string): number | undefined {
+  const file = findCodexRollout(id);
+  return file ? readCodex(file, 512 * 1024).context : undefined;
 }

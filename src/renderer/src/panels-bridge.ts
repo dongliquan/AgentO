@@ -64,7 +64,7 @@ function initPanels(): void {
 }
 
 export function initPanelsBridge(): void {
-  if (!window.panels) return;
+  if (!window.panels || window.panels.role === 'viewer') return;
   if (IS_PANELS) initPanels();
   else initMain();
 }

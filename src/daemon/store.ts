@@ -45,6 +45,7 @@ interface SessionRow {
   status: string;
   pid: number | null;
   resume_id: string | null;
+  prev_resume_ids: string | null;
   created_at: number;
   updated_at: number;
   exit_code: number | null;
@@ -166,6 +167,13 @@ function rowToSession(r: SessionRow): StoredSession {
   if (r.sort_order != null) s.order = r.sort_order;
   if (r.pid != null) s.pid = r.pid;
   if (r.resume_id != null) s.resumeId = r.resume_id;
+  if (r.prev_resume_ids) {
+    try {
+      s.prevResumeIds = JSON.parse(r.prev_resume_ids) as string[];
+    } catch {
+      /* ignore */
+    }
+  }
   if (r.exit_code != null) s.exitCode = r.exit_code;
   if (r.command != null) s.command = r.command;
   if (r.args != null) {
@@ -238,10 +246,26 @@ export class Store {
   }
 
   /** Columns added after the first release. */
+  /** Small JSON values that must survive a restart (the team's queues). */
+  getKv<T>(key: string): T | undefined {
+    const r = this.stmt('SELECT value FROM kv WHERE key = ?').get(key) as { value: string } | undefined;
+    if (!r) return undefined;
+    try {
+      return JSON.parse(r.value) as T;
+    } catch {
+      return undefined;
+    }
+  }
+  setKv(key: string, value: unknown): void {
+    this.stmt('INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, JSON.stringify(value));
+  }
+
   private migrate(): void {
+    this.db.exec('CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
     const cols = new Set((this.db.prepare('PRAGMA table_info(sessions)').all() as { name: string }[]).map((c) => c.name));
     if (!cols.has('sort_order')) this.db.exec('ALTER TABLE sessions ADD COLUMN sort_order REAL');
     if (!cols.has('role')) this.db.exec("ALTER TABLE sessions ADD COLUMN role TEXT NOT NULL DEFAULT 'player'");
+    if (!cols.has('prev_resume_ids')) this.db.exec('ALTER TABLE sessions ADD COLUMN prev_resume_ids TEXT');
     const inboxCols = new Set((this.db.prepare('PRAGMA table_info(inbox)').all() as { name: string }[]).map((c) => c.name));
     if (!inboxCols.has('from_id')) this.db.exec('ALTER TABLE inbox ADD COLUMN from_id TEXT');
     const projectCols = new Set((this.db.prepare('PRAGMA table_info(projects)').all() as { name: string }[]).map((c) => c.name));
@@ -420,15 +444,16 @@ export class Store {
   upsertSession(s: StoredSession): void {
     this.stmt(
         `INSERT INTO sessions (id, project_id, folder_id, cwd, agent, title, color, status, pid, resume_id,
-           created_at, updated_at, exit_code, x, y, w, h, cols, rows, command, args, role, sort_order)
+           created_at, updated_at, exit_code, x, y, w, h, cols, rows, command, args, role, sort_order, prev_resume_ids)
          VALUES (@id, @project_id, @folder_id, @cwd, @agent, @title, @color, @status, @pid, @resume_id,
-           @created_at, @updated_at, @exit_code, @x, @y, @w, @h, @cols, @rows, @command, @args, @role, @sort_order)
+           @created_at, @updated_at, @exit_code, @x, @y, @w, @h, @cols, @rows, @command, @args, @role, @sort_order, @prev_resume_ids)
          ON CONFLICT(id) DO UPDATE SET
            project_id=excluded.project_id, folder_id=excluded.folder_id, cwd=excluded.cwd, agent=excluded.agent,
            title=excluded.title, color=excluded.color, status=excluded.status, pid=excluded.pid,
            resume_id=excluded.resume_id, updated_at=excluded.updated_at, exit_code=excluded.exit_code,
            x=excluded.x, y=excluded.y, w=excluded.w, h=excluded.h, cols=excluded.cols, rows=excluded.rows,
-           command=excluded.command, args=excluded.args, role=excluded.role, sort_order=excluded.sort_order`
+           command=excluded.command, args=excluded.args, role=excluded.role, sort_order=excluded.sort_order,
+           prev_resume_ids=excluded.prev_resume_ids`
       )
       .run({
         id: s.id,
@@ -441,6 +466,7 @@ export class Store {
         status: s.status,
         pid: s.pid ?? null,
         resume_id: s.resumeId ?? null,
+        prev_resume_ids: s.prevResumeIds?.length ? JSON.stringify(s.prevResumeIds.slice(-10)) : null,
         created_at: s.createdAt,
         updated_at: s.updatedAt,
         exit_code: s.exitCode ?? null,
@@ -459,15 +485,29 @@ export class Store {
 
   removeSession(id: string): void {
     this.stmt('DELETE FROM sessions WHERE id = ?').run(id);
-    this.stmt('DELETE FROM inbox WHERE session_id = ?').run(id);
+    // its notifications go; the team traffic stays (orders and reports it was part of keep their threads)
+    this.stmt("DELETE FROM inbox WHERE session_id = ? AND kind NOT IN ('directive', 'report')").run(id);
+  }
+
+  /** A deleted project's records: all inbox rows of these sessions, and the done / task marks on them. */
+  purgeRecords(sessionIds: string[]): void {
+    const del = this.db.transaction((ids: string[]) => {
+      for (const id of ids) this.stmt('DELETE FROM inbox WHERE session_id = ? OR from_id = ?').run(id, id);
+      this.stmt('DELETE FROM order_done WHERE id NOT IN (SELECT id FROM inbox)').run();
+      this.stmt('DELETE FROM order_task WHERE id NOT IN (SELECT id FROM inbox)').run();
+    });
+    del(sessionIds);
   }
 
   /* ---------- inbox ---------- */
 
-  listInbox(limit = 500): InboxItem[] {
-    return (this.stmt('SELECT * FROM inbox ORDER BY created_at DESC LIMIT ?').all(limit) as InboxRow[]).map(
-      rowToInbox
-    );
+  /** The latest team traffic (orders, directives, reports — the threads) and the latest notifications, newest first. */
+  listInbox(team = 1500, notes = 300): InboxItem[] {
+    const rows = [
+      ...(this.stmt("SELECT * FROM inbox WHERE kind IN ('directive', 'report') ORDER BY created_at DESC LIMIT ?").all(team) as InboxRow[]),
+      ...(this.stmt("SELECT * FROM inbox WHERE kind NOT IN ('directive', 'report') ORDER BY created_at DESC LIMIT ?").all(notes) as InboxRow[])
+    ];
+    return rows.sort((a, b) => b.created_at - a.created_at).map(rowToInbox);
   }
 
   lastInboxForSession(sessionId: string): InboxItem | undefined {
@@ -482,7 +522,11 @@ export class Store {
     this.stmt('INSERT INTO inbox (id, session_id, kind, text, created_at, read, from_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(item.id, item.sessionId, item.kind, item.text, item.createdAt, read ? 1 : 0, fromId ?? null);
     // keep the table bounded (checked every 50 inserts: a sorted delete on each insert is wasted work)
-    if (++this.inboxInserts % 50 === 0) this.stmt('DELETE FROM inbox WHERE id IN (SELECT id FROM inbox ORDER BY created_at DESC LIMIT -1 OFFSET 2000)').run();
+    if (++this.inboxInserts % 50 === 0) {
+      // notifications: the latest 2000; team traffic (the order threads): the latest 20000
+      this.stmt("DELETE FROM inbox WHERE id IN (SELECT id FROM inbox WHERE kind NOT IN ('directive', 'report') ORDER BY created_at DESC LIMIT -1 OFFSET 2000)").run();
+      this.stmt("DELETE FROM inbox WHERE id IN (SELECT id FROM inbox WHERE kind IN ('directive', 'report') ORDER BY created_at DESC LIMIT -1 OFFSET 20000)").run();
+    }
     return item;
   }
 

@@ -20,7 +20,7 @@ function readWidths(): Record<string, number> {
  * The main window's side columns each take a share of the window width (percent), the Ground takes the rest:
  * sidebar 15, right panel 35 (the Ground about half). A share is its own: moving one handle never changes the other column.
  */
-const SHARE_VARS = ['--side-share', '--right-share'];
+const SHARE_VARS = ['--side-share', '--right-share', '--second-share'];
 
 /** Apply remembered widths at startup. */
 export function applyStoredWidths(): void {

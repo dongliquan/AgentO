@@ -15,6 +15,8 @@ import { attachmentsDir, dataDir, ensureDir, daemonJsonPath, logsDir } from './p
 import { log } from './log';
 import { Store } from './store';
 import { SessionManager } from './sessions';
+import { CodexParser, findCodexRollout } from './codex';
+import { CARD_PORTRAIT } from '@shared/layout';
 import { detectAgents } from './agents';
 import { collectUsage } from './usage';
 import { gitChanged, listDir, readFileCapped, searchFiles } from './fsapi';
@@ -32,14 +34,16 @@ import { fixPathFromLoginShell } from '@shared/loginpath';
 const START_ORDER = (plan: boolean, brief: string): string =>
   `[New project]
 You lead this new project. Below is the manager's brief.
-1. Look at the project folder(s) to understand the starting point (list_projects shows them).
+1. Get the starting point from list_projects and a quick look at the top level of the folder(s) — do not read the
+   code yourself (a player can survey it as its first task).
 2. Design the team: 2–5 parts (areas of work, e.g. planning, front-end, back-end, QA) — create_part each one (give
    \`folders\` when a part works in a subfolder).
 3. In each part create_session the players it needs (one per area of work, a short Korean title each). Do not give
    them a prompt yet.
-4. In a part with two or more players, make_coach the one that should lead it.
+4. Do not make coaches: you manage every part's players yourself (a coach that only relays your messages costs
+   tokens and time). Only a part with 4 or more players that needs constant review may get one (make_coach).
 ${plan ? `5. report_up to the manager, in Korean: the parts, the players, the first tasks and the order of work. Then WAIT for
-   the manager's go before sending anyone work.` : `5. Hand out the first tasks (send_to_session to the coaches, or the players in a part without a coach), then
+   the manager's go before sending anyone work.` : `5. Hand out the first tasks (send_to_session to the players), then
    report_up the team and the plan to the manager, in Korean.`}
 
 Brief from the manager:
@@ -47,20 +51,21 @@ ${brief}`;
 
 /** Session › New Chat: the project (and folder name) that holds the chat sessions, and what a chat is called. */
 const CHATS = 'Chats';
+const CHAT_GAP = 80;
 const CHAT_NAMES: Partial<Record<string, string>> = { codex: 'ChatGPT', claude: 'Claude', gemini: 'Gemini' };
 
 /** Organize Team: what the head coach is asked to do with a project's sessions. */
 const ORGANIZE_ORDER = `[Organize the team]
 The sessions of this project were brought in from VS Code / a terminal: they all sit directly under the project as
 players, stopped. Organize them into a team:
-1. list_sessions, then read_session (max_entries 15) for each one to learn what it works on. Reading does not start
+1. list_sessions, then read_session (max_entries 3) for each one to learn what it works on. Reading does not start
    them — do not send_to_session anyone, that would wake them and cost tokens.
 2. Group them by area of work into 2–6 parts (for example docs/analysis, front-end, back-end, QA/bugs, tools) and
    create_part each one.
 3. move_session every session into its part. If a title is unclear, rename_session it (short, Korean).
-4. In each part with two or more sessions, make_coach the session that knows that area best. A part with one
-   session needs no coach.
-5. Then report_up to the manager, in Korean: the parts, who is in each, each part's coach, and sessions that look
+4. Do not make coaches: you manage the parts' players yourself (a coach that only relays messages costs tokens
+   and time). Only a part with 4 or more sessions that needs constant review may get one (make_coach).
+5. Then report_up to the manager, in Korean: the parts, who is in each, and sessions that look
    finished or obsolete (candidates to remove). Do not hand out any work yet.`;
 
 const HERE = typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
@@ -199,6 +204,11 @@ async function main(): Promise<void> {
     for (const set of clients.values()) if (set.has(id)) return true;
     return false;
   };
+  /** what each window has selected, and when the manager last typed into each session: "in use" for auto fresh start */
+  const selected = new Map<WebSocket, string | null>();
+  const typedAt = new Map<string, number>();
+  const typed = (id: string): void => void typedAt.set(id, Date.now());
+  sessions.inUse = (id) => [...selected.values()].includes(id) || Date.now() - (typedAt.get(id) ?? 0) < 2 * 3600_000;
 
   const sendTo = (ws: WebSocket, msg: ServerMessage) => {
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
@@ -212,14 +222,16 @@ async function main(): Promise<void> {
   const chats = new Map<string, { claudeId: string; tail: TranscriptTail }>();
   const chatFor = (id: string): TranscriptTail | undefined => {
     const s = sessions.get(id);
-    if (!s || s.agent !== 'claude' || !s.resumeId) return undefined;
+    if (!s || (s.agent !== 'claude' && s.agent !== 'codex') || !s.resumeId) return undefined;
     const cur = chats.get(id);
     if (cur && cur.claudeId === s.resumeId) return cur.tail;
     cur?.tail.dispose();
     const claudeId = s.resumeId;
+    const codex = s.agent === 'codex';
     const tail = new TranscriptTail(
-      () => findTranscript(s.cwd, claudeId),
-      (entries) => broadcast({ type: 'chat.upsert', id, entries })
+      () => (codex ? findCodexRollout(claudeId) : findTranscript(s.cwd, claudeId)),
+      (entries) => broadcast({ type: 'chat.upsert', id, entries }),
+      codex ? new CodexParser() : undefined
     );
     chats.set(id, { claudeId, tail });
     return tail;
@@ -244,10 +256,28 @@ async function main(): Promise<void> {
     broadcast({ type: 'session.removed', id });
   });
   sessions.on('data', (id, data) => broadcast({ type: 'session.data', id, data }));
-  sessions.on('inbox', () => broadcast({ type: 'inbox', items: store.listInbox() }));
+  /*
+   * Inbox changes go out as deltas, coalesced: the full list (up to 500 rows, often 1 MB+) is sent only at welcome.
+   * Each row's signature is its read flag; anything new, changed or dropped since the last push is sent.
+   */
+  let sentInbox = new Map<string, boolean>(store.listInbox().map((i) => [i.id, i.read]));
+  let inboxTimer: NodeJS.Timeout | null = null;
+  function pushInbox(): void {
+    if (inboxTimer) return;
+    inboxTimer = setTimeout(() => {
+      inboxTimer = null;
+      const items = store.listInbox();
+      const now = new Map(items.map((i) => [i.id, i.read]));
+      const upsert = items.filter((i) => sentInbox.get(i.id) !== i.read);
+      const remove = [...sentInbox.keys()].filter((id) => !now.has(id));
+      sentInbox = now;
+      if (upsert.length || remove.length) broadcast({ type: 'inbox.delta', upsert, remove });
+    }, 120);
+  }
+  sessions.on('inbox', () => pushInbox());
 
   const team = new Team(store, sessions, { port, token, version: VERSION }, () =>
-    broadcast({ type: 'inbox', items: store.listInbox() })
+    pushInbox()
   );
   sessions.launchExtras = (s) => team.launchExtras(s);
   sessions.launchEnv = (s) => team.launchEnv(s);
@@ -369,7 +399,7 @@ async function main(): Promise<void> {
       case 'project.import': {
         const { project, missing } = importProject({ store, sessions, team, routines }, msg.data);
         broadcast({ type: 'projects', projects: store.listProjects() });
-        broadcast({ type: 'inbox', items: store.listInbox() });
+        pushInbox();
         log.info('project opened from file', project.name, missing ? `(${missing} folder(s) missing)` : '');
         if (missing) throw new Error(`Opened "${project.name}", but ${missing} of its folders do not exist on this PC — add them again or fix the paths.`);
         return;
@@ -390,15 +420,50 @@ async function main(): Promise<void> {
         const name = CHAT_NAMES[msg.agent] ?? msg.agent;
         const projectId = chats.id;
         const n = sessions.list().filter((s) => s.projectId === projectId && s.agent === msg.agent).length + 1;
-        const session = sessions.create({ projectId, folderId: folder.id, cwd: dir, agent: msg.agent, role: 'player', title: `${name} chat ${n}` });
+        // chats sit in one row above every other card on the Ground — next to the last chat, else above the top-left
+        // of the rest — and never on top of a card (older chats may sit among the projects)
+        const chatSlot = (): { x: number; y: number } | undefined => {
+          const all = sessions.list();
+          if (!all.length) return undefined;
+          const { w, h } = CARD_PORTRAIT;
+          const free = (x: number, y: number): boolean => !all.some((o) => x < o.x + o.w && o.x < x + w && y < o.y + o.h && o.y < y + h);
+          const mine = all.filter((s) => s.projectId === projectId);
+          if (mine.length) {
+            const last = mine.reduce((a, b) => (b.x + b.w > a.x + a.w ? b : a));
+            if (free(last.x + last.w + CHAT_GAP, last.y)) return { x: last.x + last.w + CHAT_GAP, y: last.y };
+          }
+          const x0 = Math.min(...all.map((s) => s.x));
+          const y = Math.min(...all.map((s) => s.y)) - h - CHAT_GAP * 4;
+          for (let x = x0; ; x += w + CHAT_GAP) if (free(x, y)) return { x, y };
+        };
+        const session = sessions.create({ projectId, folderId: folder.id, cwd: dir, agent: msg.agent, role: 'player', title: `${name} chat ${n}`, at: chatSlot() });
         clients.get(ws)?.add(session.id);
         sendTo(ws, { type: 'chat.created', id: session.id });
         return;
       }
       case 'session.message':
+        typed(msg.id);
         team.message(msg.id, msg.text);
         return;
+      case 'session.note':
+        team.note(msg.id, msg.text);
+        return;
+      case 'session.paste':
+        typed(msg.id);
+        sessions.paste(msg.id, msg.text);
+        return;
+      case 'ui.select':
+        selected.set(ws, msg.id);
+        return;
+      case 'session.fresh':
+        team.freshStart(msg.id, 'manual');
+        return;
+      case 'session.restorePrev':
+        sessions.restorePrevious(msg.id);
+        return;
       case 'attachment.save': {
+        const maxEncodedLength = 4 * Math.ceil((20 * 1024 * 1024) / 3);
+        if (msg.data.length > maxEncodedLength) throw new Error('The image is larger than 20 MB');
         const ext = (path.extname(msg.name).toLowerCase().match(/^\.(png|jpe?g|gif|webp|bmp)$/)?.[0]) ?? '.png';
         const buf = Buffer.from(msg.data, 'base64');
         if (buf.length === 0) throw new Error('The image is empty');
@@ -444,9 +509,20 @@ async function main(): Promise<void> {
       }
       case 'project.delete': {
         const ids = new Set([msg.id, ...store.listProjects().filter((p) => p.parentId === msg.id).map((p) => p.id)]);
-        for (const s of sessions.list()) if (ids.has(s.projectId)) sessions.remove(s.id);
+        const gone = sessions.list().filter((s) => ids.has(s.projectId)).map((s) => s.id);
+        for (const id of gone) sessions.remove(id);
+        // what AgentO kept for it: records, routines, team folders, queues (never the project's folders on disk)
+        store.purgeRecords(gone);
+        for (const r of store.listRoutines()) {
+          const t = r.target;
+          const aimed = t.kind === 'project' ? [t.projectId] : t.kind === 'projects' ? t.projectIds : t.kind === 'session' ? [t.sessionId] : [];
+          if (aimed.length && aimed.every((x) => ids.has(x) || gone.includes(x))) store.deleteRoutine(r.id);
+        }
+        team.forgetProject([...ids], gone);
         store.deleteProject(msg.id);
         broadcast({ type: 'projects', projects: store.listProjects() });
+        broadcast({ type: 'routines', routines: store.listRoutines() });
+        pushInbox();
         return;
       }
       case 'folder.add': {
@@ -509,7 +585,7 @@ async function main(): Promise<void> {
         return;
       }
       case 'session.setRole':
-        team.setRole(msg.id, msg.role);
+        team.setRole(msg.id, msg.role, msg.quiet === true);
         return;
       case 'team.order': {
         // the secret demo orders (/demo shop, /demo stop) set up / pause the built-in demo team
@@ -523,7 +599,7 @@ async function main(): Promise<void> {
             onProjects: () => broadcast({ type: 'projects', projects: store.listProjects() }),
             notify: (text, sessionId) => {
               store.addInbox(sessionId, 'report', text, false, sessionId);
-              broadcast({ type: 'inbox', items: store.listInbox() });
+              pushInbox();
             }
           });
           return;
@@ -548,6 +624,7 @@ async function main(): Promise<void> {
         return;
       }
       case 'session.input':
+        typed(msg.id);
         sessions.input(msg.id, msg.data);
         return;
       case 'session.resize':
@@ -588,7 +665,7 @@ async function main(): Promise<void> {
         return;
       case 'inbox.read':
         store.markInboxRead(msg.id);
-        broadcast({ type: 'inbox', items: store.listInbox() });
+        pushInbox();
         return;
       case 'fs.search': {
         // the open projects' folders (a closed project's are left out)
@@ -678,6 +755,7 @@ async function main(): Promise<void> {
     });
     ws.on('close', () => {
       clearTimeout(helloTimer);
+      selected.delete(ws);
       if (clients.delete(ws)) log.info(`client disconnected; clients=${clients.size}`);
     });
     ws.on('error', (err) => log.warn('client socket error', err));

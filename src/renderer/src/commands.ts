@@ -4,6 +4,7 @@ import { send } from '@/client';
 import { AGENT_LABELS } from '@/lib/format';
 import { askText } from '@/lib/prompt';
 import { setThemePref } from '@/lib/theme';
+import { useWebPages } from '@/lib/webpages';
 import { IS_PANELS, relay } from '@/lib/role';
 import { openSessions } from '@/lib/closedIds';
 import { kbd } from '@/lib/keys';
@@ -243,6 +244,9 @@ export const COMMANDS: CommandDef[] = [
     });
   } },
   { id: 'session.new', label: 'New Session…', shortcut: kbd('Ctrl+N'), run: () => newSessionFor() },
+  { id: 'web.gemini', label: 'Open Web: Gemini', run: () => useWebPages.getState().open('https://gemini.google.com/app', 'Gemini') },
+  { id: 'web.chatgpt', label: 'Open Web: ChatGPT', run: () => useWebPages.getState().open('https://chatgpt.com/', 'ChatGPT') },
+  { id: 'web.ernie', label: 'Open Web: 文心一言', run: () => useWebPages.getState().open('https://yiyan.baidu.com/', '文心一言') },
   { id: 'session.new-chat.codex', label: 'New Chat: ChatGPT (Codex)', run: () => send({ type: 'chat.new', agent: 'codex' }) },
   { id: 'session.new-chat.claude', label: 'New Chat: Claude', run: () => send({ type: 'chat.new', agent: 'claude' }) },
   { id: 'session.new.claude', label: `New Session: ${AGENT_LABELS.claude}`, run: () => newSessionFor('claude') },
@@ -278,7 +282,7 @@ export const COMMANDS: CommandDef[] = [
   { id: 'view.sidebar', label: 'Toggle Sidebar', shortcut: kbd('Ctrl+B'), run: () => useStore.getState().toggleSidebar() },
   { id: 'view.right-panel', label: 'Toggle Right Panel', shortcut: kbd('Ctrl+Alt+B'), run: () => useStore.getState().toggleRight() },
   { id: 'view.inbox', label: 'Show Inbox', run: () => useStore.getState().setActivity('inbox') },
-  { id: 'view.orders', label: 'Orders (give the team an order)', run: () => {
+  { id: 'view.orders', label: 'Manager (give the team an order)', run: () => {
     const st = useStore.getState();
     // detached: the right panel lives in the panels window
     if (!IS_PANELS && st.panelsDetached) relay({ kind: 'command', id: 'view.orders' });

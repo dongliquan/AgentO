@@ -4,6 +4,7 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, shell, type Tray } from 'electron';
 import { buildMenu } from './menu';
+import { setupWebviews } from './webviews';
 import { createTray } from './tray';
 import {
   daemonLogPath,
@@ -167,7 +168,9 @@ function createWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      spellcheck: false
+      spellcheck: false,
+      // web cards (gemini.google.com …) are <webview> tags, hardened in webviews.ts
+      webviewTag: true
     }
   });
   mainWindow = win;
@@ -242,7 +245,9 @@ function togglePanelsWindow(): void {
       nodeIntegration: false,
       sandbox: false,
       spellcheck: false,
-      additionalArguments: ['--agento-role=panels']
+      additionalArguments: ['--agento-role=panels'],
+      // the right panel's Web tab (gemini.google.com …) is a <webview>, hardened in webviews.ts
+      webviewTag: true
     }
   });
   panelsWindow = win;
@@ -263,6 +268,54 @@ function togglePanelsWindow(): void {
   });
   loadRenderer(win);
   sendPanelsState();
+}
+
+/* ---------- file viewer windows (one per file) ---------- */
+
+const fileWindows = new Map<string, BrowserWindow>();
+
+function openFileWindow(file: string): void {
+  if (typeof file !== 'string' || !path.isAbsolute(file)) return;
+  const key = path.normalize(file).toLowerCase();
+  const open = fileWindows.get(key);
+  if (open && !open.isDestroyed()) {
+    if (open.isMinimized()) open.restore();
+    open.focus();
+    return;
+  }
+  const win = new BrowserWindow({
+    width: 980,
+    height: 900,
+    minWidth: 420,
+    minHeight: 300,
+    title: path.basename(file),
+    backgroundColor: '#ffffff',
+    icon: windowIcon(),
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      spellcheck: false,
+      additionalArguments: ['--agento-role=viewer', `--agento-file=${file}`]
+    }
+  });
+  fileWindows.set(key, win);
+  // find-in-page (the window's search bar): results back to its renderer
+  win.webContents.on('found-in-page', (_e, r) => win.webContents.send('find.result', { matches: r.matches, active: r.activeMatchOrdinal }));
+  applyTaskbarIdentity(win);
+  win.removeMenu();
+  win.once('ready-to-show', () => win.show());
+  win.on('page-title-updated', (e) => e.preventDefault());
+  win.on('closed', () => {
+    if (fileWindows.get(key) === win) fileWindows.delete(key);
+  });
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  loadRenderer(win);
 }
 
 /** Forwards a PanelsRelay to the other window; brings the main window up when the panels window acts on it. */
@@ -332,6 +385,24 @@ function registerIpc(): void {
   });
 
   ipcMain.on('panels.toggle', () => togglePanelsWindow());
+  ipcMain.on('file.openWindow', (_e, file: string) => openFileWindow(file));
+  ipcMain.on('find.start', (e, text: string, forward: boolean, next: boolean) => {
+    if (typeof text === 'string' && text) e.sender.findInPage(text, { forward: forward !== false, findNext: next === true });
+  });
+  ipcMain.on('find.stop', (e) => e.sender.stopFindInPage('clearSelection'));
+  // the file viewer's image preview (the renderer cannot read local files)
+  ipcMain.handle('file.dataUrl', async (_e, p: string) => {
+    const types: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', ico: 'image/x-icon', avif: 'image/avif', svg: 'image/svg+xml' };
+    const type = types[path.extname(String(p)).slice(1).toLowerCase()];
+    if (!type || !path.isAbsolute(String(p))) return null;
+    try {
+      const st = await fs.promises.stat(p);
+      if (!st.isFile() || st.size > 25 * 1024 * 1024) return null;
+      return `data:${type};base64,${(await fs.promises.readFile(p)).toString('base64')}`;
+    } catch {
+      return null;
+    }
+  });
   ipcMain.handle('panels.isOpen', () => getPanelsWindow() !== null);
   ipcMain.on('panels.relay', (e, msg: PanelsRelay) => relayPanels(e.sender, msg));
 
@@ -411,6 +482,10 @@ function registerIpc(): void {
     child.unref();
   });
 
+  ipcMain.handle('shell.openUrl', async (_e, url: string) => {
+    if (typeof url === 'string' && url.startsWith('https://')) await shell.openExternal(url);
+  });
+
   ipcMain.handle('shell.openTerminal', async (_e, p: string) => {
     if (process.platform === 'win32') {
       const wt = spawn('wt.exe', ['-d', p], { detached: true, stdio: 'ignore', windowsHide: false });
@@ -442,13 +517,13 @@ function registerIpc(): void {
     }
   });
 
-  ipcMain.on('notify', (_e, title: string, body: string, sessionId?: string) => {
+  ipcMain.on('notify', (_e, title: string, body: string, sessionId?: string, command?: string) => {
     if (!Notification.isSupported()) return;
     const n = new Notification({ title, body, silent: false });
     n.on('click', () => {
       showWindow();
-      if (sessionId) {
-        const payload: FocusSessionEvent = { sessionId };
+      if (sessionId || command) {
+        const payload: FocusSessionEvent = { sessionId: sessionId ?? '', command };
         getWindow()?.webContents.send('focus-session', payload);
       }
     });
@@ -465,6 +540,7 @@ async function bootstrap(): Promise<void> {
   registerToastIdentity();
 
   await app.whenReady();
+  setupWebviews();
   // macOS dev run: the Dock shows Electron's own icon (BrowserWindow.icon is ignored there); the packaged .app has icon.icns
   if (process.platform === 'darwin' && !app.isPackaged) {
     const png = iconFile('png');

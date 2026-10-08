@@ -14,6 +14,7 @@ export interface Attachment {
 }
 
 const waiting = new Map<string, { resolve: (path: string) => void; reject: (e: Error) => void }>();
+export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 
 /** Called by the client for every server message: completes pending saves. */
 export function onAttachmentMessage(msg: ServerMessage): void {
@@ -73,10 +74,13 @@ export function useAttachments(): {
   busy: boolean;
 } {
   const [items, setItems] = useState<Attachment[]>([]);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
   const live = useRef(true);
   useEffect(
     () => () => {
       live.current = false;
+      for (const a of itemsRef.current) URL.revokeObjectURL(a.url);
     },
     []
   );
@@ -87,6 +91,10 @@ export function useAttachments(): {
     for (const f of files) {
       const a: Attachment = { id: Math.random().toString(36).slice(2), name: f.name || 'image.png', url: URL.createObjectURL(f) };
       setItems((cur) => [...cur, a]);
+      if (f.size > MAX_ATTACHMENT_BYTES) {
+        patch(a.id, { error: 'Image exceeds the 20 MB limit' });
+        continue;
+      }
       save(f).then(
         (path) => patch(a.id, { path }),
         (e: Error) => patch(a.id, { error: e.message })

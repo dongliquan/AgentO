@@ -1,7 +1,7 @@
 /**
  * Team messages typed into a session by the daemon (src/daemon/team.ts) start with a header:
  *   [Message from "<title>" (<role>, session <id>)]   — another session
- *   [Order from the manager (the user)( — <via>)]      — the user (Orders tab, or a routine)
+ *   [Order from the manager (the user)( — <via>)]      — the user (Manager tab, or a routine)
  *   [AgentO] …                                         — automatic notices (a directed session finished, role changes)
  * Several queued messages arrive as one paste, separated by blank lines. This splits and parses them.
  */
@@ -19,7 +19,9 @@ export interface TeamMessage {
 const HEADER = /^(?:\[Message from "(.+?)" \(([^,]+), session ([0-9a-f-]{36})\)\]|\[Order from the manager \(the user\)(?: — (.+?))?\]|\[AgentO\])/;
 
 /** null when the text is not a team message (plain user input). */
-export function parseTeamMessages(text: string): TeamMessage[] | null {
+export function parseTeamMessages(raw: string): TeamMessage[] | null {
+  // Claude Code records a long paste wrapped in <pasted_content id="…"> … </pasted_content>
+  const text = raw.replace(/^\s*<pasted_content\b[^>]*>\s*/, '').replace(/\s*<\/pasted_content>\s*$/, '');
   if (!HEADER.test(text)) return null;
   const out: TeamMessage[] = [];
   const lines = text.split('\n');

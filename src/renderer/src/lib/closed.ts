@@ -14,10 +14,18 @@ export { closedProjectIds, closedSessionIds, openSessions };
 
 let closedKey: [Map<string, Session>, Project[]] | null = null;
 let closedVal: Set<string> = new Set();
+let closedText = '';
 function closedFor(sessions: Map<string, Session>, projects: Project[]): Set<string> {
   if (!closedKey || closedKey[0] !== sessions || closedKey[1] !== projects) {
     closedKey = [sessions, projects];
-    closedVal = closedSessionIds(sessions.values(), projects);
+    const next = closedSessionIds(sessions.values(), projects);
+    // the sessions Map is replaced on every status change: keep the same Set while its content is the same, so the
+    // open inbox and its threads (keyed on this Set) are not rebuilt for a status flip
+    const text = [...next].sort().join(',');
+    if (text !== closedText) {
+      closedText = text;
+      closedVal = next;
+    }
   }
   return closedVal;
 }

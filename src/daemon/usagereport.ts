@@ -14,6 +14,8 @@ import path from 'node:path';
 import type { UsageBucket, UsageReport, UsageSessionInfo } from '@shared/protocol';
 
 const HOUR = 3600_000;
+// The UI offers 1, 7 and 30 day reports. Keep a small margin for timezone and boundary cases.
+const MSG_RETENTION_MS = 31 * 24 * HOUR;
 
 interface Msg {
   ts: number;
@@ -28,6 +30,7 @@ interface FileState {
   size: number;
   offset: number;
   rest: string;
+  msgCutoff: number;
   seen: Set<string>;
   msgs: Msg[];
   /** tool name → [calls, result bytes] */
@@ -71,7 +74,7 @@ function parseLine(st: FileState, line: string): void {
       if (id) st.seen.add(id);
       const ts = Date.parse(String(j['timestamp'] ?? '')) || 0;
       const msg: Msg = { ts, model, input: n(u['input_tokens']), output: n(u['output_tokens']), cacheWrite: n(u['cache_creation_input_tokens']), cacheRead: n(u['cache_read_input_tokens']) };
-      st.msgs.push(msg);
+      if (ts >= st.msgCutoff) st.msgs.push(msg);
       const ctx = msg.input + msg.cacheWrite + msg.cacheRead;
       st.lastCtx = ctx;
       if (ctx > st.maxCtx) st.maxCtx = ctx;
@@ -119,9 +122,13 @@ function update(file: string): FileState | undefined {
   }
   let st = files.get(file);
   if (!st || size < st.size) {
-    st = { size: 0, offset: 0, rest: '', seen: new Set(), msgs: [], tools: new Map(), pendingTools: new Map(), teamMsgs: 0, teamMsgBytes: 0, maxCtx: 0, lastCtx: 0 };
+    st = { size: 0, offset: 0, rest: '', msgCutoff: 0, seen: new Set(), msgs: [], tools: new Map(), pendingTools: new Map(), teamMsgs: 0, teamMsgBytes: 0, maxCtx: 0, lastCtx: 0 };
     files.set(file, st);
   }
+  // Prune before parsing new bytes, so a first scan of a long transcript never builds an unbounded message array.
+  const cutoff = Date.now() - MSG_RETENTION_MS;
+  if (st.msgs.length && st.msgs[0]!.ts < cutoff) st.msgs = st.msgs.filter((m) => m.ts >= cutoff);
+  st.msgCutoff = cutoff;
   if (size === st.offset) return st;
   const fd = fs.openSync(file, 'r');
   try {

@@ -12,6 +12,8 @@ import { CopyButton } from './SearchBox';
 import { imageFiles, useAttachments, withAttachments } from '@/lib/attachments';
 import { AttachButton, AttachmentBar } from './AttachmentBar';
 import { getBuffer, useBuffer } from '@/lib/buffers';
+import { restoreEarlier } from './ContextSize';
+import { kbd } from '@/lib/keys';
 
 /** Searchable text of a transcript entry: its text, or a tool's name, input and result. */
 function entryText(e: ChatEntry): string {
@@ -19,15 +21,61 @@ function entryText(e: ChatEntry): string {
   return e.text ?? '';
 }
 
+type Source = 'me' | 'team';
+type ChatFilter = 'all' | Source;
+
+/** Each entry's turn: started by the user's own message ('me') or by a team message the daemon typed in ('team'). */
+function sources(entries: ChatEntry[]): Map<string, Source> {
+  const out = new Map<string, Source>();
+  let cur: Source = 'me';
+  for (const e of entries) {
+    if (e.kind === 'user') cur = e.text && parseTeamMessages(e.text) ? 'team' : 'me';
+    out.set(e.id, cur);
+  }
+  return out;
+}
+
+const filterKey = (id: string): string => `asm.chatFilter.${id}`;
+function loadFilter(id: string): ChatFilter {
+  try {
+    const v = localStorage.getItem(filterKey(id));
+    if (v === 'me' || v === 'team') return v;
+  } catch {
+    /* default */
+  }
+  return 'all';
+}
+
+type Segment = { kind: 'entry'; entry: ChatEntry } | { kind: 'team'; key: string; entries: ChatEntry[] };
+const CHAT_PAGE_SIZE = 300;
+
+/** Runs of team turns (a team message and the session's work on it) as one segment; the user's own turns stay open. */
+function segments(entries: ChatEntry[], src: Map<string, Source>): Segment[] {
+  const out: Segment[] = [];
+  for (const e of entries) {
+    if (src.get(e.id) !== 'team') {
+      out.push({ kind: 'entry', entry: e });
+      continue;
+    }
+    const last = out[out.length - 1];
+    if (last?.kind === 'team') last.entries.push(e);
+    else out.push({ kind: 'team', key: e.id, entries: [e] });
+  }
+  return out;
+}
+
 /** VS Code-extension-like rendering of a Claude Code transcript, with a composer that types into the PTY. */
 export function ChatView({
   session: s,
   onShowTerminal,
   query = '',
-  onMatches
+  onMatches,
+  limit
 }: {
   session: Session;
   onShowTerminal: () => void;
+  /** show only the latest `limit` entries (Ground cards), with "Show earlier" for the rest */
+  limit?: number;
   /** Session tab search: only entries containing it are shown, highlighted */
   query?: string;
   onMatches?: (n: number | undefined) => void;
@@ -36,6 +84,7 @@ export function ChatView({
   const connected = useStore((st) => st.connected);
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
+  const prependHeight = useRef<number | null>(null);
 
   useEffect(() => {
     if (connected) send({ type: 'chat.subscribe', id: s.id });
@@ -44,26 +93,79 @@ export function ChatView({
   // keep pinned to the bottom unless the user scrolled up
   useLayoutEffect(() => {
     const el = scroller.current;
-    if (el && stick.current) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    if (prependHeight.current !== null) {
+      el.scrollTop += el.scrollHeight - prependHeight.current;
+      prependHeight.current = null;
+    } else if (stick.current) el.scrollTop = el.scrollHeight;
   }, [chat?.entries]);
 
   const all = chat?.entries ?? [];
   const searching = query.trim() !== '';
-  const entries = useMemo(() => (searching ? all.filter((e) => matches(query, entryText(e))) : all), [all, query, searching]);
-  useEffect(() => onMatches?.(searching ? entries.length : undefined), [entries.length, searching, onMatches]);
+  const [extra, setExtra] = useState(0);
+  // All · Me · Team: the user's own turns vs the team traffic the daemon typed in (per session)
+  const [filter, setFilterState] = useState<ChatFilter>(() => loadFilter(s.id));
+  useEffect(() => setFilterState(loadFilter(s.id)), [s.id]);
+  const setFilter = (f: ChatFilter): void => {
+    setFilterState(f);
+    stick.current = true;
+    try {
+      localStorage.setItem(filterKey(s.id), f);
+    } catch {
+      /* not kept */
+    }
+  };
+  const src = useMemo(() => sources(all), [all]);
+  const hasTeam = useMemo(() => [...src.values()].includes('team'), [src]);
+  const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
+  const found = useMemo(
+    () =>
+      searching
+        ? all.filter((e) => matches(query, entryText(e)))
+        : filter === 'all' || !hasTeam
+          ? all
+          : all.filter((e) => src.get(e.id) === filter),
+    [all, query, searching, filter, src, hasTeam]
+  );
+  const pageSize = limit ?? CHAT_PAGE_SIZE;
+  const cap = !searching ? pageSize + extra : Infinity;
+  const hidden = Math.max(0, found.length - cap);
+  const entries = hidden ? found.slice(hidden) : found;
+  useEffect(() => onMatches?.(searching ? found.length : undefined), [found.length, searching, onMatches]);
   useHighlight(scroller, query, [entries]);
+  // in All, team runs fold to one row - except the last one (what the session is on now)
+  const segs = useMemo(() => (filter === 'all' && !searching && hasTeam ? segments(entries, src) : null), [entries, src, filter, searching, hasTeam]);
   const working = s.status === 'working' || s.status === 'starting';
   // A numbered choice (permission / trust prompt) is only visible in the TUI, so sniff the terminal tail.
   // only while waiting: a choice prompt can be on screen (no subscription otherwise)
   const tail = useBuffer(s.id, s.status === 'waiting')?.slice(-6000);
   const choice = useMemo(() => {
+    // the daemon reads the screen for a real prompt (trust / permission / confirm): a question Claude asks in its own
+    // words ("Do you want me to commit?") is not a choice to pick from
+    if (s.attention !== undefined) return s.attention;
     if (!tail) return false;
     const t = lastLines(tail, 14).join('\n');
-    return /Do you want|Would you like to run|❯\s*\d+\.|›\s*\d+\.|^\s*\d+\.\s+(Yes|No)\b|Enter to confirm|Press enter to confirm/m.test(t);
-  }, [tail]);
+    return /❯\s*\d+\.|›\s*\d+\.|^\s*\d+\.\s+(Yes|No)\b|Enter to confirm|Press enter to confirm/m.test(t);
+  }, [tail, s.attention]);
 
   return (
     <div className="chat" onPointerDown={(e) => e.stopPropagation()} onWheel={(e) => { if (!e.ctrlKey) e.stopPropagation(); }}>
+      {hasTeam && !searching && (
+        <div className="chat-filter" role="tablist" aria-label="Show messages">
+          {(['all', 'me', 'team'] as const).map((f) => (
+            <button
+              key={f}
+              role="tab"
+              aria-selected={filter === f}
+              className={filter === f ? 'active' : ''}
+              title={f === 'all' ? 'Everything (team traffic folded)' : f === 'me' ? 'Only what you typed, with the answers' : 'Only the team traffic: orders, reports, notices'}
+              onClick={() => setFilter(f)}
+            >
+              {f === 'all' ? 'All' : f === 'me' ? 'Me' : 'Team'}
+            </button>
+          ))}
+        </div>
+      )}
       <div
         className="chat-scroll"
         ref={scroller}
@@ -81,9 +183,45 @@ export function ChatView({
         {chat?.available && entries.length === 0 && (
           <div className="chat-empty">{searching ? 'No matches in this conversation.' : 'Send a message to start the conversation.'}</div>
         )}
-        {entries.map((e) => (
-          <Entry key={e.id} entry={e} cwd={s.cwd} />
-        ))}
+        {!!s.prevResumeIds?.length && hidden === 0 && entries.length < 40 && !searching && (
+          <div className="chat-restarted">
+            A new conversation (after a fresh start or restart) — the earlier one is kept.
+            <button className="chat-link" onClick={() => restoreEarlier(s)}>Restore earlier conversation</button>
+          </div>
+        )}
+        {hidden > 0 && (
+          <button className="chat-earlier" onClick={() => {
+            prependHeight.current = scroller.current?.scrollHeight ?? null;
+            stick.current = false;
+            setExtra(extra + pageSize);
+          }}>
+            Show earlier ({hidden})
+          </button>
+        )}
+        {chat?.available && filter === 'me' && hasTeam && !searching && entries.length === 0 && (
+          <div className="chat-empty">Nothing typed by you in this conversation yet.</div>
+        )}
+        {segs
+          ? segs.map((g, i) =>
+              g.kind === 'entry' ? (
+                <Entry key={g.entry.id} entry={g.entry} cwd={s.cwd} />
+              ) : (
+                <TeamRun
+                  key={g.key}
+                  entries={g.entries}
+                  cwd={s.cwd}
+                  open={i === segs.length - 1 || opened.has(g.key)}
+                  onToggle={() => {
+                    stick.current = false;
+                    const next = new Set(opened);
+                    if (next.has(g.key)) next.delete(g.key);
+                    else next.add(g.key);
+                    setOpened(next);
+                  }}
+                />
+              )
+            )
+          : entries.map((e) => <Entry key={e.id} entry={e} cwd={s.cwd} />)}
         {working && (
           <div className="chat-working">
             <span className="spark">✱</span> Working…
@@ -96,15 +234,35 @@ export function ChatView({
   );
 }
 
+/** A run of team turns: folded to "Team - N messages (senders)", or open with a header to fold it again. */
+function TeamRun({ entries, cwd, open, onToggle }: { entries: ChatEntry[]; cwd: string; open: boolean; onToggle: () => void }): JSX.Element {
+  const msgs = entries.flatMap((e) => (e.kind === 'user' && e.text ? (parseTeamMessages(e.text) ?? []) : []));
+  const from = [...new Set(msgs.map((m) => m.from))];
+  const label = `Team · ${msgs.length} message${msgs.length === 1 ? '' : 's'}`;
+  const who = from.slice(0, 3).join(', ') + (from.length > 3 ? ` +${from.length - 3}` : '');
+  return (
+    <>
+      <button className={`chat-teamrun ${open ? 'open' : ''}`} onClick={onToggle} aria-expanded={open} title={open ? 'Fold the team traffic' : 'Show the team traffic'}>
+        <span className="caret">{open ? '▾' : '▸'}</span>
+        <span>⇄ {label}</span>
+        {who && <span className="muted ellipsis">{who}</span>}
+      </button>
+      {open && entries.map((e) => <Entry key={e.id} entry={e} cwd={cwd} />)}
+    </>
+  );
+}
+
 function Entry({ entry: e, cwd }: { entry: ChatEntry; cwd: string }): JSX.Element | null {
   if (e.kind === 'user') {
     const team = e.text ? parseTeamMessages(e.text) : null;
     if (team) return <>{team.map((t, i) => <TeamBubble key={i} msg={t} />)}</>;
+    // a long paste is recorded inside <pasted_content> tags: show just the text
+    const text = e.text?.replace(/<\/?pasted_content\b[^>]*>/g, '').trim();
     return (
       <div className="chat-user">
-        {e.text && <CopyButton text={e.text} />}
+        {text && <CopyButton text={text} />}
         {e.images ? <div className="chat-attach">📎 {e.images} image{e.images > 1 ? 's' : ''}</div> : null}
-        {e.text && <div className="chat-user-text">{e.text}</div>}
+        {text && <div className="chat-user-text">{text}</div>}
       </div>
     );
   }
@@ -522,13 +680,11 @@ export function Composer({ session: s }: { session: Session }): JSX.Element {
     const t = text.trim();
     if (!t || files.busy || (!live && !wakeable)) return;
     const body = withAttachments(t, files.items);
-    if (running) {
-      // bracketed paste keeps multi-line text as one prompt, then Enter submits
-      send({ type: 'session.input', id: s.id, data: `\x1b[200~${body}\x1b[201~` });
-      // Codex folds fast input into one paste and takes an Enter inside it as a newline: submit a little later
-      const delay = s.agent === 'codex' ? Math.min(3000, 600 + body.length) : 60;
-      setTimeout(() => send({ type: 'session.input', id: s.id, data: '\r' }), delay);
-    } else send({ type: 'session.message', id: s.id, text: body });
+    // kept in the log (Me tab), with the answer reported back
+    send({ type: 'session.note', id: s.id, text: body });
+    // running: typed in now by the daemon (one paste, Enter, and Enter again if it did not take); stopped: woken first
+    if (running) send({ type: 'session.paste', id: s.id, text: body });
+    else send({ type: 'session.message', id: s.id, text: body });
     setText('');
     files.clear();
   };
@@ -556,7 +712,7 @@ export function Composer({ session: s }: { session: Session }): JSX.Element {
         value={ghost ? (ghost.sending ? ghost.text : `${ghost.text}▍`) : text}
         readOnly={ghost !== null}
         disabled={!live && !wakeable && !ghost}
-        placeholder={live ? 'Message…' : wakeable ? 'Message… (starts the session)' : 'Not running'}
+        placeholder={live ? kbd('Message… (Ctrl+Enter to send)') : wakeable ? kbd('Message… (starts the session, Ctrl+Enter to send)') : 'Not running'}
         title="Enter to send · Shift+Enter for a new line · paste or drop images"
         onChange={(e) => setText(e.target.value)}
         onPaste={(e) => {
@@ -575,7 +731,8 @@ export function Composer({ session: s }: { session: Session }): JSX.Element {
           }
         }}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+          // Ctrl+Enter sends (as in Orders and Tasks); Enter is a new line
+          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) {
             e.preventDefault();
             submit();
           } else if (e.key === 'Escape' && s.status === 'working') {

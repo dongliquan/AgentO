@@ -29,6 +29,21 @@ export function count(n: LogNode): number {
   return n.children.reduce((sum, c) => sum + 1 + count(c), 0);
 }
 
+/**
+ * The daemon's report that a session finished (or stopped on) a directive from another session — "A → B: finished: …".
+ * Work news for the manager's Inbox, though it went to the sender.
+ */
+export function pieceResult(it: InboxItem): 'finished' | 'replied' | 'stopped' | null {
+  if (it.kind !== 'report' || !it.fromId || it.fromId === it.sessionId) return null;
+  const m = /^[^\n]*? \u2192 [^\n]*?: (finished|replied|stopped)\b/.exec(it.text);
+  return (m?.[1] as 'finished' | 'replied' | 'stopped' | undefined) ?? null;
+}
+
+/** What the manager typed into a session directly (daemon Team.note), not an order from the Manager tab. */
+export function isDirect(it: InboxItem): boolean {
+  return it.fromId === 'user' && it.text.startsWith('Manager (you) · Direct →');
+}
+
 /** A record the manager is part of: an order from the user, or a report addressed to the user (filed under its sender). */
 export function withManager(it: InboxItem): boolean {
   return it.fromId === 'user' || it.fromId === it.sessionId;
@@ -50,7 +65,7 @@ export function prune(n: LogNode, hit: (it: InboxItem) => boolean): LogNode | nu
  * coach or a player (they do the work), or the one who took it handed work on (a directive to a coach or a player).
  */
 export function isTask(node: LogNode, sessions: Map<string, Session>, explicit: ReadonlySet<string>): boolean {
-  if (node.item.fromId !== 'user') return false;
+  if (node.item.fromId !== 'user' || isDirect(node.item)) return false;
   if (explicit.has(node.item.id)) return true;
   // a status check or a follow-up from the task list belongs to the task it is about, not a task of its own
   if (/Status check on this order|\(Follow-up on: /.test(node.item.text)) return false;

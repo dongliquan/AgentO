@@ -1,38 +1,49 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { InboxItem, Routine, Session, TeamOrderTarget } from '@shared/protocol';
-import { unreadCount, useStore } from '@/store';
+import { unreadCount, useStore, type RightTab } from '@/store';
 import { requestChanged, send } from '@/client';
 import { exportSession, focusTerminal, removeSession, selectAndReveal } from '@/commands';
 import { AGENT_LABELS, STATUS_LABELS, projectLabel, roleLabel, displayTitle, basename, formatDateTime, formatTime, relativeTime } from '@/lib/format';
 import { useNow } from '@/lib/hooks';
+import { openFile } from '@/lib/openfile';
 import { StatusBadge } from './StatusBadge';
 import { AgentIcon } from './AgentIcon';
 import { ChatView, Composer } from './ChatView';
 import { screenLines } from '@/lib/screen';
 import { TeamLog } from './TeamLog';
-import { MyOrders } from './MyOrders';
+import { WebPanel } from './WebPanel';
+import { TAB_ORDER, useDock } from '@/lib/dock';
+import { ShareSplitter } from './Splitter';
 import { TaskList } from './TaskList';
 import { useOpenInbox as useTaskInbox, threadsOf } from '@/lib/closed';
-import { isTask, orderStatus } from '@/lib/threads';
+import { isTask, orderStatus, pieceResult } from '@/lib/threads';
 import { orderProgress } from '@/lib/progress';
 import { lastLines } from '@/lib/ansi';
 import { matches, selecting, useHighlight } from '@/lib/search';
 import { useOpenInbox } from '@/lib/closed';
 import { CopyButton, SearchBox } from './SearchBox';
 import { useDraft } from '@/lib/draft';
+import { ProjectFilter, useProjectFilter } from './ProjectFilter';
+import { MyTalk } from './MyTalk';
+import { useTalkProject } from '@/lib/talkFilter';
+import { ContextSize, freshStart, restoreEarlier } from './ContextSize';
 import { pcStyle, projectColor } from '@/lib/format';
 import { imageFiles, useAttachments, withAttachments } from '@/lib/attachments';
 import { AttachButton, AttachmentBar } from './AttachmentBar';
 import { kbd } from '@/lib/keys';
 import { useBuffer } from '@/lib/buffers';
 
-export function RightPanel(): JSX.Element {
-  const rightTab = useStore((s) => s.rightTab);
-  const setRightTab = useStore((s) => s.setRightTab);
+const TAB_LABEL: Record<RightTab, string> = { orders: 'Manager', tasks: 'Tasks', inbox: 'Inbox', detail: 'Session', log: 'Logs', web: 'Web' };
+const TAB_TITLE: Partial<Record<RightTab, string>> = {
+  orders: 'You, the manager: what you said and the answers, and the order box (projects, new project, routines)',
+  tasks: 'Your orders: what is open, reported, done',
+  log: 'Everything the team sent each other, by order',
+  web: 'Gemini, ChatGPT, ERNIE on the web — your own sign-in and subscription'
+};
+
+/** Badge counts for the tab strip and the docked columns: reports to review (Tasks), unread (Inbox). */
+function useTabCounts(): Partial<Record<RightTab, number>> {
   const unread = useStore(unreadCount);
-  const session = useStore((s) => (s.selectedId ? s.sessions.get(s.selectedId) : undefined));
-  const tab = rightTab === 'detail' && !session ? 'orders' : rightTab;
-  // Tasks badge: orders whose report came back and that are not closed yet
   const taskInbox = useTaskInbox();
   const sessionsAll = useStore((s) => s.sessions);
   const doneOrders = useStore((s) => s.doneOrders);
@@ -41,22 +52,91 @@ export function RightPanel(): JSX.Element {
     const explicit = new Set(taskOrders);
     return threadsOf(taskInbox).filter((t) => isTask(t, sessionsAll, explicit) && !doneOrders[t.item.id] && orderStatus(t, sessionsAll) === 'reported').length;
   }, [taskInbox, sessionsAll, doneOrders, taskOrders]);
+  return { tasks: toReview, inbox: unread };
+}
+
+/** A tab's content (the Web tab is handled apart: its pages stay mounted). */
+function TabContent({ tab, session }: { tab: RightTab; session: Session | undefined }): JSX.Element | null {
+  if (tab === 'detail') return session ? <Detail session={session} /> : <div className="rp-body muted dock-empty">Select a session on the Ground or in the tree.</div>;
+  if (tab === 'orders') return <ManagerTab />;
+  if (tab === 'tasks') return <TaskList />;
+  if (tab === 'log') return <TeamLog />;
+  if (tab === 'inbox') return <Inbox />;
+  return null;
+}
+
+export function RightPanel(): JSX.Element {
+  const rightTab = useStore((s) => s.rightTab);
+  const setRightTab = useStore((s) => s.setRightTab);
+  const session = useStore((s) => (s.selectedId ? s.sessions.get(s.selectedId) : undefined));
+  const docked = useDock((s) => s.docked);
+  const dock = useDock((s) => s.dock);
+  const here = TAB_ORDER.filter((t) => !docked.includes(t));
+  // the chosen tab, unless it is docked (or Session without a session): then the first tab still in the panel
+  const want = rightTab === 'detail' && !session ? 'orders' : rightTab;
+  const tab = here.includes(want) ? want : here.find((t) => t !== 'detail' || session) ?? here[0]!;
+  // the Web tab mounts once it is first opened, then stays (hidden) so its pages never reload
+  const [webMounted, setWebMounted] = useState(tab === 'web');
+  useEffect(() => {
+    if (tab === 'web') setWebMounted(true);
+  }, [tab]);
+  const counts = useTabCounts();
 
   return (
     <div className="rightpanel">
       <div className="rp-tabs">
-        <button className={tab === 'orders' ? 'active' : ''} onClick={() => setRightTab('orders')} title="Give orders · routines">Orders</button>
-        <button className={tab === 'tasks' ? 'active' : ''} onClick={() => setRightTab('tasks')} title="Your orders: what is open, reported, done">
-          Tasks{toReview > 0 && <span className="badge inline" title="Reports to review">{toReview}</span>}
-        </button>
-        <button className={tab === 'inbox' ? 'active' : ''} onClick={() => setRightTab('inbox')}>
-          Inbox{unread > 0 && <span className="badge inline">{unread}</span>}
-        </button>
-        <button className={tab === 'detail' ? 'active' : ''} onClick={() => setRightTab('detail')} disabled={!session}>Session</button>
-        <button className={tab === 'log' ? 'active' : ''} onClick={() => setRightTab('log')} title="Everything the team sent each other, by order">Log</button>
+        {here.map((t) => (
+          <button key={t} className={tab === t ? 'active' : ''} onClick={() => setRightTab(t)} disabled={t === 'detail' && !session} title={TAB_TITLE[t]}>
+            {TAB_LABEL[t]}
+            {(counts[t] ?? 0) > 0 && <span className="badge inline">{counts[t]}</span>}
+          </button>
+        ))}
+        {here.length > 1 && (
+          <button className="rp-dock" title={`To the second panel: ${TAB_LABEL[tab]}`} onClick={() => dock(tab)}>
+            ⇥
+          </button>
+        )}
       </div>
-      {tab === 'detail' && session ? <Detail session={session} /> : tab === 'orders' ? <Orders /> : tab === 'tasks' ? <TaskList /> : tab === 'log' ? <TeamLog /> : <Inbox />}
+      {tab === 'web' ? null : <TabContent tab={tab} session={session} />}
+      {webMounted && !docked.includes('web') && <WebPanel visible={tab === 'web'} />}
     </div>
+  );
+}
+
+/**
+ * The second panel beside the main one (main : second = 2 : 1): the tabs sent here with ⇥, as tabs of their own;
+ * ⇤ sends the shown one back. It is not there while it holds no tab. Main window: half the main panel's share of the
+ * window (dragged, remembered); panels window: a third of the width.
+ */
+export function SecondPanel({ panels = false }: { panels?: boolean }): JSX.Element | null {
+  const docked = useDock((s) => s.docked);
+  const undock = useDock((s) => s.undock);
+  const shownTab = useDock((s) => s.shown);
+  const setShown = useDock((s) => s.setShown);
+  const session = useStore((s) => (s.selectedId ? s.sessions.get(s.selectedId) : undefined));
+  const counts = useTabCounts();
+  const tab = shownTab && docked.includes(shownTab) ? shownTab : docked[0];
+  if (!tab) return null;
+  return (
+    <>
+      {panels ? <div className="splitter dock-gap" /> : <ShareSplitter cssVar="--second-share" dir={-1} fallback={18} min={12} max={40} />}
+      <div className={`rightpanel second ${panels ? 'in-panels' : ''}`}>
+        <div className="rp-tabs">
+          {docked.map((t) => (
+            <button key={t} className={tab === t ? 'active' : ''} onClick={() => setShown(t)} title={TAB_TITLE[t]}>
+              {TAB_LABEL[t]}
+              {(counts[t] ?? 0) > 0 && <span className="badge inline">{counts[t]}</span>}
+            </button>
+          ))}
+          <button className="rp-dock" title={`Back into the main panel: ${TAB_LABEL[tab]}`} onClick={() => undock(tab)}>
+            ⇤
+          </button>
+        </div>
+        {tab === 'web' ? null : <TabContent tab={tab} session={session} />}
+        {/* the Web pages stay mounted while another tab is shown here, so they never reload */}
+        {docked.includes('web') && <WebPanel visible={tab === 'web'} />}
+      </div>
+    </>
   );
 }
 
@@ -69,9 +149,9 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
   const projects = useStore((st) => st.projects);
   const timeline = useStore((st) => st.timeline);
   const changed = useStore((st) => st.changed.get(s.cwd));
-  const openFileCard = useStore((st) => st.openFileCard);
-  const openViewerTab = useStore((st) => st.openViewerTab);
-  const buffer = useBuffer(s.id, s.agent !== 'claude') ?? '';
+  // Claude, and Codex once its conversation is found, show as a chat; other CLIs as their terminal screen
+  const hasChat = s.agent === 'claude' || (s.agent === 'codex' && !!s.resumeId);
+  const buffer = useBuffer(s.id, !hasChat) ?? '';
   const project = projects.find((p) => p.id === s.projectId);
   const folder = project?.folders.find((f) => f.id === s.folderId);
   const entries = timeline.filter((t) => t.sessionId === s.id).slice(-20).reverse();
@@ -82,7 +162,7 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
   // a terminal agent (Codex …) draws with cursor moves: show its screen as the terminal does (replayed off-screen)
   const [screen, setScreen] = useState<string[]>([]);
   useEffect(() => {
-    if (s.agent === 'claude') return;
+    if (hasChat) return;
     let live = true;
     const t = setTimeout(() => {
       void screenLines(buffer.slice(-200_000), s.cols || 100, Math.max(s.rows || 30, 60)).then((lines) => {
@@ -95,7 +175,7 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
     };
   }, [buffer, s.agent, s.cols, s.rows]);
   const shown = screen.length ? screen : lastLines(buffer, 200);
-  const termLines = s.agent === 'claude' ? [] : shown.filter((l, i, all) => matches(query, l) && (l.trim() || (i > 0 && all[i - 1]!.trim())));
+  const termLines = hasChat ? [] : shown.filter((l, i, all) => matches(query, l) && (l.trim() || (i > 0 && all[i - 1]!.trim())));
   useHighlight(termRef, query, [buffer]);
   useEffect(() => setQuery(''), [s.id]);
 
@@ -115,7 +195,7 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
         <div className="rp-title">
           <AgentIcon kind={s.agent} color={s.color} size={16} />
           <span className="ellipsis" style={{ flex: 1 }} title={s.title}>{displayTitle(s)}</span>
-          <StatusBadge status={s.status} />
+          <StatusBadge status={s.status} attention={s.attention} />
         </div>
         <div className="rp-meta">
           {s.role !== 'player' && <span className={`role-tag ${s.role}`}>{roleLabel(s)}</span>}
@@ -123,6 +203,13 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
           <span className="muted">· {AGENT_LABELS[s.agent]}</span>
           <span className="grow" />
           <button className="btn sm ghost" onClick={openTerminal}>Terminal</button>
+          <ContextSize session={s} />
+          {s.agent === 'claude' && !!s.prevResumeIds?.length && (
+            <button className="btn sm ghost" onClick={() => restoreEarlier(s)} title="Resume the conversation from before the last fresh start / restart">Earlier Conversation</button>
+          )}
+          {s.agent === 'claude' && s.resumeId && (
+            <button className="btn sm ghost" onClick={() => freshStart(s)} title="Write a handoff note, then continue in a new, small conversation (saves tokens)">Fresh Start</button>
+          )}
           <button className="btn sm ghost" onClick={() => send({ type: 'session.restart', id: s.id })}>Restart</button>
           {s.status === 'hibernated' ? (
             <button className="btn sm ghost" onClick={() => send({ type: 'session.resume', id: s.id })}>Resume</button>
@@ -132,9 +219,9 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
           <button className="btn sm ghost danger" onClick={() => removeSession(s.id)} title="Remove Session (Delete)">Remove</button>
         </div>
       </div>
-      <SearchBox value={query} onChange={setQuery} count={s.agent === 'claude' ? hits : termLines.length} placeholder="Search this conversation" />
+      <SearchBox value={query} onChange={setQuery} count={hasChat ? hits : termLines.length} placeholder="Search this conversation" />
       <div className="rp-conversation">
-        {s.agent === 'claude' ? (
+        {hasChat ? (
           <ChatView session={s} onShowTerminal={openTerminal} query={query} onMatches={setHits} />
         ) : (
           <div className="rp-term">
@@ -177,7 +264,7 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
             ) : (
               <div className="file-list">
                 {changed.map((e) => (
-                  <div key={e.path} className="f" onClick={() => openFileCard(e.path, s.cwd)} onDoubleClick={() => openViewerTab(e.path)} title={e.path}>
+                  <div key={e.path} className="f" onClick={() => openFile(e.path, s.cwd)} title={e.path}>
                     <span className={`git-letter ${e.gitStatus ?? ''}`} style={{ width: 12 }}>{e.gitStatus ?? '·'}</span>
                     <span className="ellipsis">{e.path.startsWith(s.cwd) ? e.path.slice(s.cwd.length).replace(/^[\\/]/, '') : basename(e.path)}</span>
                   </div>
@@ -202,6 +289,8 @@ const KIND_ICON: Record<InboxItem['kind'], string> = { waiting: '?', done: '✓'
 function forUser(it: InboxItem): boolean {
   if (it.kind === 'directive') return false;
   if (it.kind !== 'report') return true;
+  // a piece of work came back to a coach / head coach: work news for the manager too
+  if (pieceResult(it)) return true;
   return !it.text.includes(' → ') || it.text.includes('→ Manager (you)');
 }
 
@@ -211,9 +300,12 @@ function Inbox(): JSX.Element {
   const projects = useStore((s) => s.projects);
   const now = useNow(15000);
   const [query, setQuery] = useState('');
+  const [pick, setPick] = useDraft('inbox.project', '');
+  const { only, rootOf } = useProjectFilter(pick);
   const body = useRef<HTMLDivElement>(null);
   const items = inbox
     .filter(forUser)
+    .filter((it) => !only || rootOf(it.sessionId) === only)
     .filter((it) => matches(query, it.text, sessions.get(it.sessionId)?.title))
     .sort((a, b) => Number(a.read) - Number(b.read) || b.createdAt - a.createdAt);
   useHighlight(body, query, [items.length, inbox]);
@@ -226,9 +318,12 @@ function Inbox(): JSX.Element {
 
   return (
     <div className="rp-body" ref={body}>
-      <SearchBox value={query} onChange={setQuery} count={items.length} placeholder="Search the inbox" />
+      <div className="filter-bar">
+        <ProjectFilter value={pick} onChange={setPick} />
+        <SearchBox value={query} onChange={setQuery} count={items.length} placeholder="Search the inbox" />
+      </div>
       {items.length === 0 ? (
-        <div className="muted" style={{ fontSize: 12 }}>{query ? 'No matches.' : 'No notifications.'}</div>
+        <div className="muted" style={{ fontSize: 12 }}>{query ? 'No matches.' : only ? 'No notifications for this project.' : 'No notifications.'}</div>
       ) : (
         <div className="inbox-list">
           {items.map((it) => (
@@ -262,6 +357,19 @@ function Inbox(): JSX.Element {
  * head coach — or, without one, its lead), plus "＋ New" to start a project. Below: that project's routines and the
  * manager's orders to it. A part or a single session is talked to from its Session tab.
  */
+/**
+ * The manager's tab: the conversation with the team (what you said, on the right, and the answers) filling the panel,
+ * the order box at the bottom — like a messenger.
+ */
+function ManagerTab(): JSX.Element {
+  return (
+    <div className="manager-tab">
+      <MyTalk />
+      <Orders />
+    </div>
+  );
+}
+
 function Orders(): JSX.Element {
   const projects = useStore((s) => s.projects);
   const sessions = useStore((s) => s.sessions);
@@ -359,6 +467,12 @@ function Orders(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, currents.length, picked.length, tops.length, pendingName]);
   const isTeam = tab === 'team';
+  // the conversation above follows the order box: one project picked → only its messages; several, Team or New → all
+  const setTalkProject = useTalkProject((s) => s.setProject);
+  const followKey = tab === 'order' && picked.length === 1 ? picked[0]! : '';
+  useEffect(() => {
+    setTalkProject(followKey);
+  }, [followKey, setTalkProject]);
   const isNew = tab === 'new' || (!isTeam && currents.length === 0);
   /** the team-wide head coach (no project): takes the orders given without a project; made with the first such order */
   const teamHead = [...sessions.values()].find((s) => s.role === 'head' && !s.projectId);
@@ -428,7 +542,7 @@ function Orders(): JSX.Element {
   };
 
   return (
-    <div className="rp-body">
+    <div className="rp-body manager-compose">
       {/* the same card as Tasks › New task: project chips, the order, attachments and the send row */}
       <div className="new-task orders-card">
       <div className="new-task-to" role="tablist">
@@ -585,16 +699,17 @@ function Orders(): JSX.Element {
       </div>
       </div>
       {!isNew && routines.length > 0 && (
-        <div className="rp-section">
-          <h4>Routines</h4>
+        <details className="rp-section manager-routines">
+          <summary>
+            Routines <span className="muted">{routines.length}</span>
+          </summary>
           <div className="routine-list">
             {routines.map((r) => (
               <RoutineRow key={r.id} r={r} now={now} />
             ))}
           </div>
-        </div>
+        </details>
       )}
-      {!isNew && <MyOrders projectIds={tree} />}
     </div>
   );
 }

@@ -9,3 +9,4 @@ dist
 .env
 .env.*
 out-test*
+dist-ui/

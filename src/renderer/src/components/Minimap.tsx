@@ -1,6 +1,7 @@
 import type React from 'react';
 import { useStore } from '@/store';
 import { useClosedSessionIds } from '@/lib/closed';
+import { pcStyle, projectColor } from '@/lib/format';
 
 const W = 160;
 const H = 100;
@@ -22,12 +23,22 @@ export function Minimap({ containerRef }: { containerRef: React.RefObject<HTMLDi
   const panY = useStore((s) => s.panY);
   const setPan = useStore((s) => s.setPan);
   const closed = useClosedSessionIds();
+  const projects = useStore((s) => s.projects);
 
   const items = [
     ...[...sessions.values()].filter((s) => !closed.has(s.id)).map((s) => ({ x: s.x, y: s.y, w: s.w, h: s.h, color: STATUS_COLOR[s.status] ?? '#666' })),
     ...[...fileCards.values()].map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h, color: '#4fa3ff' }))
   ];
   if (items.length === 0) return null;
+  // one frame per project (parts included) around its cards, in the project's colour, so projects read apart
+  const areas = new Map<string, { x0: number; y0: number; x1: number; y1: number }>();
+  for (const s of sessions.values()) {
+    if (closed.has(s.id) || !s.projectId) continue;
+    const p = projects.find((x) => x.id === s.projectId);
+    const root = p?.parentId ?? p?.id ?? s.projectId;
+    const a = areas.get(root) ?? { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    areas.set(root, { x0: Math.min(a.x0, s.x), y0: Math.min(a.y0, s.y), x1: Math.max(a.x1, s.x + s.w), y1: Math.max(a.y1, s.y + s.h) });
+  }
 
   const el = containerRef.current;
   const vw = el ? el.clientWidth / zoom : 0;
@@ -60,6 +71,14 @@ export function Minimap({ containerRef }: { containerRef: React.RefObject<HTMLDi
 
   return (
     <div className="minimap" onClick={onClick} onPointerDown={(e) => e.stopPropagation()} title="Click to navigate">
+      {[...areas].map(([id, a]) => (
+        <div
+          key={id}
+          className="mm-project"
+          title={projects.find((p) => p.id === id)?.name}
+          style={{ ...pcStyle(projectColor(id, projects)), left: tx(a.x0) - 3, top: ty(a.y0) - 3, width: (a.x1 - a.x0) * scale + 6, height: (a.y1 - a.y0) * scale + 6 }}
+        />
+      ))}
       {items.map((it, i) => (
         <div key={i} className="mm-rect" style={{ left: tx(it.x), top: ty(it.y), width: Math.max(2, it.w * scale), height: Math.max(2, it.h * scale), background: it.color }} />
       ))}

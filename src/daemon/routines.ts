@@ -70,14 +70,27 @@ export class Routines {
     this.onChange(this.list());
   }
 
-  /** Send the routine's order now and schedule the next run. */
-  run(id: string): void {
+  /** who got each routine's last run (in memory): a scheduled run waits while they are still on it */
+  private holders = new Map<string, string[]>();
+
+  /** Send the routine's order now and schedule the next run. scheduled: skipped while the last run is unfinished. */
+  run(id: string, scheduled = false): void {
     const r = this.store.getRoutine(id);
     if (!r) throw new Error('Routine not found');
+    const last = this.holders.get(id);
+    if (scheduled && last && this.team.stillOn(last)) {
+      // the last run is not finished: no second order on top of it (each would wake the head coach for a turn)
+      log.info(`routine "${r.name}" skipped: the last run is still in progress`);
+      r.nextAt = nextRun(r, Date.now());
+      this.store.saveRoutine(r);
+      this.onChange(this.list());
+      return;
+    }
     const n = r.runs + 1;
     const text = r.text.replace(/\{day\}|\{run\}/g, String(n));
     try {
       const to = this.team.order(r.target, text, `Routine "${r.name}" #${n}`);
+      this.holders.set(id, [...this.team.lastRecipients]);
       log.info(`routine "${r.name}" #${n} sent to`, to);
     } catch (e) {
       log.warn(`routine "${r.name}" #${n} failed`, e);
@@ -93,7 +106,7 @@ export class Routines {
   private tick(): void {
     const now = Date.now();
     for (const r of this.store.listRoutines()) {
-      if (r.enabled && r.nextAt <= now) this.run(r.id);
+      if (r.enabled && r.nextAt <= now) this.run(r.id, true);
     }
   }
 

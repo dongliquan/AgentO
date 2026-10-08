@@ -5,11 +5,12 @@ import { reconnectClient } from '@/client';
 import { onThemeChange } from '@/lib/theme';
 import { syncTitleBarColors } from '@/components/TopBar';
 import { Sidebar } from '@/components/Sidebar';
-import { RightPanel } from '@/components/RightPanel';
+import { RightPanel, SecondPanel } from '@/components/RightPanel';
 import { StatusBar } from '@/components/StatusBar';
 import { Palette } from '@/components/Palette';
 import { NewSessionDialog } from '@/components/NewSessionDialog';
 import { PromptDialog } from '@/components/PromptDialog';
+import { OrderFlowDialog } from '@/components/OrderFlow';
 import { UsageDialog } from '@/components/UsageDialog';
 import { Splitter } from '@/components/Splitter';
 import logo from '@/assets/logo.png';
@@ -71,12 +72,14 @@ export function PanelsApp(): JSX.Element {
         <Sidebar />
         <Splitter cssVar="--panels-left-w" min={200} max={700} dir={1} />
         <RightPanel />
+        <SecondPanel panels />
       </div>
       <StatusBar />
       {paletteOpen && <Palette />}
       {newSessionOpen && <NewSessionDialog />}
       <PromptDialog />
       <UsageDialog />
+      <OrderFlowDialog />
     </div>
   );
 }

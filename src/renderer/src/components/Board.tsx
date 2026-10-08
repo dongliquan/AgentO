@@ -23,7 +23,18 @@ let appliedPanNonce = 0;
  */
 let pendingView: { zoom?: number; x: number; y: number } | null = null;
 let viewFrame = 0;
+let movingTimer: ReturnType<typeof setTimeout> | undefined;
+/** While the Ground moves, .board.moving makes its canvas one GPU layer: a pan is a move, not a repaint of every card. */
+function markMoving(): void {
+  const el = document.querySelector('.board');
+  if (!el) return;
+  el.classList.add('moving');
+  clearTimeout(movingTimer);
+  movingTimer = setTimeout(() => el.classList.remove('moving'), 180);
+}
+
 function scheduleView(v: { zoom?: number; x: number; y: number }): void {
+  markMoving();
   pendingView = { ...pendingView, ...v };
   if (viewFrame) return;
   viewFrame = requestAnimationFrame(() => {
@@ -81,9 +92,9 @@ export function Board(): JSX.Element {
         scheduleView({ zoom: nz, x: mx - (mx - st.x) * k, y: my - (my - st.y) * k });
         return;
       }
-      // let terminals / file bodies scroll themselves
+      // the selected card scrolls its own content (chat, terminal); terminals and file bodies always do
       const t = e.target as HTMLElement;
-      if (t.closest('.term-wrap') || t.closest('.card.file .card-body')) return;
+      if (t.closest('.card.selected .card-body') || t.closest('.term-wrap') || t.closest('.card.file .card-body')) return;
       e.preventDefault();
       const dx = e.shiftKey && e.deltaX === 0 ? e.deltaY : e.deltaX;
       const dy = e.shiftKey && e.deltaX === 0 ? 0 : e.deltaY;
@@ -105,12 +116,14 @@ export function Board(): JSX.Element {
     const up = (e: KeyboardEvent): void => {
       if (e.code === 'Space') setSpace(false);
     };
+    const blur = (): void => setSpace(false);
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
-    window.addEventListener('blur', () => setSpace(false));
+    window.addEventListener('blur', blur);
     return () => {
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
+      window.removeEventListener('blur', blur);
     };
   }, []);
 
@@ -134,19 +147,24 @@ export function Board(): JSX.Element {
     const isBg = e.target === e.currentTarget || t.classList.contains('board-canvas') || t.classList.contains('ground-group') || t.classList.contains('collapsed-dots');
     const middle = e.button === 1;
     if (middle || (space && e.button === 0) || (isBg && e.button === 0)) {
-      if (isBg && !middle && !space) {
-        select(null);
-        selectFileCard(null);
-      }
       e.preventDefault();
       const startX = e.clientX;
       const startY = e.clientY;
       const st = useStore.getState();
       const ox = st.panX;
       const oy = st.panY;
+      let moved = false;
       setPanning(true);
-      const move = (ev: PointerEvent): void => scheduleView({ x: ox + (ev.clientX - startX), y: oy + (ev.clientY - startY) });
+      const move = (ev: PointerEvent): void => {
+        if (Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) > 4) moved = true;
+        scheduleView({ x: ox + (ev.clientX - startX), y: oy + (ev.clientY - startY) });
+      };
       const up = (): void => {
+        // moving the Ground keeps the selection; a plain click on empty space clears it
+        if (!moved && isBg && !middle && !space) {
+          select(null);
+          selectFileCard(null);
+        }
         setPanning(false);
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up);

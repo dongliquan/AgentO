@@ -8,6 +8,12 @@ const desktop: DesktopApi = {
   openPath: (p: string) => ipcRenderer.invoke('shell.openPath', p) as Promise<void>,
   openInVsCode: (p: string) => ipcRenderer.invoke('shell.openVsCode', p) as Promise<void>,
   openExternalTerminal: (p: string) => ipcRenderer.invoke('shell.openTerminal', p) as Promise<void>,
+  openUrl: (url: string) => ipcRenderer.invoke('shell.openUrl', url) as Promise<void>,
+  openFileWindow: (p: string) => ipcRenderer.send('file.openWindow', p),
+  find: (text: string, forward: boolean, next: boolean) => ipcRenderer.send('find.start', text, forward, next),
+  stopFind: () => ipcRenderer.send('find.stop'),
+  fileDataUrl: (p: string) => ipcRenderer.invoke('file.dataUrl', p) as Promise<string | null>,
+  webFavicon: (url: string) => ipcRenderer.invoke('web.favicon', url) as Promise<string | null>,
   agentTerminal: (kind, action) => ipcRenderer.invoke('agents.terminal', kind, action) as Promise<void>,
   onMenu: (cb: (command: string) => void) => {
     const listener = (_e: IpcRendererEvent, command: string) => cb(command);
@@ -16,8 +22,8 @@ const desktop: DesktopApi = {
       ipcRenderer.removeListener('menu', listener);
     };
   },
-  notify: (title: string, body: string, sessionId?: string) => {
-    ipcRenderer.send('notify', title, body, sessionId);
+  notify: (title: string, body: string, sessionId?: string, command?: string) => {
+    ipcRenderer.send('notify', title, body, sessionId, command);
   },
   menuLabels: () => ipcRenderer.invoke('menu.labels') as Promise<string[]>,
   popupMenu: (label: string, x: number, y: number) => ipcRenderer.send('menu.popup', label, x, y),
@@ -29,8 +35,8 @@ const desktop: DesktopApi = {
 
 /** Extra events beyond DesktopApi (renderer may ignore): 'focus-session' ({ sessionId }), 'daemon-restarted'. */
 const desktopEvents = {
-  onFocusSession: (cb: (sessionId: string) => void) => {
-    const listener = (_e: IpcRendererEvent, payload: { sessionId: string }) => cb(payload.sessionId);
+  onFocusSession: (cb: (sessionId: string, command?: string) => void) => {
+    const listener = (_e: IpcRendererEvent, payload: { sessionId: string; command?: string }) => cb(payload.sessionId, payload.command);
     ipcRenderer.on('focus-session', listener);
     return () => {
       ipcRenderer.removeListener('focus-session', listener);
@@ -42,14 +48,26 @@ const desktopEvents = {
     return () => {
       ipcRenderer.removeListener('daemon-restarted', listener);
     };
+  },
+  /** find-in-page results: matches and which one is selected (1-based) */
+  onFindResult: (cb: (r: { matches: number; active: number }) => void) => {
+    const listener = (_e: IpcRendererEvent, r: { matches: number; active: number }) => cb(r);
+    ipcRenderer.on('find.result', listener);
+    return () => {
+      ipcRenderer.removeListener('find.result', listener);
+    };
   }
 };
 
 const roleArg = process.argv.find((a) => a.startsWith('--agento-role='));
-const role: WindowRole = roleArg?.slice('--agento-role='.length) === 'panels' ? 'panels' : 'main';
+const roleName = roleArg?.slice('--agento-role='.length);
+const role: WindowRole = roleName === 'panels' || roleName === 'viewer' ? roleName : 'main';
+const fileArg = process.argv.find((a) => a.startsWith('--agento-file='));
 
 const panels = {
   role,
+  file: fileArg ? fileArg.slice('--agento-file='.length) : undefined,
+
   toggle: () => ipcRenderer.send('panels.toggle'),
   isOpen: () => ipcRenderer.invoke('panels.isOpen') as Promise<boolean>,
   onState: (cb: (open: boolean) => void) => {

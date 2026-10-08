@@ -4,6 +4,7 @@ import { send } from '@/client';
 import { AgentPicker } from './AgentPicker';
 import { newProject } from '@/commands';
 import { ProjectTree } from './ProjectTree';
+import { SidebarOrders } from './SidebarOrders';
 
 const FILTERS: { id: TreeFilter; label: string }[] = [
   { id: 'all', label: 'Sessions + Files' },
@@ -19,10 +20,10 @@ export function Sidebar(): JSX.Element {
 
   return (
     <div className="sidebar">
-      {/* the manager is the user, above every project: gives orders from the Orders tab */}
+      {/* the manager is the user, above every project: gives orders from the Manager tab */}
       <div className="sidebar-manager" title="You are the manager — your tasks: what you ordered and where it stands" onClick={() => setRightTab('tasks')}>
         <span className="manager-ico">♛</span>
-        <span className="label">Manager (You)</span>
+        <span className="label">Welcome</span>
         <span className="role-tag manager">MANAGER</span>
         <button
           className="icon-btn manager-usage"
@@ -41,6 +42,8 @@ export function Sidebar(): JSX.Element {
           </svg>
         </button>
       </div>
+      {/* the manager's orders sit above the projects they go to */}
+      <SidebarOrders />
       <div className="sidebar-header">
         <span>PROJECTS</span>
         <span className="grow" />
@@ -80,3 +83,4 @@ export function Sidebar(): JSX.Element {
     </div>
   );
 }
+

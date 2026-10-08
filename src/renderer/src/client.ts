@@ -2,7 +2,8 @@ import { DaemonClient } from '@shared/ws-client';
 import type { ClientMessage, Session, SessionStatus } from '@shared/protocol';
 import { useStore } from '@/store';
 import { STATUS_LABELS } from '@/lib/format';
-import { IS_PANELS } from '@/lib/role';
+import { IS_PANELS, VIEWER_FILE } from '@/lib/role';
+import { wantsStatusNotification } from '@/lib/notify';
 import { onAttachmentMessage } from '@/lib/attachments';
 import { selectAndReveal } from '@/commands';
 
@@ -45,7 +46,8 @@ function notifyTransition(prev: Session | undefined, next: Session): void {
   const s: SessionStatus = next.status;
   if (s !== 'waiting' && s !== 'done' && s !== 'error') return;
   // Only the main window raises OS notifications; the panels window would duplicate them.
-  if (IS_PANELS || !windowIsBackground()) return;
+  if (IS_PANELS || VIEWER_FILE !== undefined || !windowIsBackground()) return;
+  if (!wantsStatusNotification(next)) return;
   const text =
     s === 'waiting' ? 'Waiting for input.' : s === 'done' ? 'Session finished.' : `Exited with error (code ${next.exitCode ?? '?'})`;
   try {
@@ -55,7 +57,17 @@ function notifyTransition(prev: Session | undefined, next: Session): void {
   }
 }
 
+let selectWatch = false;
+function watchSelection(): void {
+  if (selectWatch) return;
+  selectWatch = true;
+  useStore.subscribe((next, prev) => {
+    if (next.selectedId !== prev.selectedId) send({ type: 'ui.select', id: next.selectedId });
+  });
+}
+
 export async function startClient(): Promise<void> {
+  watchSelection();
   const store = useStore.getState();
   let info: { port: number; token: string };
   try {
@@ -68,7 +80,11 @@ export async function startClient(): Promise<void> {
     return;
   }
   client = new DaemonClient(`ws://127.0.0.1:${info.port}`, info.token);
-  client.onStatus((c) => useStore.getState().setConnected(c));
+  client.onStatus((c) => {
+    useStore.getState().setConnected(c);
+    // the daemon keeps a selected session out of automatic fresh starts
+    if (c) send({ type: 'ui.select', id: useStore.getState().selectedId });
+  });
   client.on((msg) => {
     onAttachmentMessage(msg);
     const st = useStore.getState();

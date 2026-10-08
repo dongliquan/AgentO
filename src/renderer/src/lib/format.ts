@@ -54,6 +54,16 @@ export const STATUS_LABELS: Record<SessionStatus, string> = {
   hibernated: 'Hibernated'
 };
 
+/** 'waiting' splits in two for display: a question on screen ("Needs input", pulsing) or just idle (still dot). */
+export function statusClass(s: { status: SessionStatus; attention?: boolean }): string {
+  // attention is sent by the daemon; an older daemon sends none, and then waiting stays waiting
+  return s.status === 'waiting' && s.attention === false ? 'idle' : s.status;
+}
+export function statusLabel(s: { status: SessionStatus; attention?: boolean }): string {
+  if (s.status === 'waiting' && s.attention !== undefined) return s.attention ? 'Needs input' : 'Idle';
+  return STATUS_LABELS[s.status];
+}
+
 export const STATUS_ICONS: Record<SessionStatus, string> = {
   starting: '…',
   working: '●',
@@ -155,7 +165,7 @@ export function formatBytes(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-/** A project's color (a part takes its project's), for tags, the tree, the Ground frame and the Orders tab. */
+/** A project's color (a part takes its project's), for tags, the tree, the Ground frame and the Manager tab. */
 export function projectColor(projectId: string, projects: { id: string; parentId?: string; color?: string }[]): string {
   const p = projects.find((x) => x.id === projectId);
   const root = p?.parentId ? projects.find((x) => x.id === p.parentId) : p;

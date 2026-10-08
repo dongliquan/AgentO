@@ -2,6 +2,7 @@ import type { AgentKind } from '@shared/protocol';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@/store';
 import { closedSessionIds } from '@/lib/closedIds';
+import { openFile } from '@/lib/openfile';
 import { COMMANDS, runCommand, selectAndReveal } from '@/commands';
 import { AGENT_LABELS, STATUS_LABELS, agentColor, basename } from '@/lib/format';
 import { send } from '@/client';
@@ -77,7 +78,7 @@ export function Palette(): JSX.Element {
       for (const f of p.folders) {
         out.push({ id: `f:${f.id}`, kind: 'Folder', label: f.name, sub: f.path, run: () => useStore.getState().openNewSession({ projectId: p.id, folderId: f.id }) });
         const changed = useStore.getState().changed.get(f.path) ?? [];
-        for (const e of changed) out.push({ id: `c:${e.path}`, kind: 'File', label: e.name, sub: e.path, run: () => openFileCard(e.path, f.path) });
+        for (const e of changed) out.push({ id: `c:${e.path}`, kind: 'File', label: e.name, sub: e.path, run: () => openFile(e.path, f.path) });
       }
     }
     return out;
@@ -92,7 +93,7 @@ export function Palette(): JSX.Element {
         kind: 'File',
         label: basename(f.path),
         sub: f.path,
-        run: () => openViewerTab(f.path)
+        run: () => openFile(f.path, '')
       }));
     const daemonHits = new Set(found.map((f) => f.id));
     return [...items, ...found]

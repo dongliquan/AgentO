@@ -18,8 +18,19 @@ function projectsDir(): string {
   return path.join(process.env['CLAUDE_CONFIG_DIR'] || path.join(os.homedir(), '.claude'), 'projects');
 }
 
+/** transcripts found before (a transcript never moves): skips the directory scan on every later lookup */
+const found = new Map<string, string>();
+
 /** Locate <id>.jsonl: the encoded-cwd dir first (case-insensitive on Windows), then any project dir. */
 export function findTranscript(cwd: string, claudeId: string): string | undefined {
+  const hit = found.get(claudeId);
+  if (hit && fs.existsSync(hit)) return hit;
+  const p = scanTranscript(cwd, claudeId);
+  if (p) found.set(claudeId, p);
+  return p;
+}
+
+function scanTranscript(cwd: string, claudeId: string): string | undefined {
   const root = projectsDir();
   const file = `${claudeId}.jsonl`;
   let dirs: string[];
@@ -184,8 +195,13 @@ export class TranscriptParser {
 }
 
 /** Tails one transcript file, reporting newly parsed/changed entries. */
+/** What a tail feeds: Claude's transcript parser, or Codex's rollout parser (codex.ts). */
+export interface ChatParser {
+  readonly entries: ChatEntry[];
+  feed(o: Json): ChatEntry[];
+}
+
 export class TranscriptTail {
-  readonly parser = new TranscriptParser();
   private offset = 0;
   private rest = '';
   private timer: NodeJS.Timeout | null = null;
@@ -193,7 +209,8 @@ export class TranscriptTail {
 
   constructor(
     private locate: () => string | undefined,
-    private onChange: (entries: ChatEntry[]) => void
+    private onChange: (entries: ChatEntry[]) => void,
+    readonly parser: ChatParser = new TranscriptParser()
   ) {
     this.poll();
     this.timer = setInterval(() => this.poll(), POLL_MS);

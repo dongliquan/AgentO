@@ -1,7 +1,8 @@
 import type { InboxItem, Session } from '@shared/protocol';
 import { type LogNode } from './threads';
 
-export type WorkState = 'done' | 'working' | 'waiting' | 'stopped' | 'error' | 'removed';
+/** replaced: the same session got this work again later in the order (its newer piece is the one that counts) */
+export type WorkState = 'done' | 'replaced' | 'working' | 'waiting' | 'stopped' | 'error' | 'removed';
 
 /** One piece of work under an order: a directive that was not split further (a leaf), and who holds it. */
 export interface WorkItem {
@@ -54,9 +55,13 @@ function leaves(n: LogNode): LogNode[] {
  */
 export function orderProgress(root: LogNode, sessions: Map<string, Session>): OrderProgress {
   const items: WorkItem[] = leaves(root).map((n) => ({ node: n, session: sessions.get(n.item.sessionId), state: stateOf(n, sessions), lastAt: last(n) }));
-  const done = items.filter((i) => i.state === 'done').length;
+  for (const i of items) {
+    if (i.state === 'done') continue;
+    if (items.some((o) => o !== i && o.node.item.sessionId === i.node.item.sessionId && o.node.item.createdAt > i.node.item.createdAt)) i.state = 'replaced';
+  }
+  const done = items.filter((i) => i.state === 'done' || i.state === 'replaced').length;
   const working = items.filter((i) => i.state === 'working').length;
-  const active = [...new Map(items.filter((i) => i.state !== 'done' && i.session).map((i) => [i.session!.id, i.session!])).values()];
+  const active = [...new Map(items.filter((i) => i.state !== 'done' && i.state !== 'replaced' && i.session).map((i) => [i.session!.id, i.session!])).values()];
   return { items, done, total: items.length, working, active, lastAt: last(root) };
 }
 

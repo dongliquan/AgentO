@@ -24,6 +24,9 @@ import { TranscriptParser, findTranscript, readTranscriptLines } from './transcr
 import { log } from './log';
 import { arrangeTeam } from '@shared/layout';
 import { plainTerminalLines } from '@shared/plaintext';
+import { PROMPT_RE } from '@shared/prompts';
+import { findCodexRollout, readCodex } from './codex';
+import { AUTO_MIN_GAP_MS, AUTO_FRESH, AUTO_IDLE_MS, AUTO_MIN_CONTEXT, HANDOFF_CONTINUE, HANDOFF_REQUEST, conversationStart, handoffDir, handoffPath } from './freshstart';
 
 export const MCP_SERVER_NAME = 'agento';
 const MAX_BODY = 1024 * 1024;
@@ -70,6 +73,8 @@ const START_SETTLE_MS = 5_000;
 const TRUST_SETTLE_MS = 8_000;
 /** Waiting must hold this long before a directed session counts as finished (status flips on output pauses). */
 const SETTLE_MS = 4_000;
+/** a rider (a note that only goes along with another message) is delivered on its own after this long */
+const RIDE_MAX_MS = 15 * 60_000;
 /** Messages a session may send per window — stops two sessions from bouncing messages forever. */
 const RATE_WINDOW_MS = 10 * 60_000;
 const RATE_LIMIT: Record<SessionRole, number> = { head: 60, coach: 60, player: 12 };
@@ -86,6 +91,8 @@ const GENERATED_MARK = '<!-- agento:generated — delete this line to keep your 
 const ROLE_NAME: Record<SessionRole, string> = { head: 'head coach', coach: 'coach', player: 'player' };
 /** Shown as the sender of the user's orders. */
 const USER = 'the manager (the user)';
+/** sender of what the user types into a session directly (the renderer tells these from orders by it) */
+const DIRECT = 'Manager (you) · Direct';
 
 type Json = Record<string, unknown>;
 
@@ -101,9 +108,13 @@ interface ToolDef {
 interface Pending {
   /** session id of the sender, or 'user' */
   from: string;
+  /** earlier senders still waiting for this session's result (a second directive arrived before it finished) */
+  also?: string[];
   at: number;
   started: boolean;
   timer: NodeJS.Timeout | null;
+  /** the manager was already told it is stuck on a prompt */
+  blocked?: boolean;
 }
 
 interface Queued {
@@ -112,6 +123,10 @@ interface Queued {
   from?: string;
   /** false: a note that waits for the session's next work instead of waking it (e.g. "you are now the coach") */
   wake?: boolean;
+  /** never delivered on its own, even to an idle session: it goes along with the next message that is (saves a turn) */
+  ride?: boolean;
+  /** when it was queued (a rider waits at most RIDE_MAX_MS) */
+  at?: number;
 }
 
 class ToolError extends Error {}
@@ -141,8 +156,7 @@ function plainTerminal(raw: string): string {
 }
 
 /** A permission, trust or choice prompt is on screen: typing into it would answer it. */
-const PROMPT_RE =
-  /Do you trust the files|Yes, I trust this folder|Trust\s*this\s*folder\?|Trust\s*and\s*continue|Set\s*up\s*the\s*Codex\s*agent\s*sandbox|Would\s*you\s*like\s*to\s*run\s*the\s*following\s*command|Input\s*disabled\s*until\s*setup|Quick safety check|Do you want to (?:proceed|make this edit|create|run)|Allow (?:once|always|command)|Apply (?:this|these) changes\?|Enter to confirm/i;
+// PROMPT_RE: a question on screen waiting for the user (shared with SessionManager's `attention`)
 
 function chatLine(e: ChatEntry): string | null {
   switch (e.kind) {
@@ -206,20 +220,19 @@ ${scope}
 
 ## How to work
 
-- Orders from the manager (the user) come to you: split them per part and hand each part to its coach
-  (\`send_to_session\`). A part without a coach: give it to its playing coach, otherwise its first player.
+- Orders from the manager (the user) come to you: split them into tasks and hand each task straight to the player
+  who does it (\`send_to_session\`). You manage the parts' players yourself — no coach in between (a coach that only
+  passes your messages on costs tokens and time). A part that does have a coach: give it to the coach.
+- Do not make coaches (\`make_coach\`) unless a part has 4 or more players that need constant review, or the
+  manager asks for one.
 - Do not do the implementation yourself.
 - Instructions must be self-contained: goal, files/scope, constraints, and what "done" means.
 - When a session finishes what you sent, you get an "[AgentO] … finished" message with its last reply — no need to poll.
-  Review it (\`read_session\`), decide the next step, and \`report_up\` to the manager when an order is done or blocked.
+  Its last reply is normally enough — \`read_session\` (max_entries 3) only when it is unclear. Decide the next step,
+  and \`report_up\` to the manager when an order is done or blocked.
 - Questions you cannot answer yourself go to the manager with \`report_up\`.
 
 ${LEAN_CONTEXT}
-
-## Tools (MCP server "${MCP_SERVER_NAME}")
-
-${project ? '' : 'create_project · '}list_projects · list_sessions · read_session · send_to_session · create_session · wait_for_sessions ·
-interrupt_session · resume_session · report_up
 `;
 }
 
@@ -239,7 +252,8 @@ You are the **coach** of the project "${project.name}" (id ${project.id}).
 - Ask questions — to players about progress and blockers; to whoever gave you the order when priorities are unclear.
 - Do not do the implementation yourself; Claude players do all the coding. You may read the project folders to review.
 - When a player finishes what you sent, you get an "[AgentO] … finished" message with its last reply — no need to poll.
-  Review, assign the next task, and \`report_up\` when the order is done or blocked.
+  Its last reply is normally enough (\`read_session\` only when unclear); assign the next task, and \`report_up\` when the
+  order is done or blocked.
 - Players may ask you questions; answer them with \`send_to_session\`.
 
 ${LEAN_CONTEXT}
@@ -248,18 +262,16 @@ ${LEAN_CONTEXT}
 
 ${folders}
 
-## Tools (MCP server "${MCP_SERVER_NAME}")
-
-list_sessions · read_session · send_to_session · create_session · wait_for_sessions · interrupt_session ·
-resume_session · report_up
 `;
 }
 
 const PLAYER_INSTRUCTIONS = `AgentO team tools. ${TEAM_INTRO}
-You are a **player**: do the work you are given in your project folder. When you are blocked or unsure, ask your coach
-with report_up instead of stopping. When a teammate's work affects yours, coordinate with them (list_sessions,
-read_session, send_to_session to a teammate). Do not send a message just to acknowledge — your coach is told
-automatically when you finish.`;
+You are a **player**: do the work you are given in your project folder. When you are blocked or unsure, ask whoever
+gave you the work (your head coach, or your coach if your part has one) with report_up instead of stopping. When a
+teammate's work affects yours, coordinate with them (list_sessions, read_session, send_to_session to a teammate). Do
+not send a message just to acknowledge — whoever gave you the work is told automatically when you finish.
+End a finished task with a short report: what you did, the files you changed (paths), how it was checked, and what
+needs a decision — a few lines, not the whole story (it is read by someone managing several players).`;
 
 const PLAYING_COACH_NOTE = (project: string): string =>
   `[AgentO] You are now the playing coach of the project "${project}". Keep doing your own work, and also manage this ` +
@@ -270,6 +282,55 @@ const PLAYING_COACH_NOTE = (project: string): string =>
 export class Team {
   /** sessions that were sent a directive, keyed by target */
   private pending = new Map<string, Pending>();
+  /** stopped sessions the user just typed into (note() before message()): their queued message is tracked like an order */
+  private directNext = new Set<string>();
+  /** who received the latest order (a routine remembers them to skip a run while they are still on the last one) */
+  lastRecipients: string[] = [];
+
+  /** The queues as last saved: messages not delivered yet, who waits for whose result, who to report_up to. */
+  private saved = '';
+  private persist(): void {
+    const state = {
+      outbox: [...this.outbox],
+      pending: [...this.pending].map(([id, p]) => [id, { from: p.from, also: p.also, at: p.at, blocked: p.blocked }]),
+      director: [...this.director]
+    };
+    const json = JSON.stringify(state);
+    if (json === this.saved) return;
+    this.saved = json;
+    try {
+      this.store.setKv('team', state);
+    } catch (e) {
+      log.warn('team: could not save the queues', e);
+    }
+  }
+
+  /** After a restart: the queues come back (a pending result waits for the session's next finished turn). */
+  private restore(): void {
+    type Saved = { outbox: [string, Queued[]][]; pending: [string, { from: string; also?: string[]; at: number; blocked?: boolean }][]; director: [string, string][] };
+    const st = this.store.getKv<Saved>('team');
+    if (!st) return;
+    for (const [id, q] of st.outbox ?? []) if (this.sessions.get(id) && q.length) this.outbox.set(id, q);
+    for (const [id, p] of st.pending ?? []) if (this.sessions.get(id)) this.pending.set(id, { ...p, started: false, timer: null });
+    for (const [id, from] of st.director ?? []) if (this.sessions.get(id)) this.director.set(id, from);
+    this.saved = JSON.stringify(st);
+    if (this.outbox.size || this.pending.size) log.info('team: restored', this.outbox.size, 'queued,', this.pending.size, 'waiting for results');
+  }
+
+  /** Messages waiting for the session other than riders (which only go along with something else). */
+  private hasMail(id: string): boolean {
+    return (this.outbox.get(id) ?? []).some((q) => !q.ride);
+  }
+
+  /** Still on an order: a directive from the manager not yet finished, messages queued, or working. */
+  stillOn(ids: string[]): boolean {
+    return ids.some((id) => {
+      const s = this.sessions.get(id);
+      return this.pending.get(id)?.from === 'user' || this.hasMail(id) || s?.status === 'working' || s?.status === 'starting';
+    });
+  }
+  /** fresh starts under way: the handoff note asked for, and when */
+  private fresh = new Map<string, { file: string; at: number; why: 'manual' | 'auto'; timer: NodeJS.Timeout | null; started: boolean }>();
   /** messages waiting until their target is idle */
   private outbox = new Map<string, Queued[]>();
   /** targets the user was already told about (sitting on a prompt) */
@@ -296,7 +357,12 @@ export class Team {
     /** called after inbox rows were added */
     private onInbox: () => void
   ) {
-    sessions.on('upsert', (s) => this.onStatus(s));
+    sessions.on('upsert', (s) => {
+      this.onStatus(s);
+      this.onFreshStatus(s);
+    });
+    sessions.keepAwake = (id) => this.fresh.has(id);
+    if (AUTO_FRESH) setInterval(() => this.autoFresh(), 10 * 60_000).unref?.();
     sessions.on('data', (id) => this.autoTrust(id));
     // Waiting is the normal resting state inside team work; the user hears about it through reports instead.
     sessions.quietWaiting = (s) =>
@@ -306,7 +372,11 @@ export class Team {
       // a player with a coach or head coach above it: they hear about it, the user gets their reports instead
       this.coachOf(s.projectId) !== undefined ||
       this.all().some((h) => h.role === 'head' && h.projectId === this.rootOf(s.projectId));
-    setInterval(() => this.flush(), 1500).unref();
+    this.restore();
+    setInterval(() => {
+      this.flush();
+      this.persist();
+    }, 1500).unref();
   }
 
   /* ---------- folder trust ---------- */
@@ -333,12 +403,13 @@ export class Team {
     if (!s || (s.agent !== 'claude' && s.agent !== 'codex') || !s.pid) return;
     const key = `${id}:${s.pid}`;
     if (this.trustAnswered.has(key)) return;
+    // cheap checks first: this runs on every output chunk
+    if (!this.trustable(s)) return;
     const out = this.sessions.outputSinceInput(id);
     if (!/trust/i.test(out)) return;
     const screen = plainTerminal(out);
     const prompt = s.agent === 'claude' ? /Yes, I trust this folder/ : /Trust\s*and\s*continue/;
     if (!prompt.test(screen)) return;
-    if (!this.trustable(s)) return;
     this.trustAnswered.add(key);
     this.notBefore.set(id, Date.now() + TRUST_SETTLE_MS);
     setTimeout(() => {
@@ -413,6 +484,41 @@ export class Team {
     // pre-marker files from the "manager" design are regenerated too
     if (cur === undefined || cur.startsWith(GENERATED_MARK) || /^# Role: (?:Manager|Coach)/.test(cur)) {
       if (cur !== content) fs.writeFileSync(file, content);
+    }
+  }
+
+  /**
+   * A project (and its parts) is being deleted: forget its sessions' queues, and remove what AgentO made for it — the
+   * head coach / coach folders under the app's team folder and the sessions' MCP configs. The project's own folders
+   * (the user's code) and the CLIs' conversation files are never touched.
+   */
+  forgetProject(projectIds: string[], sessionIds: string[]): void {
+    for (const id of sessionIds) {
+      this.outbox.delete(id);
+      this.pending.delete(id);
+      this.director.delete(id);
+      const f = this.fresh.get(id);
+      if (f?.timer) clearTimeout(f.timer);
+      this.fresh.delete(id);
+      try {
+        fs.rmSync(path.join(this.teamDir(), 'mcp', `${id}.json`), { force: true });
+      } catch {
+        /* ignore */
+      }
+    }
+    for (const [target, from] of this.director) if (sessionIds.includes(from)) this.director.delete(target);
+    const team = path.resolve(this.teamDir());
+    for (const pid of projectIds) {
+      for (const name of [`head-${pid}`, `coach-${pid}`]) {
+        const dir = path.join(team, name);
+        // only folders AgentO made inside its own team folder
+        if (path.dirname(path.resolve(dir)) !== team) continue;
+        try {
+          fs.rmSync(dir, { recursive: true, force: true });
+        } catch (e) {
+          log.warn('team: could not remove', dir, e);
+        }
+      }
     }
   }
 
@@ -537,7 +643,109 @@ export class Team {
     if (!s) throw new Error('Session not found');
     if (this.isClosed(s.projectId)) throw new Error('That project is closed — open it first');
     if (!text.trim()) return;
-    this.enqueue(id, { text: text.trim() });
+    // typed by the user into a stopped session: its answer is reported like an order's (see note())
+    const direct = this.directNext.delete(id) && !this.pending.has(id);
+    this.enqueue(id, direct ? { text: text.trim(), from: 'user' } : { text: text.trim() });
+  }
+
+  /**
+   * The user typed into a session directly (not an order): recorded as a directive from 'Manager (you) · Direct', and
+   * the session's reply reported back like an order's — unless it is still on someone's directive, whose report it
+   * must not take over (its answer then stays in its conversation and in that report).
+   */
+  note(id: string, text: string): void {
+    const s = this.sessions.get(id);
+    if (!s || !text.trim()) return;
+    this.record(s, 'directive', { id: 'user', title: DIRECT }, text);
+    if (this.pending.has(id)) return;
+    // stopped: message() queues it and wakes the session; it is tracked when delivered
+    if (!this.sessions.isLive(id)) {
+      this.directNext.add(id);
+      return;
+    }
+    this.trackDirective(id, 'user');
+    // the composer types before it reports the note: the turn may already be running
+    const p = this.pending.get(id);
+    if (p && (s.status === 'working' || s.status === 'starting')) p.started = true;
+  }
+
+  /**
+   * Fresh start (see freshstart.ts): ask for the handoff note now; when the note is written and the session is idle,
+   * start it over with the note as its first message. A busy session is refused (manual) or skipped (auto).
+   */
+  freshStart(id: string, why: 'manual' | 'auto'): void {
+    const s = this.sessions.get(id);
+    if (!s) throw new Error('Session not found');
+    if (s.agent !== 'claude') throw new Error('Fresh start works with Claude sessions');
+    if (this.fresh.has(id)) throw new Error('A fresh start is already under way for this session');
+    if (this.isClosed(s.projectId)) throw new Error('That project is closed — open it first');
+    if (s.status === 'working' || s.status === 'starting' || this.pending.has(id) || this.hasMail(id))
+      throw new Error(`${s.title} is busy — fresh start it when it is idle`);
+    if (!s.resumeId) throw new Error('This session has no conversation yet');
+    const file = handoffPath(s);
+    const timer = setTimeout(() => {
+      if (this.fresh.get(id)?.file !== file) return;
+      this.fresh.delete(id);
+      // the request must not arrive later on its own
+      const q = this.outbox.get(id)?.filter((m) => m.text !== HANDOFF_REQUEST);
+      if (q?.length) this.outbox.set(id, q);
+      else this.outbox.delete(id);
+      this.store.addInbox(id, 'error', `${s.title} — fresh start gave up: no handoff note after 15 minutes`);
+      this.onInbox();
+    }, 15 * 60_000);
+    this.fresh.set(id, { file, at: Date.now(), why, timer, started: false });
+    log.info('team: fresh start', why, s.title, file);
+    this.enqueue(id, { text: HANDOFF_REQUEST });
+  }
+
+  private onFreshStatus(s: Session): void {
+    const f = this.fresh.get(s.id);
+    if (!f) return;
+    // the request was delivered and the session is answering it
+    if (s.status === 'working') f.started = !this.outbox.has(s.id) || f.started;
+    if (s.status !== 'waiting' || !f.started) return;
+    // the answer may still be finishing: wait for the idle to hold, then take it as the note
+    setTimeout(() => {
+      const cur = this.sessions.get(s.id);
+      if (!cur || this.fresh.get(s.id) !== f || cur.status !== 'waiting') return;
+      const note = this.lastReply(cur, 200_000).trim();
+      if (note.length < 200) return; // not the note yet (a short acknowledgement): wait for the real answer
+      try {
+        fs.writeFileSync(f.file, `${note}\n`);
+      } catch (e) {
+        log.warn('team: could not save the handoff note', f.file, e);
+        return;
+      }
+      this.fresh.delete(s.id);
+      if (f.timer) clearTimeout(f.timer);
+      const before = cur.context;
+      this.sessions.restart(s.id, HANDOFF_CONTINUE(f.file));
+      this.store.addInbox(
+        s.id,
+        'done',
+        `${cur.title} — fresh start${f.why === 'auto' ? ' (auto)' : ''}: new conversation from the handoff note${before ? ` (was ${Math.round(before / 1000)}K tokens)` : ''} · ${f.file}`
+      );
+      this.onInbox();
+    }, SETTLE_MS);
+  }
+
+  /** Idle Claude sessions whose conversation has grown past the size get a fresh start (checked every 10 minutes). */
+  private autoFresh(): void {
+    for (const s of this.all()) {
+      if (s.agent !== 'claude' || !this.sessions.isLive(s.id) || s.status !== 'waiting') continue;
+      if (this.fresh.has(s.id) || this.pending.has(s.id) || this.hasMail(s.id) || this.isClosed(s.projectId)) continue;
+      if ((s.context ?? 0) < AUTO_MIN_CONTEXT || this.sessions.idleFor(s.id) < AUTO_IDLE_MS) continue;
+      // a session the manager has open (Ground card terminal, Session tab) is never cleared under them
+      if (this.sessions.isAttached(s.id) || this.sessions.inUse(s.id)) continue;
+      if (this.needsAttention(s)) continue;
+      const began = conversationStart(s.cwd, s.resumeId);
+      if (began && Date.now() - began < AUTO_MIN_GAP_MS) continue;
+      try {
+        this.freshStart(s.id, 'auto');
+      } catch (e) {
+        log.warn('team: auto fresh start skipped', s.title, e);
+      }
+    }
   }
 
   /** quiet: the note to the session waits for its next work instead of waking it (organizing stopped sessions) */
@@ -556,10 +764,40 @@ export class Team {
     } else if (role === 'player') {
       if (s.role !== 'coach' || !s.folderId) throw new Error('Only a playing coach can go back to being a player');
       this.sessions.setRole(id, 'player');
-      this.enqueue(id, { text: '[AgentO] You are a player again: do your own work and report_up to your coach.', ...wake });
+      this.handOver(s, wake);
+      this.enqueue(id, {
+        text: '[AgentO] You are a player again: do your own work. The head coach now manages this part directly — report_up goes to it.',
+        ...wake
+      });
     } else {
       throw new Error('Use the Head Coach button to create the head coach');
     }
+  }
+
+  /**
+   * A coach stepped down: the work it handed out now reports to the head coach (pending reports, report_up), and the
+   * head coach is told which players it manages directly from now on and what is still out.
+   */
+  private handOver(coach: StoredSession, wake: { wake?: boolean }): void {
+    const head = this.headOf(this.rootOf(coach.projectId));
+    if (!head) return;
+    const out: string[] = [];
+    for (const [target, p] of this.pending) {
+      if (p.from !== coach.id) continue;
+      p.from = head.id;
+      out.push(`- ${this.sessions.get(target)?.title ?? target} (session ${target})`);
+    }
+    for (const [target, from] of this.director) if (from === coach.id) this.director.set(target, head.id);
+    const part = this.project(coach.projectId);
+    const players = this.all().filter((x) => x.projectId === coach.projectId && x.role === 'player');
+    this.enqueue(head.id, {
+      text:
+        `[AgentO] "${coach.title}" is no longer the coach of the part "${part?.name ?? coach.projectId}" (it is a player again). ` +
+        `You manage that part's players directly now: ${players.map((x) => `"${x.title}"`).join(', ') || '(none)'}.` +
+        (out.length ? `\nStill working on tasks the coach sent — their reports come to you:\n${out.join('\n')}` : '') +
+        `\nNo reply needed.`,
+      ...wake
+    });
   }
 
   private mcpUrl(s: StoredSession): string {
@@ -613,6 +851,9 @@ export class Team {
         // a coach / head coach plans, delegates and reviews — it reads, it does not edit: a read-only sandbox where
         // commands run without asking (an approval prompt would stall the team; anything else fails in the sandbox)
         ...(s.role !== 'player' ? ['-c', 'approval_policy=never', '-c', 'sandbox_mode=read-only'] : []),
+        // a player edits code like a Claude player does (no sandbox, the user's own rights): the Windows sandbox
+        // ("unelevated") denies writes in large workspaces such as a folder of many repositories
+        ...(s.role === 'player' ? ['-c', 'sandbox_mode=danger-full-access'] : []),
         // on Windows, first runs ask which sandbox to set up and wait there; without the user's own choice in
         // ~/.codex/config.toml, take the one that needs no administrator rights
         ...(process.platform === 'win32' && !codexSandboxChosen() ? ['-c', 'windows.sandbox=unelevated'] : [])
@@ -650,6 +891,8 @@ export class Team {
     if (folders.length) extras.push('--add-dir', ...folders);
     // attached images arrive as paths in this folder: readable without a permission prompt
     extras.push('--add-dir', attachmentsDir());
+    // fresh start: the handoff note is written here and read back by the new conversation
+    extras.push('--add-dir', handoffDir());
     extras.push('--mcp-config', file, '--allowedTools', `mcp__${MCP_SERVER_NAME}`);
     if (s.role !== 'player') extras.push(...COORDINATOR_ARGS());
     return extras;
@@ -671,8 +914,13 @@ export class Team {
   }
 
   private target(caller: StoredSession, args: Json): StoredSession {
-    const id = str(args['session_id']);
-    const t = id ? this.sessions.get(id) : undefined;
+    const id = str(args['session_id']).trim();
+    // a full id, or a unique prefix (messages print the first 8 characters)
+    let t = id ? this.sessions.get(id) : undefined;
+    if (!t && id.length >= 6) {
+      const hits = this.all().filter((x) => x.id.startsWith(id));
+      if (hits.length === 1) t = hits[0];
+    }
     if (!t) throw new ToolError(`No session with id "${id}". Use list_sessions.`);
     if (!this.inScope(caller, t)) {
       // say who can relay it, so the caller goes up the chain instead of giving up
@@ -721,7 +969,7 @@ export class Team {
 
   private enqueue(targetId: string, item: Queued): void {
     const q = this.outbox.get(targetId) ?? [];
-    q.push(item);
+    q.push({ ...item, at: Date.now() });
     this.outbox.set(targetId, q);
     this.flush();
   }
@@ -736,6 +984,8 @@ export class Team {
       }
       // a closed project keeps its queued messages until it is opened again
       if (this.isClosed(t.projectId)) continue;
+      // only riders (a delegation note, a progress report): wait for something worth a turn — but not forever
+      if (queue.every((q) => q.ride) && Date.now() - Math.min(...queue.map((q) => q.at ?? 0)) < RIDE_MAX_MS) continue;
       if (!this.sessions.isLive(id)) {
         if (queue.every((q) => q.wake === false)) continue; // only notes: they ride along with its next work
         if (!this.resuming.has(id) && t.status !== 'starting') {
@@ -767,6 +1017,8 @@ export class Team {
       const text = queue.map((q) => q.text).join('\n\n');
       try {
         this.sessions.paste(id, text);
+        // it still shows "waiting" for a moment: messages queued right after go together in the next paste
+        this.notBefore.set(id, Math.max(this.notBefore.get(id) ?? 0, Date.now() + 3000));
         this.onDelivered(id, text);
       } catch (e) {
         log.warn('team: delivery failed', id, e);
@@ -781,7 +1033,9 @@ export class Team {
   private trackDirective(targetId: string, from: string): void {
     const prev = this.pending.get(targetId);
     if (prev?.timer) clearTimeout(prev.timer);
-    this.pending.set(targetId, { from, at: Date.now(), started: false, timer: null });
+    // a sender still waiting keeps waiting: the result goes to everyone who asked
+    const also = prev ? [...new Set([...(prev.also ?? []), prev.from])].filter((x) => x !== from) : [];
+    this.pending.set(targetId, { from, ...(also.length ? { also } : {}), at: Date.now(), started: false, timer: null });
     this.director.set(targetId, from);
   }
 
@@ -807,7 +1061,19 @@ export class Team {
 
   /** The directed session finished: report its last reply to whoever sent the directive. */
   private complete(s: StoredSession, p: Pending): void {
+    // idle on a question (permission / confirmation prompt): not finished — tell the manager, keep waiting for the end
+    if (s.status === 'waiting' && this.needsAttention(s)) {
+      if (!p.blocked) {
+        p.blocked = true;
+        p.started = false;
+        const who = p.from === 'user' ? 'your order' : `a task from "${this.sessions.get(p.from)?.title ?? 'a session'}"`;
+        this.store.addInbox(s.id, 'waiting', `${s.title} — stuck on a prompt while working on ${who}: answer it in its Terminal`);
+        this.onInbox();
+      }
+      return;
+    }
     this.pending.delete(s.id);
+    for (const other of p.also ?? []) this.complete(s, { from: other, at: p.at, started: true, timer: null });
     const reply = this.lastReply(s, 1500);
     // a coach's turn usually ends after delegating, so it "replied"; a player's turn is the work itself
     const state = s.status !== 'waiting' ? `stopped (${s.status})` : s.role === 'player' ? 'finished' : 'replied';
@@ -819,9 +1085,10 @@ export class Team {
     const sender = this.sessions.get(p.from);
     if (!sender) return;
     this.enqueue(sender.id, {
-      text:
-        `[AgentO] "${s.title}" (${ROLE_NAME[s.role]}, session ${s.id}) ${state} the task you sent. Its last reply:\n` +
-        `${reply || '(no reply text)'}\n(read_session for the full conversation)`
+      text: `[AgentO] "${s.title}" (${ROLE_NAME[s.role]}, session ${s.id.slice(0, 8)}) ${state} the task you sent. Its last reply:\n${reply || '(no reply text)'}`,
+      // a head coach / coach whose turn ended after handing the work on: its real result comes later with report_up —
+      // this note rides along with that instead of costing the sender a turn now
+      ...(state === 'replied' ? { ride: true } : {})
     });
     this.record(sender, 'report', s, `${state}: ${reply}`);
   }
@@ -831,13 +1098,19 @@ export class Team {
     const entries = this.chat(s);
     if (entries) {
       const lastUser = entries.map((e) => e.kind).lastIndexOf('user');
-      const text = entries.slice(lastUser + 1).filter((e) => e.kind === 'assistant').map((e) => e.text ?? '').join('\n\n').trim();
-      if (text) return clip(text, max);
+      // the end of the turn: its last words are the result (the start is narration like "Let me look at…")
+      const said = entries.slice(lastUser + 1).filter((e) => e.kind === 'assistant' && (e.text ?? '').trim());
+      const text = (said[said.length - 1]?.text ?? '').trim();
+      if (text) return text.length > max ? `(…${text.length - max} chars before) ${text.slice(-max)}` : text;
     }
     return plainTerminal(this.sessions.scrollback(s.id)).slice(-Math.min(max, 1000)).trim();
   }
 
   private chat(s: StoredSession): ChatEntry[] | undefined {
+    if (s.agent === 'codex' && s.resumeId) {
+      const file = findCodexRollout(s.resumeId);
+      return file ? readCodex(file).entries : undefined;
+    }
     if (s.agent !== 'claude' || !s.resumeId) return undefined;
     const file = findTranscript(s.cwd, s.resumeId);
     if (!file) return undefined;
@@ -866,11 +1139,11 @@ export class Team {
   }
 
   /** Session → session message; a directive's completion is reported back to the sender. */
-  private send(caller: StoredSession, t: StoredSession, message: string, directive: boolean): string {
+  private send(caller: StoredSession, t: StoredSession, message: string, directive: boolean, ride = false): string {
     if (!message.trim()) throw new ToolError('message is empty');
     this.checkRate(caller);
     const text = `[Message from ${this.label(caller.id)}]\n${message.trim()}`;
-    this.enqueue(t.id, directive ? { text, from: caller.id } : { text });
+    this.enqueue(t.id, directive ? { text, from: caller.id } : ride ? { text, ride: true } : { text });
     this.record(t, directive ? 'directive' : 'report', caller, message);
     const queued = this.outbox.has(t.id);
     return (
@@ -920,6 +1193,7 @@ export class Team {
       const id = this.record(r, 'directive', { id: 'user', title: via ? `Manager (you) · ${via}` : 'Manager (you)' }, message);
       if (task) this.store.markTaskOrder(id);
     }
+    this.lastRecipients = recipients.map((r) => r.id);
     return recipients.map((r) => r.title);
   }
 
@@ -1054,7 +1328,8 @@ export class Team {
       description:
         "Head coach only. Make a player the playing coach of its part (one per part): it keeps its own work and also " +
         'manages the part. It is told the next time it gets work — not woken now. role "player" turns a playing coach ' +
-        'back into a player.',
+        'back into a player. Rarely needed: you manage the players yourself; only a part with 4 or more players that ' +
+        'needs constant review gets a coach.',
       inputSchema: {
         type: 'object',
         properties: { session_id: { type: 'string' }, role: { type: 'string', enum: ['coach', 'player'], description: 'Default coach' } },
@@ -1178,7 +1453,9 @@ export class Team {
           this.onInbox();
           return 'Sent to the manager (the user). Their answer, if any, arrives as an "[Order from …]" message.';
         }
-        return this.send(caller, up, `(report) ${message}`, false);
+        // still working on a task from them: the report goes along with the "finished" message, not as a turn of its own
+        const riding = this.pending.get(caller.id)?.from === up.id;
+        return this.send(caller, up, `(report) ${message}`, false, riding);
       }
     },
     {
@@ -1308,8 +1585,9 @@ export class Team {
 
   private instructions(s: StoredSession): string {
     if (s.role === 'player') return PLAYER_INSTRUCTIONS;
-    if (s.role === 'coach') return `AgentO team tools. You are the ${s.folderId ? 'playing coach' : 'coach'} of your project. ${TEAM_INTRO}`;
-    return `AgentO team tools. You are the head coach. ${TEAM_INTRO}`;
+    // a head coach / dedicated coach has the team description in its CLAUDE.md already
+    if (s.role === 'coach') return `AgentO team tools. You are the ${s.folderId ? 'playing coach' : 'coach'} of your project.${s.folderId ? ` ${TEAM_INTRO}` : ''}`;
+    return 'AgentO team tools. You are the head coach (see your CLAUDE.md).';
   }
 
   /* ---------- MCP over HTTP ---------- */
@@ -1381,7 +1659,12 @@ export class Team {
       case 'ping':
         return rpcResult(id, {});
       case 'tools/list':
-        return rpcResult(id, { tools: this.tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) });
+        // only the tools this role may call: every listed tool is sent with each of the session's requests
+        return rpcResult(id, {
+          tools: this.tools
+            .filter((t) => t.roles.includes(caller.role) && (t.name !== 'create_project' || !caller.projectId))
+            .map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }))
+        });
       case 'tools/call': {
         const tool = this.tools.find((t) => t.name === str(params['name']));
         if (!tool) return rpcError(id, -32602, `Unknown tool: ${str(params['name'])}`);

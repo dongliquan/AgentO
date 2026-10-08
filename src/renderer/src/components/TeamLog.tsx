@@ -7,6 +7,8 @@ import { useOpenInbox, threadsOf } from '@/lib/closed';
 import { TeamFeedItem } from './TeamFeedItem';
 import { OrderCard } from './MyOrders';
 import { SearchBox } from './SearchBox';
+import { ProjectFilter, useProjectFilter } from './ProjectFilter';
+import { useDraft } from '@/lib/draft';
 
 import { count, descendants, prune, withManager, type LogNode } from '@/lib/threads';
 
@@ -89,9 +91,16 @@ export function TeamLog(): JSX.Element {
   const [query, setQuery] = useState('');
   const [bulk, setBulk] = useState<Bulk>({ open: false, nonce: 0 });
   const [shown, setShown] = useState(15);
+  const [pick, setPick] = useDraft('log.project', '');
+  const { only, rootOf } = useProjectFilter(pick);
   const body = useRef<HTMLDivElement>(null);
 
-  const threads = useMemo(() => [...threadsOf(inbox)].reverse(), [inbox]);
+  // a thread belongs to the project of the session its order went to
+  const threads = useMemo(
+    () => [...threadsOf(inbox)].reverse().filter((t) => !only || rootOf(t.item.sessionId) === only),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [inbox, only, sessions]
+  );
   const titleOf = (id: string | undefined, map: Map<string, Session>): string | undefined =>
     id === 'user' ? 'Manager (you)' : id ? map.get(id)?.title : undefined;
   const searching = query.trim() !== '';
@@ -106,7 +115,8 @@ export function TeamLog(): JSX.Element {
 
   return (
     <div className="rp-body log-body" ref={body}>
-      <div className="log-bar">
+      <div className="log-bar filter-bar">
+        <ProjectFilter value={pick} onChange={(id) => { setPick(id); setShown(15); }} />
         <SearchBox value={query} onChange={setQuery} count={hits} placeholder="Search the log" />
         <button className="icon-btn" onClick={() => setBulk({ open: true, nonce: Date.now() })} title="Expand all — the team messages under every order" aria-label="Expand all">
           <ExpandIcon open />

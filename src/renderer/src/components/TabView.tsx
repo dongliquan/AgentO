@@ -1,3 +1,4 @@
+import { statusClass } from '@/lib/format';
 import { useEffect } from 'react';
 import { useStore } from '@/store';
 import { openSessions } from '@/lib/closedIds';
@@ -39,7 +40,7 @@ export function TabView(): JSX.Element {
             }}
             title={s.cwd}
           >
-            <span className={`status-dot ${s.status}`} />
+            <span className={`status-dot ${statusClass(s)}`} />
             <AgentIcon kind={s.agent} color={s.color} />
             <span className="ellipsis">{s.title}</span>
           </button>

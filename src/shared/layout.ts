@@ -4,21 +4,25 @@
  */
 import type { Project, Session, SessionRole } from './protocol';
 
-/** Players work in a tall card (9:16, a conversation reads top to bottom); head coaches and coaches in a wide one (16:9). */
-export const CARD_PORTRAIT = { w: 300, h: 534 };
-export const CARD_LANDSCAPE = { w: 534, h: 300 };
-/** the head coach runs the project: twice a coach's card, so its conversation reads from the whole Ground */
-export const CARD_HEAD = { w: CARD_LANDSCAPE.w * 2, h: CARD_LANDSCAPE.h * 2 };
+/**
+ * Players work in a tall card (9:16, a conversation reads top to bottom); head coaches and coaches in a wide one (16:9).
+ * Sized to work in at 100% zoom (a readable chat and terminal), not just to watch.
+ */
+export const CARD_PORTRAIT = { w: 600, h: 1068 };
+export const CARD_LANDSCAPE = { w: 1068, h: 600 };
+/** the head coach: the same wide card as a coach (it used to be 1.5x, which crowded the Ground) */
+export const CARD_HEAD = CARD_LANDSCAPE;
 
 export function cardSize(role: SessionRole): { w: number; h: number } {
   return role === 'player' ? CARD_PORTRAIT : role === 'head' ? CARD_HEAD : CARD_LANDSCAPE;
 }
 
 /** spacing: rows leave room for the Ground's link arcs and the group labels; blocks and projects sit further apart */
-const GAP_X = 48;
-const GAP_Y = 140;
-const GAP_BLOCK = 120;
-const GAP_PROJECT = 240;
+const GAP_X = 64;
+const GAP_Y = 180;
+const GAP_BLOCK = 160;
+/** projects stand well apart, so their group frames and the minimap read as separate blocks */
+const GAP_PROJECT = 720;
 
 export interface Rect {
   x: number;

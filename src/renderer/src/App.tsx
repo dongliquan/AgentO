@@ -1,6 +1,9 @@
 import { useEffect } from 'react';
 import { useStore } from '@/store';
-import { runCommand, selectAndReveal, zoomBy } from '@/commands';
+import { runCommand, zoomBy } from '@/commands';
+import { openNotification } from '@/lib/notify';
+import { Toasts } from '@/components/Toasts';
+import { OrderFlowDialog } from '@/components/OrderFlow';
 import { reconnectClient } from '@/client';
 import { TopBar } from '@/components/TopBar';
 import { Sidebar } from '@/components/Sidebar';
@@ -8,7 +11,7 @@ import { Board } from '@/components/Board';
 import { SplitView } from '@/components/SplitView';
 import { TabView } from '@/components/TabView';
 import { ViewerTabs } from '@/components/ViewerTabs';
-import { RightPanel } from '@/components/RightPanel';
+import { RightPanel, SecondPanel } from '@/components/RightPanel';
 import { StatusBar } from '@/components/StatusBar';
 import { Palette } from '@/components/Palette';
 import { NewSessionDialog } from '@/components/NewSessionDialog';
@@ -127,7 +130,7 @@ export function App(): JSX.Element {
     }
     try {
       const ev = window.desktopEvents;
-      if (ev?.onFocusSession) offs.push(ev.onFocusSession((id) => selectAndReveal(id)));
+      if (ev?.onFocusSession) offs.push(ev.onFocusSession((id, command) => openNotification({ sessionId: id || undefined, command })));
       if (ev?.onDaemonRestarted) offs.push(ev.onDaemonRestarted(() => void reconnectClient()));
     } catch (e) {
       console.warn('[desktopEvents] not available', e);
@@ -166,6 +169,7 @@ export function App(): JSX.Element {
         </div>
         {!detached && rightOpen && <ShareSplitter cssVar="--right-share" dir={-1} fallback={35} min={18} max={60} />}
         {!detached && rightOpen && <RightPanel />}
+        {!detached && rightOpen && <SecondPanel />}
       </div>
       <StatusBar />
       {paletteOpen && <Palette />}
@@ -173,6 +177,8 @@ export function App(): JSX.Element {
       {importOpen && <ImportClaudeDialog />}
       <AgentsDialog />
       <UsageDialog />
+      <Toasts />
+      <OrderFlowDialog />
       <PromptDialog />
     </div>
   );

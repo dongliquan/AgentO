@@ -24,6 +24,9 @@ export const MENU_COMMANDS = [
   'project.new',
   'project.import',
   'project.export',
+  'web.gemini',
+  'web.chatgpt',
+  'web.ernie',
   'session.new-chat.codex',
   'session.new-chat.claude',
   'session.import-claude',
@@ -97,13 +100,16 @@ export type MenuCommand = (typeof MENU_COMMANDS)[number];
 /** Payload of the 'focus-session' event the main process sends when a notification is clicked. */
 export interface FocusSessionEvent {
   sessionId: string;
+  /** a command to run instead of revealing the session (e.g. 'view.orders' for a report) */
+  command?: string;
 }
 
 /**
  * Renderer role. 'panels' is the detachable window that shows the left sidebar and the right panel side by side
- * (a status board); 'main' is the board window. Passed to the preload as `--agento-role=<role>`.
+ * (a status board); 'main' is the board window; 'viewer' is a window showing one file (`--agento-file=<path>`).
+ * Passed to the preload as `--agento-role=<role>`.
  */
-export type WindowRole = 'main' | 'panels';
+export type WindowRole = 'main' | 'panels' | 'viewer';
 
 /** Messages the main process forwards between the main window and the panels window. */
 export type PanelsRelay =

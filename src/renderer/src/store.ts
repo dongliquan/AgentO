@@ -11,7 +11,8 @@ export { BUFFER_CAP } from '@/lib/buffers';
 export const ZOOM_MIN = 0.2;
 export const ZOOM_MAX = 2.5;
 export type ViewMode = 'board' | 'split' | 'tabs';
-export type RightTab = 'detail' | 'inbox' | 'orders' | 'tasks' | 'log';
+/** orders: the Manager tab (conversation + order box) */
+export type RightTab = 'detail' | 'inbox' | 'orders' | 'tasks' | 'log' | 'web';
 /** projects: the left sidebar's tree · inbox: also opens the right panel's Inbox tab */
 export type ActivityView = 'projects' | 'inbox';
 export type TreeFilter = 'all' | 'sessions';
@@ -20,7 +21,8 @@ export interface FileCard {
   id: string;
   path: string;
   cwd: string;
-  mode: 'raw' | 'diff';
+  /** view: rendered (Markdown, JSON tree, CSV table) · raw: the text · diff: git diff (not yet) */
+  mode: 'view' | 'raw' | 'diff';
   x: number;
   y: number;
   w: number;
@@ -60,7 +62,7 @@ export interface AppState {
   projects: Project[];
   sessions: Map<string, Session>;
   inbox: InboxItem[];
-  /** repeating orders (Orders tab) */
+  /** repeating orders (Manager tab) */
   routines: Routine[];
   /** the last team message typed into a session — its card replays it in the message box */
   delivered: Record<string, { text: string; nonce: number }>;
@@ -328,6 +330,13 @@ export const useStore = create<AppState>((set, get) => ({
       case 'inbox':
         set({ inbox: msg.items });
         break;
+      case 'inbox.delta': {
+        // newest first, like the daemon's list
+        const drop = new Set([...msg.remove, ...msg.upsert.map((i) => i.id)]);
+        const inbox = [...msg.upsert, ...get().inbox.filter((i) => !drop.has(i.id))].sort((a, b) => b.createdAt - a.createdAt);
+        set({ inbox });
+        break;
+      }
       case 'routines':
         set({ routines: msg.routines });
         break;
@@ -384,12 +393,12 @@ export const useStore = create<AppState>((set, get) => ({
     const patch: Partial<AppState> = { selectedId: id };
     if (id) {
       patch.selectedFileCardId = null;
-      patch.rightTab = 'detail';
+      // the right panel keeps its tab: picking a session on the Ground or in the tree does not switch to Session
       if (get().viewMode === 'tabs') patch.activeTabSessionId = id;
     }
     set(patch);
   },
-  selectFileCard: (id) => set({ selectedFileCardId: id, ...(id ? { selectedId: null } : {}) }),
+  selectFileCard: (id) => set({ selectedFileCardId: id }),
   setViewMode: (m) => {
     const patch: Partial<AppState> = { viewMode: m, centerView: 'sessions' };
     if (m === 'tabs' && !get().activeTabSessionId) {
@@ -415,7 +424,7 @@ export const useStore = create<AppState>((set, get) => ({
     // reuse existing card for same path
     for (const c of get().fileCards.values()) {
       if (c.path === path) {
-        set({ selectedFileCardId: c.id, selectedId: null });
+        set({ selectedFileCardId: c.id });
         return;
       }
     }
@@ -424,8 +433,10 @@ export const useStore = create<AppState>((set, get) => ({
     const x = at?.x ?? Math.round((-panX + 120) / zoom + get().fileCards.size * 24);
     const y = at?.y ?? Math.round((-panY + 120) / zoom + get().fileCards.size * 24);
     const fileCards = new Map(get().fileCards);
-    fileCards.set(id, { id, path, cwd, mode: 'raw', x, y, w: 420, h: 320 });
-    set({ fileCards, selectedFileCardId: id, selectedId: null, centerView: 'sessions' });
+    // Markdown, JSON and CSV open rendered; the card is larger now that sessions are
+    const view = /\.(md|markdown|json|csv|tsv)$/i.test(path);
+    fileCards.set(id, { id, path, cwd, mode: view ? 'view' : 'raw', x, y, w: 760, h: 900 });
+    set({ fileCards, selectedFileCardId: id, centerView: 'sessions' });
   },
   updateFileCard: (id, patch) => {
     const c = get().fileCards.get(id);

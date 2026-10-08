@@ -1,7 +1,7 @@
 {
   "name": "agento",
   "productName": "AgentO",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "AgentO — manage multiple AI agent CLI sessions (Claude Code, Codex, Gemini, Ollama) on one board. Sessions keep running in a background daemon when the window is closed.",
   "main": "./out/main/index.js",
   "author": "dongliquan",
@@ -19,6 +19,9 @@
   },
   "dependencies": {
     "better-sqlite3": "^11.7.0",
+    "dompurify": "^3.4.16",
+    "highlight.js": "^11.12.0",
+    "marked": "^18.1.0",
     "node-pty": "^1.0.0",
     "ws": "^8.18.0"
   },

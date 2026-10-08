@@ -170,6 +170,8 @@ export class DaemonClient {
     if (this.ws && this.ws.readyState === WS_OPEN && this.connectedFlag) {
       this.ws.send(data);
     } else {
+      // Keystrokes are transient terminal input. Replaying them after reconnect can execute stale commands.
+      if (msg.type === 'session.input') return;
       this.queue.push(data);
       if (this.queue.length > 1000) this.queue.shift();
     }

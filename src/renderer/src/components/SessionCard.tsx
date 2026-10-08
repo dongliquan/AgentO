@@ -9,6 +9,7 @@ import { lastLines } from '@/lib/ansi';
 import { startDrag, throttle } from '@/lib/drag';
 import { useNow } from '@/lib/hooks';
 import { StatusBadge } from './StatusBadge';
+import { ContextSize, freshStart, restoreEarlier } from './ContextSize';
 import { TerminalView } from './TerminalView';
 import { ChatView } from './ChatView';
 import { AgentIcon } from './AgentIcon';
@@ -36,7 +37,9 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
   const [draft, setDraft] = useState(s.title);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   // Claude sessions open in the formatted chat view; the raw TUI stays one click away.
-  const [view, setView] = useState<'chat' | 'terminal'>(s.agent === 'claude' ? 'chat' : 'terminal');
+  // Claude, and Codex once its conversation is found, read as a chat; other CLIs are terminals
+  const hasChat = s.agent === 'claude' || (s.agent === 'codex' && !!s.resumeId);
+  const [view, setView] = useState<'chat' | 'terminal'>(hasChat ? 'chat' : 'terminal');
   const viewRef = useRef(view);
   viewRef.current = view;
   // "Terminal" (Session tab, a choice card, a menu): a card showing its chat switches to the terminal first — the
@@ -169,13 +172,14 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
           <span className="title ellipsis" title={s.title}>{displayTitle(s)}</span>
         )}
         <span className="folder ellipsis" title={s.cwd}>{basename(s.cwd)}</span>
-        {s.agent === 'claude' && (
+        {hasChat && (
           <div className="segmented sm" onPointerDown={(e) => e.stopPropagation()}>
             <button className={view === 'chat' ? 'active' : ''} onClick={() => setView('chat')}>Chat</button>
             <button className={view === 'terminal' ? 'active' : ''} onClick={() => setView('terminal')}>Terminal</button>
           </div>
         )}
-        <StatusBadge status={s.status} compact={s.w < 300} />
+        <ContextSize session={s} />
+        <StatusBadge status={s.status} attention={s.attention} compact={s.w < 300} />
         <button
           className="card-menu-btn"
           title="Menu"
@@ -192,7 +196,7 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
         {!showTerminal ? (
           <Preview sessionId={s.id} />
         ) : view === 'chat' ? (
-          <ChatView session={s} onShowTerminal={() => setView('terminal')} />
+          <ChatView session={s} onShowTerminal={() => setView('terminal')} limit={40} />
         ) : (
           <>
             {!(s.status === 'working' || s.status === 'waiting' || s.status === 'starting') && (
@@ -278,6 +282,8 @@ function CardMenu({ session: s, x, y, onClose }: { session: Session; x: number; 
       {live && item('Hibernate', () => send({ type: 'session.hibernate', id: s.id }))}
       {s.status === 'hibernated' && item('Resume', () => send({ type: 'session.resume', id: s.id }))}
       {item('Restart', () => send({ type: 'session.restart', id: s.id }))}
+      {s.agent === 'claude' && s.resumeId && item('Fresh Start (handoff note → new conversation)', () => freshStart(s))}
+      {s.agent === 'claude' && !!s.prevResumeIds?.length && item('Restore Earlier Conversation', () => restoreEarlier(s))}
       {live && item('Force Kill', () => send({ type: 'session.kill', id: s.id }), 'danger')}
       <div className="sep" />
       {s.role === 'player' && item('Duplicate', () => send({ type: 'session.create', projectId: s.projectId, folderId: s.folderId, agent: s.agent, title: `${s.title} (copy)`, cols: 100, rows: 30 }))}

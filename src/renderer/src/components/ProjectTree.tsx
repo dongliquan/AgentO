@@ -5,7 +5,8 @@ import { useStore } from '@/store';
 import { requestChanged, requestList, send } from '@/client';
 import { organizeTeam, removeSession, renameProject, renameSession, saveProject, selectAndReveal } from '@/commands';
 import { askText } from '@/lib/prompt';
-import { AGENT_LABELS, basename, fileIcon, roleLabel, displayTitle } from '@/lib/format';
+import { openFile } from '@/lib/openfile';
+import { AGENT_LABELS, basename, fileIcon, roleLabel, displayTitle, statusClass } from '@/lib/format';
 import { pcStyle, projectColor } from '@/lib/format';
 import { PROJECT_COLORS } from '@shared/protocol';
 import { AgentPicker } from './AgentPicker';
@@ -172,11 +173,12 @@ export function ProjectTree(): JSX.Element {
           )}
           <button
             className="icon-btn hover-act"
-            title="Add Folder"
+            title={isPart ? 'Add Folder to the project' : 'Add Folder'}
             onClick={(e) => {
               e.stopPropagation();
+              // folders belong to the project; a part works in its project's folders
               void window.desktop.pickFolder().then((path) => {
-                if (path) send({ type: 'folder.add', projectId: p.id, path });
+                if (path) send({ type: 'folder.add', projectId: p.parentId ?? p.id, path });
               });
             }}
           >
@@ -224,7 +226,10 @@ export function ProjectTree(): JSX.Element {
             onClick={(e) => {
               e.stopPropagation();
               const extra = parts.length ? ` and its ${parts.length} part(s)` : '';
-              if (window.confirm(`Delete ${kind.toLowerCase()} "${p.name}"${extra}? (Its sessions are removed.)`)) send({ type: 'project.delete', id: p.id });
+              if (window.confirm(`Delete ${kind.toLowerCase()} "${p.name}"${extra}?
+
+Removed from AgentO: its sessions, team folders, orders and reports, routines.
+Not touched: your folders on disk and the Claude / Codex conversation files.`)) send({ type: 'project.delete', id: p.id });
             }}
           >
             ×
@@ -251,16 +256,31 @@ export function ProjectTree(): JSX.Element {
           ))}
         {open && own.map((s) => <SessionRow key={s.id} session={s} depth={inner} folderName={folderName(s.folderId)} />)}
         {open && parts.map((x) => renderNode(x, inner))}
-        {open && isPart && !showFolders && own.length === 0 && <div className="tree-empty" style={{ paddingLeft: inner + 8 }}>No sessions.</div>}
-        {open && showFolders && isPart && p.folders.length === 0 && <div className="tree-empty" style={{ paddingLeft: inner + 8 }}>No folders.</div>}
+        {open && isPart && own.length === 0 && <div className="tree-empty" style={{ paddingLeft: inner + 8 }}>No sessions.</div>}
+        {open && showFolders && !isPart && leafFolders(p.folders).length > 0 && (
+          // all the folders of a project under one row, folded until clicked (parts show only their sessions)
+          <div
+            className="tree-row tree-folders"
+            style={{ paddingLeft: inner }}
+            onClick={() => toggle(`folders:${p.id}`)}
+            title={p.folders.map((f) => f.path).join('\n')}
+          >
+            <span className="caret">{expanded.has(`folders:${p.id}`) ? '▾' : '▸'}</span>
+            <FolderIcon open={false} />
+            <span className="label">Folders</span>
+            <span className="muted" style={{ fontSize: 11 }}>{leafFolders(p.folders).length}</span>
+          </div>
+        )}
         {open &&
           showFolders &&
-          p.folders.map((f) => (
+          !isPart &&
+          expanded.has(`folders:${p.id}`) &&
+          leafFolders(p.folders).map((f) => (
             <FolderNode
               key={f.id}
               project={p}
               folder={f}
-              depth={inner}
+              depth={inner + 14}
               expanded={expanded}
               toggle={toggle}
               filter={filter}
@@ -298,7 +318,10 @@ export function ProjectTree(): JSX.Element {
                     className="icon-btn hover-act"
                     title="Delete Project"
                     onClick={() => {
-                      if (window.confirm(`Delete project "${p.name}"? (Its sessions are removed.)`)) send({ type: 'project.delete', id: p.id });
+                      if (window.confirm(`Delete project "${p.name}"?
+
+Removed from AgentO: its sessions, team folders, orders and reports, routines.
+Not touched: your folders on disk and the Claude / Codex conversation files.`)) send({ type: 'project.delete', id: p.id });
                     }}
                   >
                     ×
@@ -377,8 +400,8 @@ function FolderNode({ folder, depth = 20, expanded, toggle, filter, onNewSession
         title={folder.path}
       >
         <span className="caret">{open ? '▾' : '▸'}</span>
-        <span className="ficon">▮</span>
-        <span className="label">{folder.name}</span>
+        <FolderIcon open={false} />
+        <span className="label">{shortPath(folder.path)}</span>
         <button
           className="icon-btn hover-act"
           title="New Session Here"
@@ -478,7 +501,7 @@ function SessionRow({ session: s, depth, folderName }: { session: Session; depth
 ${s.cwd}`}
     >
       <span className="caret" />
-      <span className={`status-dot ${s.status}`} />
+      <span className={`status-dot ${statusClass(s)}`} />
       <AgentIcon kind={s.agent} color={s.color} />
       <span className="label" onDoubleClick={(e) => { e.stopPropagation(); void renameSession(s.id); }}>{displayTitle(s)}</span>
       {s.role !== 'player' && <span className={`role-tag ${s.role}`}>{roleLabel(s)}</span>}
@@ -518,8 +541,6 @@ interface DirProps {
 
 function DirChildren({ path, cwd, depth, expanded, toggle, gitMap }: DirProps): JSX.Element {
   const entries = useStore((s) => s.fsLists.get(path));
-  const openFileCard = useStore((s) => s.openFileCard);
-  const openViewerTab = useStore((s) => s.openViewerTab);
   if (!entries) return <div className="tree-empty" style={{ paddingLeft: depth }}>Loading…</div>;
   const sorted = [...entries].sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1));
   return (
@@ -528,7 +549,7 @@ function DirChildren({ path, cwd, depth, expanded, toggle, gitMap }: DirProps): 
         e.isDir ? (
           <DirNode key={e.path} entry={e} cwd={cwd} depth={depth} expanded={expanded} toggle={toggle} gitMap={gitMap} />
         ) : (
-          <FileRow key={e.path} entry={e} depth={depth} git={e.gitStatus ?? gitMap.get(e.path)} onClick={() => openFileCard(e.path, cwd)} onDouble={() => openViewerTab(e.path)} />
+          <FileRow key={e.path} entry={e} depth={depth} git={e.gitStatus ?? gitMap.get(e.path)} onClick={() => openFile(e.path, cwd)} />
         )
       )}
     </>
@@ -545,7 +566,7 @@ function DirNode({ entry, cwd, depth, expanded, toggle, gitMap }: Omit<DirProps,
     <div>
       <div className="tree-row" style={{ paddingLeft: depth }} onClick={() => toggle(key)}>
         <span className="caret">{open ? '▾' : '▸'}</span>
-        <span className="ficon">▸</span>
+        <FolderIcon open={open} />
         <span className="label">{entry.name}</span>
       </div>
       {open && <DirChildren path={entry.path} cwd={cwd} depth={depth + 14} expanded={expanded} toggle={toggle} gitMap={gitMap} />}
@@ -553,7 +574,7 @@ function DirNode({ entry, cwd, depth, expanded, toggle, gitMap }: Omit<DirProps,
   );
 }
 
-function FileRow({ entry, depth, git, onClick, onDouble, showRelative }: { entry: FsEntry; depth: number; git?: FsEntry['gitStatus']; onClick: () => void; onDouble: () => void; showRelative?: string }): JSX.Element {
+function FileRow({ entry, depth, git, onClick, onDouble, showRelative }: { entry: FsEntry; depth: number; git?: FsEntry['gitStatus']; onClick: () => void; onDouble?: () => void; showRelative?: string }): JSX.Element {
   const selectedPath = useStore((s) => {
     const c = s.selectedFileCardId ? s.fileCards.get(s.selectedFileCardId) : undefined;
     return c?.path;
@@ -568,4 +589,33 @@ function FileRow({ entry, depth, git, onClick, onDouble, showRelative }: { entry
       {git && <span className={`git ${git}`}>{git}</span>}
     </div>
   );
+}
+
+/** A folder in the file tree (the caret before it already shows open / closed as an arrow). */
+function FolderIcon({ open }: { open: boolean }): JSX.Element {
+  return (
+    <svg className="ficon folder-ico" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+      {open ? (
+        <path d="M1.5 4.5v8a1 1 0 0 0 1 1h10.2a1 1 0 0 0 .95-.7l1.6-4.8a.5.5 0 0 0-.47-.65H4.6a1 1 0 0 0-.95.7L2 12M1.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h5a1 1 0 0 1 1 1v1.3" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+      ) : (
+        <path d="M1.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h6.5a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+      )}
+    </svg>
+  );
+}
+
+const norm = (p: string): string => p.replace(/[\\/]+$/, '').toLowerCase().replace(/\//g, '\\');
+
+/**
+ * The folders a project / part actually works in: a folder that contains another of its folders is left out, so a
+ * parent and its subfolder never sit side by side at one level.
+ */
+function leafFolders(folders: Folder[]): Folder[] {
+  return folders.filter((f) => !folders.some((o) => o !== f && norm(o.path).startsWith(norm(f.path) + '\\')));
+}
+
+/** A folder's last two path parts ("work\shop-web"): where it sits, not just its name. */
+function shortPath(p: string): string {
+  const parts = p.replace(/[\\/]+$/, '').split(/[\\/]/).filter(Boolean);
+  return parts.slice(-2).join('\\') || p;
 }
