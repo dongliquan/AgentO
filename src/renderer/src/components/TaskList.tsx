@@ -8,7 +8,7 @@ import { pcStyle, projectColor, relativeTime, formatDateTime } from '@/lib/forma
 import { OrderCard } from './MyOrders';
 import { useDraft } from '@/lib/draft';
 import { imageFiles, useAttachments, withAttachments } from '@/lib/attachments';
-import { AttachButton, AttachmentBar } from './AttachmentBar';
+import { AttachmentBar } from './AttachmentBar';
 import { kbd } from '@/lib/keys';
 
 type TaskStatus = OrderStatus | 'done';
@@ -118,7 +118,6 @@ function NewTask({ pid, setPid }: { pid: string; setPid: (id: string) => void })
       />
       <AttachmentBar items={files.items} onRemove={files.remove} />
       <div className="row">
-        <AttachButton onFiles={files.add} />
         <span className="grow" />
         <button className="btn sm primary" disabled={!can} onClick={submit}>Add Task</button>
       </div>

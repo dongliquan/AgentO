@@ -26,7 +26,7 @@ import { arrangeTeam } from '@shared/layout';
 import { plainTerminalLines } from '@shared/plaintext';
 import { PROMPT_RE } from '@shared/prompts';
 import { findCodexRollout, readCodex } from './codex';
-import { AUTO_MIN_GAP_MS, AUTO_FRESH, AUTO_IDLE_MS, AUTO_MIN_CONTEXT, HANDOFF_CONTINUE, HANDOFF_REQUEST, conversationStart, handoffDir, handoffPath } from './freshstart';
+import { AUTO_MIN_GAP_MS, AUTO_FRESH, AUTO_IDLE_MS, AUTO_MIN_CONTEXT, AUTO_MIN_CONTEXT_COORD, HANDOFF_CONTINUE, HANDOFF_REQUEST, conversationStart, handoffDir, handoffPath } from './freshstart';
 
 export const MCP_SERVER_NAME = 'agento';
 const MAX_BODY = 1024 * 1024;
@@ -75,6 +75,8 @@ const TRUST_SETTLE_MS = 8_000;
 const SETTLE_MS = 4_000;
 /** a rider (a note that only goes along with another message) is delivered on its own after this long */
 const RIDE_MAX_MS = 15 * 60_000;
+/** how long reports to a coordinator are held so several arrive in one turn */
+const REPORT_BATCH_MS = 20_000;
 /** Messages a session may send per window — stops two sessions from bouncing messages forever. */
 const RATE_WINDOW_MS = 10 * 60_000;
 const RATE_LIMIT: Record<SessionRole, number> = { head: 60, coach: 60, player: 12 };
@@ -127,6 +129,8 @@ interface Queued {
   ride?: boolean;
   /** when it was queued (a rider waits at most RIDE_MAX_MS) */
   at?: number;
+  /** a report / answer (not a directive): to a head coach or coach it waits REPORT_BATCH_MS so close ones arrive together */
+  report?: boolean;
 }
 
 class ToolError extends Error {}
@@ -225,6 +229,9 @@ ${scope}
   passes your messages on costs tokens and time). A part that does have a coach: give it to the coach.
 - Do not make coaches (\`make_coach\`) unless a part has 4 or more players that need constant review, or the
   manager asks for one.
+- Every message that reaches you costs a turn that re-reads your whole conversation, so: give a player its related
+  tasks in one message, not one by one; for a small task whose result you will not review, send it with
+  \`directive=false\` and ask the player to \`report_up\` only if it is blocked — then no completion report wakes you.
 - Do not do the implementation yourself.
 - Instructions must be self-contained: goal, files/scope, constraints, and what "done" means.
 - When a session finishes what you sent, you get an "[AgentO] … finished" message with its last reply — no need to poll.
@@ -734,7 +741,8 @@ export class Team {
     for (const s of this.all()) {
       if (s.agent !== 'claude' || !this.sessions.isLive(s.id) || s.status !== 'waiting') continue;
       if (this.fresh.has(s.id) || this.pending.has(s.id) || this.hasMail(s.id) || this.isClosed(s.projectId)) continue;
-      if ((s.context ?? 0) < AUTO_MIN_CONTEXT || this.sessions.idleFor(s.id) < AUTO_IDLE_MS) continue;
+      const min = s.role === 'player' ? AUTO_MIN_CONTEXT : AUTO_MIN_CONTEXT_COORD;
+      if ((s.context ?? 0) < min || this.sessions.idleFor(s.id) < AUTO_IDLE_MS) continue;
       // a session the manager has open (Ground card terminal, Session tab) is never cleared under them
       if (this.sessions.isAttached(s.id) || this.sessions.inUse(s.id)) continue;
       if (this.needsAttention(s)) continue;
@@ -986,6 +994,8 @@ export class Team {
       if (this.isClosed(t.projectId)) continue;
       // only riders (a delegation note, a progress report): wait for something worth a turn — but not forever
       if (queue.every((q) => q.ride) && Date.now() - Math.min(...queue.map((q) => q.at ?? 0)) < RIDE_MAX_MS) continue;
+      // reports for a head coach / coach: wait a little for the others (players finishing close together → one turn)
+      if (t.role !== 'player' && queue.every((q) => q.report || q.ride) && Date.now() - Math.min(...queue.map((q) => q.at ?? 0)) < REPORT_BATCH_MS) continue;
       if (!this.sessions.isLive(id)) {
         if (queue.every((q) => q.wake === false)) continue; // only notes: they ride along with its next work
         if (!this.resuming.has(id) && t.status !== 'starting') {
@@ -1027,6 +1037,12 @@ export class Team {
       }
       const directive = [...queue].reverse().find((q) => q.from !== undefined);
       if (directive?.from) this.trackDirective(id, directive.from);
+      // a head coach / coach got its players' results: what it makes of them goes up to whoever it works for (the
+      // manager for a head coach) even if it forgets report_up — otherwise the outcome stays in its own conversation
+      else if (t.role !== 'player' && queue.some((q) => q.report) && !this.pending.has(id)) {
+        const up = this.director.get(id) ?? (t.role === 'head' ? 'user' : this.headOf(this.rootOf(t.projectId))?.id);
+        if (up) this.trackDirective(id, up);
+      }
     }
   }
 
@@ -1086,6 +1102,7 @@ export class Team {
     if (!sender) return;
     this.enqueue(sender.id, {
       text: `[AgentO] "${s.title}" (${ROLE_NAME[s.role]}, session ${s.id.slice(0, 8)}) ${state} the task you sent. Its last reply:\n${reply || '(no reply text)'}`,
+      report: true,
       // a head coach / coach whose turn ended after handing the work on: its real result comes later with report_up —
       // this note rides along with that instead of costing the sender a turn now
       ...(state === 'replied' ? { ride: true } : {})
@@ -1143,7 +1160,7 @@ export class Team {
     if (!message.trim()) throw new ToolError('message is empty');
     this.checkRate(caller);
     const text = `[Message from ${this.label(caller.id)}]\n${message.trim()}`;
-    this.enqueue(t.id, directive ? { text, from: caller.id } : ride ? { text, ride: true } : { text });
+    this.enqueue(t.id, directive ? { text, from: caller.id } : ride ? { text, ride: true, report: true } : { text, report: true });
     this.record(t, directive ? 'directive' : 'report', caller, message);
     const queued = this.outbox.has(t.id);
     return (
@@ -1449,12 +1466,16 @@ export class Team {
         const up = d === 'user' ? undefined : (d && this.sessions.get(d)) || byRole();
         if (!up || up.id === caller.id) {
           this.checkRate(caller);
+          // it reported explicitly: no automatic copy of its last reply when the turn ends
+          if (this.pending.get(caller.id)?.from === 'user') this.pending.delete(caller.id);
           this.store.addInbox(caller.id, 'report', `${caller.title} → Manager (you): ${clip(message, LOG_TEXT_MAX)}`, false, caller.id);
           this.onInbox();
           return 'Sent to the manager (the user). Their answer, if any, arrives as an "[Order from …]" message.';
         }
         // still working on a task from them: the report goes along with the "finished" message, not as a turn of its own
-        const riding = this.pending.get(caller.id)?.from === up.id;
+        const riding = this.pending.get(caller.id)?.from === up.id && caller.role === 'player';
+        // a coordinator reporting up explicitly: no automatic copy of its last reply when the turn ends
+        if (caller.role !== 'player' && this.pending.get(caller.id)?.from === up.id) this.pending.delete(caller.id);
         return this.send(caller, up, `(report) ${message}`, false, riding);
       }
     },

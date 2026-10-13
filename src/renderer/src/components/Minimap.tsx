@@ -32,12 +32,18 @@ export function Minimap({ containerRef }: { containerRef: React.RefObject<HTMLDi
   if (items.length === 0) return null;
   // one frame per project (parts included) around its cards, in the project's colour, so projects read apart
   const areas = new Map<string, { x0: number; y0: number; x1: number; y1: number }>();
+  // and one lighter frame per part inside it
+  const partAreas = new Map<string, { root: string; x0: number; y0: number; x1: number; y1: number }>();
   for (const s of sessions.values()) {
     if (closed.has(s.id) || !s.projectId) continue;
     const p = projects.find((x) => x.id === s.projectId);
     const root = p?.parentId ?? p?.id ?? s.projectId;
     const a = areas.get(root) ?? { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
     areas.set(root, { x0: Math.min(a.x0, s.x), y0: Math.min(a.y0, s.y), x1: Math.max(a.x1, s.x + s.w), y1: Math.max(a.y1, s.y + s.h) });
+    if (p?.parentId) {
+      const b = partAreas.get(p.id) ?? { root, x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+      partAreas.set(p.id, { root, x0: Math.min(b.x0, s.x), y0: Math.min(b.y0, s.y), x1: Math.max(b.x1, s.x + s.w), y1: Math.max(b.y1, s.y + s.h) });
+    }
   }
 
   const el = containerRef.current;
@@ -77,6 +83,14 @@ export function Minimap({ containerRef }: { containerRef: React.RefObject<HTMLDi
           className="mm-project"
           title={projects.find((p) => p.id === id)?.name}
           style={{ ...pcStyle(projectColor(id, projects)), left: tx(a.x0) - 3, top: ty(a.y0) - 3, width: (a.x1 - a.x0) * scale + 6, height: (a.y1 - a.y0) * scale + 6 }}
+        />
+      ))}
+      {[...partAreas].map(([id, a]) => (
+        <div
+          key={id}
+          className="mm-part"
+          title={projects.find((p) => p.id === id)?.name}
+          style={{ ...pcStyle(projectColor(a.root, projects)), left: tx(a.x0) - 1.5, top: ty(a.y0) - 1.5, width: (a.x1 - a.x0) * scale + 3, height: (a.y1 - a.y0) * scale + 3 }}
         />
       ))}
       {items.map((it, i) => (

@@ -1,5 +1,5 @@
 import { useStore, type ViewMode } from '@/store';
-import { autoArrange, fitAll, newSessionFor } from '@/commands';
+import { autoArrange, fitAll, newSessionFor, newProject } from '@/commands';
 import { kbd } from '@/lib/keys';
 
 const MODES: { id: ViewMode; label: string }[] = [
@@ -86,6 +86,7 @@ export function Toolbar(): JSX.Element {
       <div className="spacer" />
       <button className="btn ghost" onClick={autoArrange} disabled={viewMode !== 'board'}>Auto Arrange</button>
       <button className="btn ghost" onClick={fitAll} disabled={viewMode !== 'board'}>Fit All</button>
+      <button className="btn" onClick={() => void newProject()} title="New project: name, folders and an optional brief for its head coach">+ New Project</button>
       <button className="btn primary" onClick={() => newSessionFor()}>+ New Session</button>
       {!detached && (
         <button className={`icon-btn layout-toggle ${rightOpen ? 'on' : ''}`} title={kbd(`${rightOpen ? 'Hide' : 'Show'} Details Panel (Ctrl+Alt+B)`)} onClick={toggleRight}>

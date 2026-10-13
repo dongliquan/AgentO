@@ -4,6 +4,8 @@ import { send } from '@/client';
 /** sizes that matter: past AUTO the daemon starts the session over by itself once it has been idle a while */
 export const CONTEXT_WARN = 150_000;
 export const CONTEXT_AUTO = 200_000;
+/** head coaches / coaches: cleared sooner (every report re-reads their conversation) */
+export const CONTEXT_AUTO_COORD = 100_000;
 
 export function formatTokens(n: number): string {
   return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : `${Math.round(n / 1000)}K`;
@@ -15,7 +17,8 @@ export function formatTokens(n: number): string {
  */
 export function ContextSize({ session: s }: { session: Session }): JSX.Element | null {
   if ((s.agent !== 'claude' && s.agent !== 'codex') || !s.context) return null;
-  const level = s.context >= CONTEXT_AUTO ? 'big' : s.context >= CONTEXT_WARN ? 'warn' : '';
+  const auto = s.role === 'player' ? CONTEXT_AUTO : CONTEXT_AUTO_COORD;
+  const level = s.context >= auto ? 'big' : s.context >= Math.min(CONTEXT_WARN, auto * 0.75) ? 'warn' : '';
   return (
     <button
       className={`context-size ${level}`}
@@ -27,7 +30,7 @@ export function ContextSize({ session: s }: { session: Session }): JSX.Element |
       title={
         `Conversation size: ${formatTokens(s.context)} tokens — re-read on every turn.\n` +
         `Click for a fresh start: it writes a handoff note, then continues in a new, small conversation.` +
-        (s.context >= CONTEXT_AUTO ? `\nOver ${formatTokens(CONTEXT_AUTO)}: done automatically after 25 minutes idle, unless you have it selected or typed into it in the last 2 hours.` : '')
+        (s.context >= auto ? `\nOver ${formatTokens(auto)}: done automatically after 25 minutes idle, unless you have it selected or typed into it in the last 2 hours.` : '')
       }
     >
       {formatTokens(s.context)}

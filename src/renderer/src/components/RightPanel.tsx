@@ -25,11 +25,12 @@ import { CopyButton, SearchBox } from './SearchBox';
 import { useDraft } from '@/lib/draft';
 import { ProjectFilter, useProjectFilter } from './ProjectFilter';
 import { MyTalk } from './MyTalk';
+import { useNewProject } from './NewProjectDialog';
 import { useTalkProject } from '@/lib/talkFilter';
 import { ContextSize, freshStart, restoreEarlier } from './ContextSize';
 import { pcStyle, projectColor } from '@/lib/format';
 import { imageFiles, useAttachments, withAttachments } from '@/lib/attachments';
-import { AttachButton, AttachmentBar } from './AttachmentBar';
+import { AttachmentBar } from './AttachmentBar';
 import { kbd } from '@/lib/keys';
 import { useBuffer } from '@/lib/buffers';
 
@@ -423,10 +424,7 @@ function Orders(): JSX.Element {
   const [repeat, setRepeat] = useDraft<'off' | 'every' | 'daily'>('orders.repeat', 'off');
   const [every, setEvery] = useDraft('orders.every', 10);
   const [at, setAt] = useDraft('orders.at', '09:00');
-  const [newName, setNewName] = useDraft('orders.newName', '');
-  const [newFolders, setNewFolders] = useDraft<string[]>('orders.newFolders', []);
-  const [planFirst, setPlanFirst] = useDraft('orders.planFirst', true);
-  /** a project just started from "＋ New": its tab opens once the daemon has created it */
+  /** a project just made in the New Project dialog: its tab opens once the daemon has created it */
   const [pendingName, setPendingName] = useState('');
   const files = useAttachments();
 
@@ -441,6 +439,19 @@ function Orders(): JSX.Element {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selRoot]);
+  // a project made in the New Project dialog: the order box switches to it once it exists
+  const made = useNewProject((s) => s.made);
+  useEffect(() => {
+    if (made) {
+      setPendingName(made);
+      useNewProject.getState().setMade('');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [made]);
+  useEffect(() => {
+    if (tab === 'new') setTab(tops.length ? 'order' : 'team');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
   useEffect(() => {
     if (!pendingName) return;
     const made = tops.find((t) => t.name === pendingName);
@@ -511,32 +522,26 @@ function Orders(): JSX.Element {
     isTeam ? { kind: 'all' } : currents.length === 1 ? { kind: 'project', projectId: currents[0]!.id } : { kind: 'projects', projectIds: currents.map((c) => c.id) };
 
   // a new project without a folder gets one (~/AgentO Projects/<name>)
-  const canSubmit = text.trim() !== '' && !files.busy && (isNew ? newName.trim() !== '' : isTeam ? true : currents.length > 0 && missing.length === 0);
+  // no project to send to (a new one is made in the New Project dialog)
+  const canSubmit = text.trim() !== '' && !files.busy && !isNew && (isTeam ? true : currents.length > 0 && missing.length === 0);
   const submit = (): void => {
     if (!canSubmit) return;
     const body = withAttachments(text.trim(), files.items);
-    if (isNew) {
-      send({ type: 'project.start', name: newName.trim(), folders: newFolders, text: body, plan: planFirst });
-      setPendingName(newName.trim());
-      setNewName('');
-      setNewFolders([]);
-    } else {
-      // a team order needs the team head coach: created now, the order reaches it once it is up
-      if (isTeam && !teamHead) send({ type: 'head.create', projectId: '' });
-      if (repeat === 'off') send({ type: 'team.order', target: target(), text: body });
-      else
-        send({
-        type: 'routine.save',
-        routine: {
-          name: text.trim().split('\n')[0]!.slice(0, 40),
-          target: target(),
-          text: body,
-          enabled: true,
-          runNow: true,
-          ...(repeat === 'every' ? { everyMinutes: Math.max(1, every) } : { dailyAt: at })
-        }
-      });
-    }
+    // a team order needs the team head coach: created now, the order reaches it once it is up
+    if (isTeam && !teamHead) send({ type: 'head.create', projectId: '' });
+    if (repeat === 'off') send({ type: 'team.order', target: target(), text: body });
+    else
+      send({
+      type: 'routine.save',
+      routine: {
+        name: text.trim().split('\n')[0]!.slice(0, 40),
+        target: target(),
+        text: body,
+        enabled: true,
+        runNow: true,
+        ...(repeat === 'every' ? { everyMinutes: Math.max(1, every) } : { dailyAt: at })
+      }
+    });
     setText('');
     files.clear();
   };
@@ -545,6 +550,10 @@ function Orders(): JSX.Element {
     <div className="rp-body manager-compose">
       {/* the same card as Tasks › New task: project chips, the order, attachments and the send row */}
       <div className="new-task orders-card">
+      <div className="orders-card-head">
+        <span className="orders-card-title">Give an order</span>
+        <span className="muted">to the team: it splits the work and reports back here</span>
+      </div>
       <div className="new-task-to" role="tablist">
         <button role="tab" className={`project-tag all ${isTeam ? 'on' : ''}`} onClick={() => setTab('team')} title="Not tied to a project: the team's head coach decides which project it is for, or starts a new one">
           Team
@@ -577,39 +586,16 @@ function Orders(): JSX.Element {
           );
         })}
         {tops.length > 0 && <span className="chip-sep" aria-hidden="true" />}
-        <button role="tab" className={`project-tag new ${isNew ? 'on' : ''}`} onClick={() => setTab('new')} title="New project: AgentO sets up the project and its head coach">
-          ＋
+        <button className="project-tag new" onClick={() => useNewProject.getState().show()} title="New project: name, folders and a brief for its head coach">
+          ＋ New Project
         </button>
       </div>
       <div className="orders-form">
         {isNew ? (
-          <div className="new-project">
-            <input value={newName} placeholder="Project name" onChange={(e) => setNewName(e.target.value)} />
-            <div className="new-folders">
-              {newFolders.map((f) => (
-                <span key={f} className="new-folder" title={f}>
-                  <span className="ellipsis">{f}</span>
-                  <button className="attach-x static" onClick={() => setNewFolders(newFolders.filter((x) => x !== f))} title="Remove">×</button>
-                </span>
-              ))}
-              <button
-                className="btn sm"
-                onClick={() =>
-                  void window.desktop.pickFolder().then((d) => {
-                    if (d && !newFolders.includes(d)) setNewFolders([...newFolders, d]);
-                  })
-                }
-              >
-                + Folder
-              </button>
-              {newFolders.length === 0 && (
-                <span className="muted new-folder-hint">No folder: a new one is made — AgentO Projects\{newName.trim() || '<name>'}</span>
-              )}
-            </div>
-            <label className="new-plan" title="On: the head coach reports its team and plan, and waits for your go. Off: it starts the work right away.">
-              <input type="checkbox" checked={planFirst} onChange={(e) => setPlanFirst(e.target.checked)} />
-              Report the plan first and wait for my go
-            </label>
+          <div className="order-to">
+            <span className="muted">No project yet —</span>
+            <button className="btn sm primary" onClick={() => useNewProject.getState().show()}>+ New Project</button>
+            <span className="muted">or give the team an order with Team.</span>
           </div>
         ) : isTeam ? (
           <div className="order-to">
@@ -644,58 +630,62 @@ function Orders(): JSX.Element {
             ))}
           </div>
         )}
-        <textarea
-          value={text}
-          placeholder={
-            isNew
-              ? 'Brief for the new project: what to build, how to proceed. The head coach designs the team. Paste or drop images.'
-              : isTeam
-                ? 'Any order, no project needed: the team head coach works out which project it belongs to — or starts a new one — and reports back here. Paste or drop images.'
-                : currents.length > 1
-                ? `Your order to ${currents.length} projects at once: each team handles its own side, and you get a report from each. Paste or drop images.`
-                : 'Your order. The team splits the work, and you get a report here when it is done. Paste or drop images.'
-          }
-          onChange={(e) => setText(e.target.value)}
-          onPaste={(e) => {
-            const imgs = imageFiles(e.clipboardData);
-            if (imgs.length) {
-              e.preventDefault();
-              files.add(imgs);
+        {/* the order text, and beside it the send button, the repeat choice and attach — one compact block */}
+        <div className="order-input">
+          <textarea
+            value={text}
+            placeholder={
+              isNew
+                ? 'Brief for the new project: what to build, how to proceed. The head coach designs the team. Paste or drop images.'
+                : isTeam
+                  ? 'Any order, no project needed — the team head coach finds the project (or starts one) and reports back here.'
+                  : currents.length > 1
+                  ? `Your order to ${currents.length} projects at once: each team handles its own side, and you get a report from each. Paste or drop images.`
+                  : 'Your order — the team splits the work and reports back here. Ctrl+Enter to send · paste or drop images.'
             }
-          }}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            const imgs = imageFiles(e.dataTransfer);
-            if (imgs.length) {
-              e.preventDefault();
-              files.add(imgs);
-            }
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              submit();
-            }
-          }}
-        />
-        <AttachmentBar items={files.items} onRemove={files.remove} />
-        <div className="row orders-repeat">
-          <AttachButton onFiles={files.add} />
-          {!isNew && (
-            <select value={repeat} onChange={(e) => setRepeat(e.target.value as typeof repeat)} title="Repeat this order on a schedule">
+            onChange={(e) => setText(e.target.value)}
+            onPaste={(e) => {
+              const imgs = imageFiles(e.clipboardData);
+              if (imgs.length) {
+                e.preventDefault();
+                files.add(imgs);
+              }
+            }}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              const imgs = imageFiles(e.dataTransfer);
+              if (imgs.length) {
+                e.preventDefault();
+                files.add(imgs);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+          />
+          <div className="order-side">
+            <select className="order-repeat" value={repeat} onChange={(e) => setRepeat(e.target.value as typeof repeat)} title="Repeat this order on a schedule">
               <option value="off">Once</option>
-              <option value="every">Every … min</option>
-              <option value="daily">Daily at …</option>
+              <option value="every">Every…</option>
+              <option value="daily">Daily…</option>
             </select>
-          )}
-          {!isNew && repeat === 'every' && <input type="number" min={1} value={every} onChange={(e) => setEvery(Number(e.target.value) || 1)} />}
-          {!isNew && repeat === 'daily' && <input type="time" value={at} onChange={(e) => setAt(e.target.value)} />}
-          <span className="grow" />
-          <span className="orders-hint">{kbd('Ctrl+Enter')}</span>
-          <button className="btn sm primary" disabled={!canSubmit} onClick={submit}>
-            {isNew ? 'Start Project' : repeat === 'off' ? (currents.length > 1 ? `Give Order · ${currents.length} projects` : 'Give Order') : 'Create Routine'}
-          </button>
+            {/* the schedule's value sits under the choice (its place is kept when it is Once) */}
+            {repeat === 'every' ? (
+              <input className="order-when" type="number" min={1} value={every} onChange={(e) => setEvery(Number(e.target.value) || 1)} title="Every … minutes" />
+            ) : repeat === 'daily' ? (
+              <input className="order-when" type="time" value={at} onChange={(e) => setAt(e.target.value)} />
+            ) : (
+              <span className="order-when" />
+            )}
+            <button className="btn primary order-send" disabled={!canSubmit} onClick={submit} title={kbd('Ctrl+Enter')}>
+              {repeat === 'off' ? (currents.length > 1 ? `Give Order · ${currents.length}` : 'Give Order') : 'Create Routine'}
+            </button>
+          </div>
         </div>
+        <AttachmentBar items={files.items} onRemove={files.remove} />
       </div>
       </div>
       {!isNew && routines.length > 0 && (

@@ -93,6 +93,9 @@ export function ProjectTree(): JSX.Element {
     const own = sessionsByProject.get(p.id) ?? [];
     const total = own.length + parts.reduce((n, x) => n + (sessionsByProject.get(x.id)?.length ?? 0), 0) + (isPart ? 0 : heads.filter((h) => h.projectId === p.id).length);
     const hasCoach = own.some((s) => s.role === 'coach');
+    // the project's state = its head coach's and sessions' together (parts: their own sessions)
+    const members = [...own, ...parts.flatMap((x) => sessionsByProject.get(x.id) ?? []), ...(isPart ? [] : heads.filter((h) => h.projectId === p.id))];
+    const agg = aggregateStatus(members);
     const head = isPart ? undefined : heads.find((h) => h.projectId === p.id);
     const showFolders = filter !== 'sessions';
     const inner = depth + 14;
@@ -115,9 +118,9 @@ export function ProjectTree(): JSX.Element {
           <span className="caret">{open ? '▾' : '▸'}</span>
           {!isPart && (
             <button
-              className="pc-dot tree-pc"
+              className={`pc-dot tree-pc agg-${agg.state}`}
               style={pcStyle(projectColor(p.id, projects))}
-              title="Project color — click for the next one"
+              title={`${agg.text} — project color: click for the next one`}
               onClick={(e) => {
                 e.stopPropagation();
                 const cur = PROJECT_COLORS.indexOf(projectColor(p.id, projects));
@@ -125,6 +128,7 @@ export function ProjectTree(): JSX.Element {
               }}
             />
           )}
+          {isPart && members.length > 0 && <span className={`status-dot ${AGG_DOT[agg.state]}`} title={agg.text} />}
           <span className="label" style={{ fontWeight: 600 }} onDoubleClick={(e) => { e.stopPropagation(); void renameProject(p.id); }} title="Double-click to rename">{p.name}</span>
           {total > 0 && <span className="muted" style={{ fontSize: 11 }} title={`${total} session(s)`}>{total}</span>}
           <button
@@ -618,4 +622,24 @@ function leafFolders(folders: Folder[]): Folder[] {
 function shortPath(p: string): string {
   const parts = p.replace(/[\\/]+$/, '').split(/[\\/]/).filter(Boolean);
   return parts.slice(-2).join('\\') || p;
+}
+
+type AggState = 'error' | 'needs' | 'working' | 'idle' | 'off';
+/** the session status class a part's dot uses for each combined state */
+const AGG_DOT: Record<AggState, string> = { error: 'error', needs: 'waiting', working: 'working', idle: 'idle', off: 'hibernated' };
+
+/**
+ * One state for a group of sessions, the most urgent first: a session failed · one asks something (a prompt) · someone
+ * is working · all idle · all stopped. With counts for the tooltip.
+ */
+function aggregateStatus(list: Session[]): { state: AggState; text: string } {
+  const n = (f: (s: Session) => boolean): number => list.filter(f).length;
+  const error = n((s) => s.status === 'error');
+  const needs = n((s) => s.status === 'waiting' && s.attention === true);
+  const working = n((s) => s.status === 'working' || s.status === 'starting');
+  const idle = n((s) => s.status === 'waiting' && s.attention !== true);
+  const parts = [working && `${working} working`, needs && `${needs} need input`, error && `${error} error`, idle && `${idle} idle`].filter(Boolean);
+  const text = parts.length ? parts.join(' · ') : list.length ? 'all stopped' : 'no sessions';
+  const state: AggState = error ? 'error' : needs ? 'needs' : working ? 'working' : idle ? 'idle' : 'off';
+  return { state, text };
 }

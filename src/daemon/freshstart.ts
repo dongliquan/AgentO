@@ -21,6 +21,8 @@ export function handoffDir(): string {
  */
 export const AUTO_FRESH = process.env['AGENTO_AUTO_FRESH'] !== '0';
 export const AUTO_MIN_CONTEXT = Math.max(20_000, Number(process.env['AGENTO_AUTO_FRESH_MIN'] || 200_000) || 200_000);
+/** head coaches / coaches sooner: every report that reaches them re-reads their whole conversation */
+export const AUTO_MIN_CONTEXT_COORD = Math.max(20_000, Number(process.env['AGENTO_AUTO_FRESH_MIN_COORD'] || 100_000) || 100_000);
 /** a conversation younger than this is left alone (no loop of restarts), and it must have been idle this long */
 export const AUTO_MIN_GAP_MS = 3 * 3600_000;
 /** idle this long, and not open on screen: shortly before it would be auto-hibernated (30 min) anyway */

@@ -92,13 +92,7 @@ export function renderMarkdown(md: string): string {
 
     // table
     if (isTableRow(line) && i + 1 < lines.length && isSep(lines[i + 1])) {
-      const cells = (l: string): string[] =>
-        l
-          .trim()
-          .replace(/^\|/, '')
-          .replace(/\|$/, '')
-          .split('|')
-          .map((c) => c.trim());
+      const cells = (l: string): string[] => splitCells(l.trim().replace(/^\|/, '').replace(/(?<!\\)\|$/, ''));
       const head = cells(line);
       i += 2;
       const rows: string[][] = [];
@@ -173,4 +167,39 @@ export function renderMarkdown(md: string): string {
     out.push(`<p>${buf.map((l) => inline(l)).join('<br />')}</p>`);
   }
   return out.join('\n');
+}
+
+/**
+ * A table row's cells: split on `|`, but not on an escaped `\|` (GFM) or a `|` inside an inline code span — so
+ * `a \|\| b` or `` `x || y` `` stay in one cell. An escaped pipe shows as a plain `|`.
+ */
+function splitCells(row: string): string[] {
+  const out: string[] = [];
+  let cur = '';
+  let code = 0; // length of the backtick run that opened the current code span
+  for (let i = 0; i < row.length; i++) {
+    const ch = row[i]!;
+    if (ch === '\\' && row[i + 1] === '|') {
+      cur += '|';
+      i++;
+      continue;
+    }
+    if (ch === '`') {
+      let n = 1;
+      while (row[i + n] === '`') n++;
+      if (!code) code = n;
+      else if (n === code) code = 0;
+      cur += row.slice(i, i + n);
+      i += n - 1;
+      continue;
+    }
+    if (ch === '|' && !code) {
+      out.push(cur.trim());
+      cur = '';
+      continue;
+    }
+    cur += ch;
+  }
+  out.push(cur.trim());
+  return out;
 }

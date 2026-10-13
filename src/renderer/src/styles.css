@@ -439,6 +439,7 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
   position: absolute; z-index: 20; left: 12px; bottom: 12px; box-shadow: var(--shadow-sm); width: 160px; height: 100px;
   background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--border); border-radius: 5px; overflow: hidden;
 }
+.minimap .mm-part { position: absolute; border: 1px dashed color-mix(in srgb, var(--pc) 70%, transparent); border-radius: 2px; }
 .minimap .mm-project { position: absolute; border: 1px solid var(--pc); border-radius: 3px; background: color-mix(in srgb, var(--pc) 14%, transparent); }
 .minimap .mm-rect { position: absolute; border-radius: 1px; opacity: 0.8; }
 .minimap .mm-view { position: absolute; border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
@@ -471,7 +472,11 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .orders-form textarea { min-height: 60px; resize: vertical; }
 .orders-form textarea:focus { outline: none; border-color: var(--accent); }
 /* Orders' form sits in the Tasks-style card; the "＋ New project" chip is dashed */
-.orders-card { margin-bottom: 10px; }
+.orders-card { margin-bottom: 10px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border)); border-left: 3px solid var(--accent); background: color-mix(in srgb, var(--accent) 4%, var(--panel)); }
+/* the order box says what it is: the manager's orders go out from here */
+.orders-card-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 11px; }
+.orders-card-head .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.orders-card-title { flex: none; font-size: 12px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.03em; }
 .new-task-to .project-tag.new { color: var(--accent); background: transparent; border: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent); }
 .new-task-to .project-tag.new.on { background: color-mix(in srgb, var(--accent) 10%, transparent); border-style: solid; }
 .orders-form .row { justify-content: flex-end; }
@@ -721,10 +726,14 @@ button.tree-pc:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, t
 .order-status.done { color: var(--muted); }
 .order-status.stopped, .order-status.removed { color: var(--muted); }
 /* Orders: one tab per open project, and ＋ New */
-.order-to { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+/* one fixed-height line whatever it holds (text, a chip, a button): the order box keeps its height */
+.order-to { display: flex; align-items: center; gap: 6px; font-size: 12px; height: 26px; min-height: 26px; overflow: hidden; white-space: nowrap; }
+.order-to .team-chip, .order-to .btn { flex: none; line-height: 18px; }
 .order-to .grow { flex: 1; }
 /* Orders › New project… */
-.new-project { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px dashed var(--border); border-radius: 6px; }
+.new-project { display: flex; flex-direction: column; gap: 4px; }
+.new-project-row { display: flex; align-items: center; gap: 6px; }
+.new-project-row input { flex: 1; min-width: 0; height: 26px; }
 .new-folders { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .new-folder { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 2px 4px 2px 8px; border-radius: 5px; background: var(--panel2); font-size: 11.5px; }
 .new-folder .ellipsis { max-width: 260px; }
@@ -1223,3 +1232,32 @@ button.tree-pc:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, t
 .board.panning .board-canvas > .card, .board.moving .board-canvas > .card { transition: none; }
 @media (prefers-reduced-motion: reduce) { .board-canvas > .card { transition: none; } .board-canvas > .card.selected { transform: none; } }
 .chat-restarted { align-self: center; display: flex; gap: 8px; align-items: center; font-size: 11.5px; color: var(--muted); padding: 4px 10px; border: 1px dashed var(--border); border-radius: 12px; }
+/* quick reply: the session's question offered as choices (radio / checkbox) above the composer */
+.quick-reply { flex: none; display: flex; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; align-items: center; gap: 6px; padding: 6px 10px; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--accent) 5%, var(--panel)); }
+.quick-reply-title { font-size: 11px; font-weight: 600; color: var(--muted); margin-right: 2px; }
+.quick-opt { flex: 0 1 auto; display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 3px 10px; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); font-size: 12px; cursor: pointer; }
+.quick-opt:hover { border-color: var(--accent); }
+.quick-opt.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
+.quick-opt b { color: var(--accent); }
+.quick-opt input { margin: 0; }
+/* project dot in the tree: its colour, moving with the project's combined state (head coach + sessions) */
+.pc-dot.agg-working { --dot: var(--pc); animation: dot-ring 1.1s ease-out infinite, dot-beat 1.1s ease-in-out infinite; }
+.pc-dot.agg-needs { box-shadow: 0 0 0 2px var(--warn); animation: dot-fade 1.6s ease-in-out infinite; }
+.pc-dot.agg-error { box-shadow: 0 0 0 2px var(--err); animation: dot-fade 1s steps(2, jump-none) infinite alternate; }
+.pc-dot.agg-off { opacity: 0.45; }
+@media (prefers-reduced-motion: reduce) { .pc-dot.agg-working, .pc-dot.agg-needs, .pc-dot.agg-error { animation: none; } }
+/* the order box keeps one height whichever target is picked: one line above the text, a fixed text box */
+.orders-form { min-height: 28px; display: flex; flex-direction: column; justify-content: center; }
+.order-input { display: flex; gap: 8px; align-items: stretch; }
+.order-input textarea { flex: 1; min-width: 0; height: 76px; min-height: 52px; resize: vertical; }
+/* beside the text: [repeat choice | its value below] (1) and the send button as tall as the text (2) */
+.order-side { flex: none; display: grid; grid-template-columns: 76px 76px; grid-template-rows: 1fr 1fr; gap: 4px 6px; }
+.order-side .order-repeat { grid-column: 1; grid-row: 1; height: 100%; min-height: 28px; padding: 0 4px; font-size: 12px; box-sizing: border-box; }
+.order-side .order-when { grid-column: 1; grid-row: 2; height: 100%; min-height: 28px; padding: 0 4px; font-size: 12px; box-sizing: border-box; min-width: 0; }
+/* a square send button, as tall as the text box */
+.order-side .order-send { grid-column: 2; grid-row: 1 / span 2; width: 76px; height: 100%; padding: 4px; font-size: 12.5px; font-weight: 600; white-space: normal; line-height: 1.25; text-align: center; justify-content: center; }
+.dialog.new-project-dialog { width: min(620px, 94vw); }
+.new-project-dialog textarea { width: 100%; min-height: 110px; resize: vertical; }
+.new-project-dialog .actions { align-items: center; }
+.quick-reply-title, .quick-reply > .btn { flex: none; }
+.quick-opt .ellipsis { min-width: 0; }

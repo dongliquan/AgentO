@@ -17,12 +17,19 @@ export function cardSize(role: SessionRole): { w: number; h: number } {
   return role === 'player' ? CARD_PORTRAIT : role === 'head' ? CARD_HEAD : CARD_LANDSCAPE;
 }
 
-/** spacing: rows leave room for the Ground's link arcs and the group labels; blocks and projects sit further apart */
+/**
+ * spacing. CORRIDOR: the empty column between a head coach and its parts, where its links run (they never cross a
+ * card on their way to a part). PART_GAP leaves room for a part's frame and label; projects sit far apart.
+ */
 const GAP_X = 64;
-const GAP_Y = 180;
-const GAP_BLOCK = 160;
-/** projects stand well apart, so their group frames and the minimap read as separate blocks */
+const GAP_ROW = 120;
+const CORRIDOR = 280;
+const PART_GAP = 220;
 const GAP_PROJECT = 720;
+/** players per row inside a part: the rest wrap below, so a big part grows down instead of across */
+export const PLAYERS_PER_ROW = 4;
+/** projects side by side in a row; the next ones start a new row below */
+export const PROJECTS_PER_ROW = 3;
 
 export interface Rect {
   x: number;
@@ -32,8 +39,9 @@ export interface Rect {
 }
 
 /**
- * Team layout, like a pitch, so links run through empty space instead of under cards. Projects side by side; in a
- * project its head coach on top (centered), then one block per part — the coach on top, the players in a row below.
+ * Team layout. Projects side by side, PROJECTS_PER_ROW to a row (more start a new row below). In a project: the head coach in the left column (centred on its
+ * parts), an empty corridor for its links, then the parts as rows one under another — each part its coach (if any)
+ * and its players, PLAYERS_PER_ROW to a row. The Ground stays roughly square and every part reads as one block.
  * Returns the new rectangle of every session it places.
  */
 export function arrangeTeam(sessions: Session[], projects: Project[]): Map<string, Rect> {
@@ -51,9 +59,14 @@ export function arrangeTeam(sessions: Session[], projects: Project[]): Map<strin
 
   // a team-wide head coach (earlier design) sits above everything
   const teamHead = all.find((s) => s.role === 'head' && !s.projectId);
-  const top0 = teamHead ? H.h + GAP_Y : 0;
+  if (teamHead) place(teamHead, 0, 0);
+  const startY = teamHead ? H.h + GAP_PROJECT / 2 : 0;
   const roots = [...projects.filter((p) => !p.parentId).map((p) => p.id), ...new Set(all.filter((s) => s.projectId && !known.has(s.projectId)).map((s) => s.projectId))];
+  // each project laid out from (0, 0) first, then placed in the grid: PROJECTS_PER_ROW side by side, then the next row
+  let col = 0;
   let x = 0;
+  let y = startY;
+  let rowH = 0;
   for (const root of roots) {
     const head = all.find((s) => s.role === 'head' && s.projectId === root);
     const blocks = [root, ...projects.filter((p) => p.parentId === root).map((p) => p.id)]
@@ -63,23 +76,41 @@ export function arrangeTeam(sessions: Session[], projects: Project[]): Map<strin
       })
       .filter((b) => b.coach || b.players.length);
     if (!head && blocks.length === 0) continue;
-    const top = top0 + (head ? H.h + GAP_Y : 0);
-    const start = x;
+    const local: [Session, number, number][] = [];
+    const partsX = head ? H.w + CORRIDOR : 0;
+    let width = head ? H.w : 0;
+    let py = 0;
     for (const b of blocks) {
-      const playersW = b.players.length ? b.players.length * (P.w + GAP_X) - GAP_X : 0;
-      const width = Math.max(playersW, b.coach ? L.w : 0);
-      if (b.coach) place(b.coach, x + (width - L.w) / 2, top);
-      const py = b.coach ? top + L.h + GAP_Y : top;
-      b.players.forEach((p, i) => place(p, x + (width - playersW) / 2 + i * (P.w + GAP_X), py));
-      x += width + GAP_BLOCK;
+      if (b.coach) {
+        local.push([b.coach, partsX, py]);
+        width = Math.max(width, partsX + L.w);
+        py += L.h + GAP_ROW;
+      }
+      b.players.forEach((p, i) => {
+        const row = Math.floor(i / PLAYERS_PER_ROW);
+        const px = partsX + (i % PLAYERS_PER_ROW) * (P.w + GAP_X);
+        local.push([p, px, py + row * (P.h + GAP_ROW)]);
+        width = Math.max(width, px + P.w);
+      });
+      const rows = Math.ceil(b.players.length / PLAYERS_PER_ROW);
+      py += rows ? rows * (P.h + GAP_ROW) : 0;
+      py += PART_GAP - GAP_ROW;
     }
-    if (blocks.length === 0) x += L.w + GAP_BLOCK;
-    // a project narrower than its head coach's card widens to it, so the next project does not slide under it
-    if (head && x - GAP_BLOCK - start < H.w) x = start + H.w + GAP_BLOCK;
-    const width = x - GAP_BLOCK - start;
-    if (head) place(head, start + (width - H.w) / 2, top0);
-    x += GAP_PROJECT - GAP_BLOCK;
+    // py ends one PART_GAP below the last row
+    const partsH = blocks.length ? py - PART_GAP : 0;
+    const height = Math.max(head ? H.h : 0, partsH);
+    // the head coach faces the middle of its parts, so its links fan out evenly
+    if (head) local.push([head, 0, Math.max(0, (height - H.h) / 2)]);
+    if (col === PROJECTS_PER_ROW) {
+      col = 0;
+      x = 0;
+      y += rowH + GAP_PROJECT;
+      rowH = 0;
+    }
+    for (const [s2, lx, ly] of local) place(s2, x + lx, y + ly);
+    x += width + GAP_PROJECT;
+    rowH = Math.max(rowH, height);
+    col++;
   }
-  if (teamHead) place(teamHead, Math.max(0, (x - GAP_PROJECT - H.w) / 2), 0);
   return out;
 }

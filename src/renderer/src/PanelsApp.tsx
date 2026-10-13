@@ -11,6 +11,7 @@ import { Palette } from '@/components/Palette';
 import { NewSessionDialog } from '@/components/NewSessionDialog';
 import { PromptDialog } from '@/components/PromptDialog';
 import { OrderFlowDialog } from '@/components/OrderFlow';
+import { NewProjectDialog } from '@/components/NewProjectDialog';
 import { UsageDialog } from '@/components/UsageDialog';
 import { Splitter } from '@/components/Splitter';
 import logo from '@/assets/logo.png';
@@ -80,6 +81,7 @@ export function PanelsApp(): JSX.Element {
       <PromptDialog />
       <UsageDialog />
       <OrderFlowDialog />
+      <NewProjectDialog />
     </div>
   );
 }

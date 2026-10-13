@@ -1,9 +1,11 @@
-import { useEffect } from 'react';
+import { useRef, useEffect } from 'react';
 import { useStore } from '@/store';
-import { runCommand, zoomBy } from '@/commands';
+import { runCommand, selectAndReveal, zoomBy } from '@/commands';
+import { activeHeadCoach } from '@/lib/activeProject';
 import { openNotification } from '@/lib/notify';
 import { Toasts } from '@/components/Toasts';
 import { OrderFlowDialog } from '@/components/OrderFlow';
+import { NewProjectDialog } from '@/components/NewProjectDialog';
 import { reconnectClient } from '@/client';
 import { TopBar } from '@/components/TopBar';
 import { Sidebar } from '@/components/Sidebar';
@@ -141,6 +143,16 @@ export function App(): JSX.Element {
     };
   }, []);
 
+  // On start, the Ground opens on the head coach of the project that is in progress (once the sessions are in)
+  const sessionCount = useStore((st) => st.sessions.size);
+  const focused = useRef(false);
+  useEffect(() => {
+    if (focused.current || sessionCount === 0) return;
+    focused.current = true;
+    const id = activeHeadCoach();
+    if (id) setTimeout(() => selectAndReveal(id), 300);
+  }, [sessionCount]);
+
   // Prevent browser zoom on ctrl+wheel outside the board.
   useEffect(() => {
     const onWheel = (e: WheelEvent): void => {
@@ -179,6 +191,7 @@ export function App(): JSX.Element {
       <UsageDialog />
       <Toasts />
       <OrderFlowDialog />
+      <NewProjectDialog />
       <PromptDialog />
     </div>
   );

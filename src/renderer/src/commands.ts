@@ -1,4 +1,5 @@
 import type { AgentKind, Session } from '@shared/protocol';
+import { useNewProject } from '@/components/NewProjectDialog';
 import { useStore, ZOOM_MAX, ZOOM_MIN } from '@/store';
 import { send } from '@/client';
 import { AGENT_LABELS } from '@/lib/format';
@@ -211,9 +212,9 @@ export function openProjectFile(): void {
   input.click();
 }
 
+/** The New Project dialog: name, folders, and an optional brief that also makes and briefs the head coach. */
 export async function newProject(): Promise<void> {
-  const name = await askText('New project name', { placeholder: 'Project name' });
-  if (name && name.trim()) send({ type: 'project.create', name: name.trim() });
+  useNewProject.getState().show();
 }
 
 function withSelected(fn: (s: Session) => void): () => void {

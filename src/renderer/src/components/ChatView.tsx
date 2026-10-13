@@ -10,9 +10,10 @@ import { screenLines } from '@/lib/screen';
 import { matches, useHighlight } from '@/lib/search';
 import { CopyButton } from './SearchBox';
 import { imageFiles, useAttachments, withAttachments } from '@/lib/attachments';
-import { AttachButton, AttachmentBar } from './AttachmentBar';
+import { AttachmentBar } from './AttachmentBar';
 import { getBuffer, useBuffer } from '@/lib/buffers';
 import { restoreEarlier } from './ContextSize';
+import { quickReplyOf, type QuickOption, type QuickReply } from '@/lib/quickReply';
 import { kbd } from '@/lib/keys';
 
 /** Searchable text of a transcript entry: its text, or a tool's name, input and result. */
@@ -136,6 +137,8 @@ export function ChatView({
   // in All, team runs fold to one row - except the last one (what the session is on now)
   const segs = useMemo(() => (filter === 'all' && !searching && hasTeam ? segments(entries, src) : null), [entries, src, filter, searching, hasTeam]);
   const working = s.status === 'working' || s.status === 'starting';
+  // the answer ends with a question and options: quick-reply buttons instead of typing (not while it works or asks the TUI)
+  const quick = useMemo(() => (working ? null : quickReplyOf(all)), [all, working]);
   // A numbered choice (permission / trust prompt) is only visible in the TUI, so sniff the terminal tail.
   // only while waiting: a choice prompt can be on screen (no subscription otherwise)
   const tail = useBuffer(s.id, s.status === 'waiting')?.slice(-6000);
@@ -229,7 +232,7 @@ export function ChatView({
         )}
       </div>
       {choice && <WaitingBar session={s} tail={tail ?? ''} onShowTerminal={onShowTerminal} />}
-      <Composer session={s} />
+      <Composer session={s} quick={quick} />
     </div>
   );
 }
@@ -624,8 +627,10 @@ const REPLAY_PAUSE_MS = 400;
 const REPLAY_SEND_MS = 700;
 
 /** The message box under a session's conversation — also used for terminal agents (Codex) in the Session tab. */
-export function Composer({ session: s }: { session: Session }): JSX.Element {
+export function Composer({ session: s, quick }: { session: Session; quick?: QuickReply | null }): JSX.Element {
   const [text, setText] = useState('');
+  const [picked, setPicked] = useState<string[]>([]);
+  const [quickClosed, setQuickClosed] = useState<string | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
   // a team message typed into this session by the daemon, replayed here: typed out, then "sent"
   const [ghost, setGhost] = useState<{ text: string; sending: boolean } | null>(null);
@@ -676,8 +681,8 @@ export function Composer({ session: s }: { session: Session }): JSX.Element {
   const wakeable = !live && (s.status === 'hibernated' || s.status === 'done' || s.status === 'error');
   // shown as running but without a process (stale state): go through the daemon, which starts it first
   const running = live && s.pid !== undefined;
-  const submit = (): void => {
-    const t = text.trim();
+  const submit = (override?: string): void => {
+    const t = (override ?? text).trim();
     if (!t || files.busy || (!live && !wakeable)) return;
     const body = withAttachments(t, files.items);
     // kept in the log (Me tab), with the answer reported back
@@ -686,8 +691,13 @@ export function Composer({ session: s }: { session: Session }): JSX.Element {
     if (running) send({ type: 'session.paste', id: s.id, text: body });
     else send({ type: 'session.message', id: s.id, text: body });
     setText('');
+    setPicked([]);
     files.clear();
   };
+  // quick replies: one id per offered set, so "Other" (closing it) holds until the session asks again
+  const quickId = quick ? quick.options.map((o) => o.key + o.label).join('|') : '';
+  const showQuick = !!quick && !text && !ghost && quickClosed !== quickId && (live || wakeable);
+  const pickOne = (o: QuickOption): void => submit(`${o.key}. ${o.label}`);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -699,13 +709,53 @@ export function Composer({ session: s }: { session: Session }): JSX.Element {
 
   return (
     <>
+    {showQuick && quick && (
+      <div className="quick-reply" role="group" aria-label="Quick reply">
+        <span className="quick-reply-title">{quick.multi ? 'Pick any' : 'Pick one'}</span>
+        {quick.options.map((o) =>
+          quick.multi ? (
+            <label key={o.key} className={`quick-opt ${picked.includes(o.key) ? 'on' : ''}`}>
+              <input
+                type="checkbox"
+                checked={picked.includes(o.key)}
+                onChange={(e) => setPicked(e.target.checked ? [...picked, o.key] : picked.filter((k) => k !== o.key))}
+              />
+              <b>{o.key}</b> <span className="ellipsis">{o.label}</span>
+            </label>
+          ) : (
+            <label key={o.key} className="quick-opt" title={`Send "${o.key}. ${o.label}"`}>
+              <input type="radio" name={`quick-${s.id}`} onChange={() => pickOne(o)} />
+              <b>{o.key}</b> <span className="ellipsis">{o.label}</span>
+            </label>
+          )
+        )}
+        {quick.multi && (
+          <button
+            className="btn sm primary"
+            disabled={!picked.length}
+            onClick={() => submit(quick.options.filter((o) => picked.includes(o.key)).map((o) => `${o.key}. ${o.label}`).join('\n'))}
+          >
+            Send
+          </button>
+        )}
+        <button
+          className="btn sm ghost"
+          title="Type your own answer"
+          onClick={() => {
+            setQuickClosed(quickId);
+            setTimeout(() => ref.current?.focus(), 0);
+          }}
+        >
+          Other…
+        </button>
+      </div>
+    )}
     {files.items.length > 0 && (
       <div className="chat-attachments">
         <AttachmentBar items={files.items} onRemove={files.remove} />
       </div>
     )}
     <div className={`chat-composer ${ghost ? 'replay' : ''}`} data-session={s.id}>
-      <AttachButton onFiles={files.add} disabled={!live && !wakeable} />
       <textarea
         ref={ref}
         rows={1}
@@ -740,7 +790,7 @@ export function Composer({ session: s }: { session: Session }): JSX.Element {
           }
         }}
       />
-      <button className={`btn primary sm ${ghost?.sending ? 'sending' : ''}`} disabled={!ghost && ((!live && !wakeable) || !text.trim() || files.busy)} onClick={submit}>Send</button>
+      <button className={`btn primary sm ${ghost?.sending ? 'sending' : ''}`} disabled={!ghost && ((!live && !wakeable) || !text.trim() || files.busy)} onClick={() => submit()}>Send</button>
     </div>
     </>
   );
