@@ -2,17 +2,21 @@ import { useMemo, useState } from 'react';
 import type { InboxItem, Session } from '@shared/protocol';
 import { send } from '@/client';
 import { selectAndReveal } from '@/commands';
-import { formatDateTime, relativeTime, roleLabel } from '@/lib/format';
+import { formatDateTime, pcStyle, projectColor, relativeTime, roleLabel } from '@/lib/format';
+import { useStore } from '@/store';
 import { matches, selecting } from '@/lib/search';
 import { CopyButton } from './SearchBox';
 import { renderMarkdown } from '@/lib/markdown';
 
 /** Chip for a sender/receiver: the manager (user), a session (role color), or a removed session. */
 function Chip({ session, user }: { session?: Session; user?: boolean }): JSX.Element {
+  const projects = useStore((st) => st.projects);
   if (user) return <span className="team-chip manager">Manager (you)</span>;
   if (!session) return <span className="team-chip">(removed)</span>;
+  // the team-wide Head Coach in the manager's color, a project's Coach in its project's
+  const cls = session.role === 'head' ? (session.projectId ? 'project' : 'manager') : session.role;
   return (
-    <span className={`team-chip ${session.role}`} title={roleLabel(session)}>
+    <span className={`team-chip ${cls}`} style={cls === 'project' ? pcStyle(projectColor(session.projectId, projects)) : undefined} title={roleLabel(session)}>
       {session.title}
     </span>
   );

@@ -5,6 +5,16 @@
  * All text is HTML-escaped; only our own tags are emitted.
  */
 
+import { isFileRef } from './fileRefPattern';
+
+const decode = (u: string): string => {
+  try {
+    return decodeURIComponent(u);
+  } catch {
+    return u;
+  }
+};
+
 export function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -13,12 +23,16 @@ function inline(src: string): string {
   // Protect inline code first.
   const codes: string[] = [];
   let s = src.replace(/`([^`]+)`/g, (_m, c: string) => {
-    codes.push(`<code>${escapeHtml(c)}</code>`);
+    // a file name or path: clickable (open it, or show it in the sidebar)
+    codes.push(isFileRef(c) ? `<code class="file-ref" data-file="${escapeHtml(c.trim())}" title="Open · show in sidebar">${escapeHtml(c)}</code>` : `<code>${escapeHtml(c)}</code>`);
     return `\u0000${codes.length - 1}\u0000`;
   });
   s = escapeHtml(s);
   s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, '<span class="muted">[Image: $1]</span>');
   s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, t: string, u: string) => {
+    // a link to a local file ("/C:/x/y.vue", "C:\x\y.md", "src/a.ts"): the same clickable file reference
+    const local = u.replace(/^\/(?=[A-Za-z]:)/, '').replace(/#L\d+.*$/, '');
+    if (!/^(https?:|mailto:|#)/i.test(u) && isFileRef(decode(local))) return `<a class="file-ref" data-file="${escapeHtml(decode(local))}" title="Open · show in sidebar">${t}</a>`;
     const safe = /^(https?:|mailto:|#)/i.test(u) ? u : '#';
     return `<a href="${safe}" target="_blank" rel="noreferrer">${t}</a>`;
   });

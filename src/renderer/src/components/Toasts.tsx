@@ -37,7 +37,7 @@ export function Toasts(): JSX.Element | null {
 
 const SESSION_OPTIONS: { id: NotifyPrefs['sessions']; label: string }[] = [
   { id: 'all', label: 'Every session' },
-  { id: 'leads', label: 'Head coaches and coaches' },
+  { id: 'leads', label: 'Head Coach and coaches' },
   { id: 'off', label: 'None' }
 ];
 

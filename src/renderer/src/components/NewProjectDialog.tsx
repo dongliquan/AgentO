@@ -113,7 +113,7 @@ export function NewProjectDialog(): JSX.Element | null {
         <textarea
           value={brief}
           rows={5}
-          placeholder="Brief (optional): what to build and how. With a brief, a head coach is made and designs the team. Paste or drop images."
+          placeholder="Brief (optional): what to build and how. With a brief, a coach is made and designs the team. Paste or drop images."
           onChange={(e) => setBrief(e.target.value)}
           onPaste={(e) => {
             const imgs = imageFiles(e.clipboardData);
@@ -139,7 +139,7 @@ export function NewProjectDialog(): JSX.Element | null {
         />
         <AttachmentBar items={files.items} onRemove={files.remove} />
         <div className="actions">
-          <label className="new-plan" title="On: the head coach reports its team and plan, and waits for your go. Off: it starts the work right away.">
+          <label className="new-plan" title="On: the coach reports its team and plan, and waits for your go. Off: it starts the work right away.">
             <input type="checkbox" checked={planFirst} disabled={!brief.trim()} onChange={(e) => setPlanFirst(e.target.checked)} />
             Report the plan first and wait for my go
           </label>

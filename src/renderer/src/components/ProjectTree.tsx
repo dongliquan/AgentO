@@ -6,9 +6,11 @@ import { requestChanged, requestList, send } from '@/client';
 import { organizeTeam, removeSession, renameProject, renameSession, saveProject, selectAndReveal } from '@/commands';
 import { askText } from '@/lib/prompt';
 import { openFile } from '@/lib/openfile';
-import { AGENT_LABELS, basename, fileIcon, roleLabel, displayTitle, statusClass } from '@/lib/format';
+import { useReveal } from '@/lib/fileRefs';
+import { AGENT_LABELS, basename, fileIcon, displayTitle, statusClass } from '@/lib/format';
+import { RoleTag } from './RoleTag';
 import { pcStyle, projectColor } from '@/lib/format';
-import { PROJECT_COLORS } from '@shared/protocol';
+import { useColorMenu } from './ProjectColorMenu';
 import { AgentPicker } from './AgentPicker';
 import { AgentIcon } from './AgentIcon';
 
@@ -38,9 +40,46 @@ function useExpanded(): [Set<string>, (key: string, v?: boolean) => void] {
 
 export function ProjectTree(): JSX.Element {
   const projects = useStore((s) => s.projects);
+  const revealNonce = useReveal((s) => s.nonce);
   const sessions = useStore((s) => s.sessions);
   const filter = useStore((s) => s.treeFilter);
   const [expanded, toggle] = useExpanded();
+  // "Show in sidebar": open the project, its folders row, the folder and every subfolder down to the file
+  useEffect(() => {
+    const target = useReveal.getState().path;
+    if (!target) return;
+    const low = target.toLowerCase().replace(/\//g, '\\');
+    let best: { project: Project; folder: Folder } | undefined;
+    // the tree shows folders under projects (parts list only their sessions)
+    for (const p of projects.filter((x) => !x.parentId && !x.closed)) {
+      for (const f of p.folders) {
+        const fp = f.path.toLowerCase().replace(/[\\/]+$/, '');
+        if (low.startsWith(fp + '\\') && (!best || fp.length > best.folder.path.length)) best = { project: p, folder: f };
+      }
+    }
+    if (!best) return;
+    const root = best.project.parentId ? projects.find((x) => x.id === best!.project.parentId) ?? best.project : best.project;
+    toggle(`p:${root.id}`, true);
+    if (best.project.id !== root.id) toggle(`p:${best.project.id}`, true);
+    toggle(`folders:${root.id}`, true);
+    toggle(`f:${best.folder.id}`, true);
+    const base = best.folder.path.replace(/[\\/]+$/, '');
+    const rest = target.slice(base.length + 1).split(/[\\/]/);
+    let cur = base;
+    for (const seg of rest.slice(0, -1)) {
+      cur = `${cur}\\${seg}`;
+      toggle(`d:${cur}`, true);
+    }
+    // the folders load as they open: look for the row a few times, then scroll to it
+    let tries = 0;
+    const find = (): void => {
+      const row = document.querySelector(`.tree-row[data-path="${CSS.escape(low)}"]`);
+      if (row) row.scrollIntoView({ block: 'center' });
+      else if (++tries < 20) setTimeout(find, 250);
+    };
+    setTimeout(find, 200);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealNonce]);
   const [picker, setPicker] = useState<PickerState | null>(null);
   const [coachPicker, setCoachPicker] = useState<{ x: number; y: number; projectId: string } | null>(null);
   const openNewSession = useStore((s) => s.openNewSession);
@@ -68,7 +107,6 @@ export function ProjectTree(): JSX.Element {
     return m;
   }, [sessions]);
   const heads = useMemo(() => [...sessions.values()].filter((s) => s.role === 'head'), [sessions]);
-  const teamHead = heads.find((s) => !s.projectId); // a team-wide head coach from the earlier design
   const tops = projects.filter((p) => !p.parentId && !p.closed);
   const closedTops = projects.filter((p) => !p.parentId && p.closed);
   const partsOf = (id: string): Project[] => projects.filter((p) => p.parentId === id);
@@ -120,17 +158,30 @@ export function ProjectTree(): JSX.Element {
             <button
               className={`pc-dot tree-pc agg-${agg.state}`}
               style={pcStyle(projectColor(p.id, projects))}
-              title={`${agg.text} — project color: click for the next one`}
+              title={`${agg.text} — click to choose the project color`}
               onClick={(e) => {
                 e.stopPropagation();
-                const cur = PROJECT_COLORS.indexOf(projectColor(p.id, projects));
-                send({ type: 'project.setColor', id: p.id, color: PROJECT_COLORS[(cur + 1) % PROJECT_COLORS.length]! });
+                useColorMenu.getState().show({ x: e.clientX, y: e.clientY, projectId: p.id });
               }}
             />
           )}
           {isPart && members.length > 0 && <span className={`status-dot ${AGG_DOT[agg.state]}`} title={agg.text} />}
           <span className="label" style={{ fontWeight: 600 }} onDoubleClick={(e) => { e.stopPropagation(); void renameProject(p.id); }} title="Double-click to rename">{p.name}</span>
           {total > 0 && <span className="muted" style={{ fontSize: 11 }} title={`${total} session(s)`}>{total}</span>}
+          {!isPart && (
+            <button
+              className="icon-btn hover-act pc-pick"
+              title="Project color"
+              aria-label="Project color"
+              style={pcStyle(projectColor(p.id, projects))}
+              onClick={(e) => {
+                e.stopPropagation();
+                useColorMenu.getState().show({ x: e.clientX, y: e.clientY, projectId: p.id });
+              }}
+            >
+              <span className="pc-pick-dot" />
+            </button>
+          )}
           <button
             className="icon-btn hover-act"
             title={`Rename ${isPart ? 'part' : 'project'} (or double-click the name)`}
@@ -191,7 +242,7 @@ export function ProjectTree(): JSX.Element {
           {!isPart && (
             <button
               className="icon-btn hover-act"
-              title="Organize Team — the head coach (created first if needed) sorts the sessions into parts and picks coaches"
+              title="Organize Team — the project's coach (created first if needed) sorts the sessions into parts"
               onClick={(e) => {
                 e.stopPropagation();
                 organizeTeam(p.id);
@@ -245,10 +296,10 @@ Not touched: your folders on disk and the Claude / Codex conversation files.`)) 
           ) : (
             <div className="tree-row tree-add-head" style={{ paddingLeft: inner }} title="Optional: the project's PM — splits orders among the parts" onClick={() => send({ type: 'head.create', projectId: p.id })}>
               <span className="caret" />
-              <span className="label">+ Head Coach</span>
+              <span className="label">+ Coach</span>
               <button
                 className="btn sm ghost tree-organize"
-                title="Create the head coach and have it sort this project's sessions into parts with coaches"
+                title="Create the coach and have it sort this project's sessions into parts"
                 onClick={(e) => {
                   e.stopPropagation();
                   organizeTeam(p.id);
@@ -297,7 +348,6 @@ Not touched: your folders on disk and the Claude / Codex conversation files.`)) 
 
   return (
     <div className="tree">
-      {teamHead && <SessionRow session={teamHead} depth={20} />}
       {tops.length === 0 && <div className="tree-empty">No projects yet. Create one with + above, then add parts or folders.</div>}
       {tops.map((p) => renderNode(p, 6))}
       {closedTops.length > 0 && (
@@ -471,7 +521,7 @@ function dropInto(projectId: string): React.HTMLAttributes<HTMLDivElement> {
   };
 }
 
-function SessionRow({ session: s, depth, folderName }: { session: Session; depth: number; folderName?: string }): JSX.Element {
+export function SessionRow({ session: s, depth, folderName }: { session: Session; depth: number; folderName?: string }): JSX.Element {
   const selected = useStore((st) => st.selectedId === s.id);
   // the head coach stays at the project level; every other session can be dragged
   const movable = s.role !== 'head';
@@ -508,7 +558,7 @@ ${s.cwd}`}
       <span className={`status-dot ${statusClass(s)}`} />
       <AgentIcon kind={s.agent} color={s.color} />
       <span className="label" onDoubleClick={(e) => { e.stopPropagation(); void renameSession(s.id); }}>{displayTitle(s)}</span>
-      {s.role !== 'player' && <span className={`role-tag ${s.role}`}>{roleLabel(s)}</span>}
+      <RoleTag s={s} />
       {folderName && <span className="muted tree-session-folder">{folderName}</span>}
       <button
         className="icon-btn hover-act"
@@ -579,14 +629,16 @@ function DirNode({ entry, cwd, depth, expanded, toggle, gitMap }: Omit<DirProps,
 }
 
 function FileRow({ entry, depth, git, onClick, onDouble, showRelative }: { entry: FsEntry; depth: number; git?: FsEntry['gitStatus']; onClick: () => void; onDouble?: () => void; showRelative?: string }): JSX.Element {
-  const selectedPath = useStore((s) => {
+  const cardPath = useStore((s) => {
     const c = s.selectedFileCardId ? s.fileCards.get(s.selectedFileCardId) : undefined;
     return c?.path;
   });
+  const revealed = useReveal((s) => s.path);
+  const selectedPath = revealed && revealed.toLowerCase() === entry.path.toLowerCase() ? entry.path : cardPath;
   let label = entry.name;
   if (showRelative && entry.path.startsWith(showRelative)) label = entry.path.slice(showRelative.length).replace(/^[\\/]/, '') || basename(entry.path);
   return (
-    <div className={`tree-row ${selectedPath === entry.path ? 'selected' : ''}`} style={{ paddingLeft: depth }} onClick={onClick} onDoubleClick={onDouble} title={entry.path}>
+    <div className={`tree-row ${selectedPath === entry.path ? 'selected' : ''}`} data-path={entry.path.toLowerCase()} style={{ paddingLeft: depth }} onClick={onClick} onDoubleClick={onDouble} title={entry.path}>
       <span className="caret" />
       <span className="ficon mono">{fileIcon(entry.name)}</span>
       <span className="label">{label}</span>

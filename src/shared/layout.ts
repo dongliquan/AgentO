@@ -5,16 +5,19 @@
 import type { Project, Session, SessionRole } from './protocol';
 
 /**
- * Players work in a tall card (9:16, a conversation reads top to bottom); head coaches and coaches in a wide one (16:9).
+ * Players and a project's head coach work in a tall card (9:16, a conversation reads top to bottom); part coaches and
+ * the team-wide head coach in a wide one (16:9).
  * Sized to work in at 100% zoom (a readable chat and terminal), not just to watch.
  */
 export const CARD_PORTRAIT = { w: 600, h: 1068 };
 export const CARD_LANDSCAPE = { w: 1068, h: 600 };
-/** the head coach: the same wide card as a coach (it used to be 1.5x, which crowded the Ground) */
-export const CARD_HEAD = CARD_LANDSCAPE;
+/** a project's head coach ("Coach" in the UI): tall like a player's card, a little longer than 9:16 */
+export const CARD_HEAD = { w: 600, h: 1300 };
 
-export function cardSize(role: SessionRole): { w: number; h: number } {
-  return role === 'player' ? CARD_PORTRAIT : role === 'head' ? CARD_HEAD : CARD_LANDSCAPE;
+/** Card size of a role; the team-wide head coach (no project, "Head Coach" in the UI) keeps the wide card. */
+export function cardSize(role: SessionRole, projectId?: string): { w: number; h: number } {
+  if (role === 'head') return projectId ? CARD_HEAD : CARD_LANDSCAPE;
+  return role === 'player' ? CARD_PORTRAIT : CARD_LANDSCAPE;
 }
 
 /**
@@ -52,7 +55,7 @@ export function arrangeTeam(sessions: Session[], projects: Project[]): Map<strin
   const P = CARD_PORTRAIT;
   const H = CARD_HEAD;
   const place = (s: Session, x: number, y: number): void => {
-    const size = cardSize(s.role);
+    const size = cardSize(s.role, s.projectId);
     out.set(s.id, { x: Math.round(x), y: Math.round(y), w: size.w, h: size.h });
   };
   const known = new Set(projects.map((p) => p.id));
@@ -60,7 +63,7 @@ export function arrangeTeam(sessions: Session[], projects: Project[]): Map<strin
   // a team-wide head coach (earlier design) sits above everything
   const teamHead = all.find((s) => s.role === 'head' && !s.projectId);
   if (teamHead) place(teamHead, 0, 0);
-  const startY = teamHead ? H.h + GAP_PROJECT / 2 : 0;
+  const startY = teamHead ? L.h + GAP_PROJECT / 2 : 0;
   const roots = [...projects.filter((p) => !p.parentId).map((p) => p.id), ...new Set(all.filter((s) => s.projectId && !known.has(s.projectId)).map((s) => s.projectId))];
   // each project laid out from (0, 0) first, then placed in the grid: PROJECTS_PER_ROW side by side, then the next row
   let col = 0;

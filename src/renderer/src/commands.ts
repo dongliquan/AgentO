@@ -192,7 +192,7 @@ export function organizeTeam(projectId: string): void {
   const hasHead = [...st.sessions.values()].some((s) => s.role === 'head' && s.projectId === p.id);
   const msg =
     `Organize "${p.name}"?\n\n` +
-    `${hasHead ? 'The head coach' : 'A head coach is created first. It'} reads the ${n} session(s) — without waking them — ` +
+    `${hasHead ? 'The coach' : 'A coach is created first. It'} reads the ${n} session(s) — without waking them — ` +
     'sorts them into parts, picks a coach for each part, and reports to you. No work is handed out yet.';
   if (window.confirm(msg)) {
     send({ type: 'team.organize', projectId: p.id });

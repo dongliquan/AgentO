@@ -41,7 +41,7 @@ function viewOf(it: InboxItem): { kind: string; text: string; auto: boolean } {
     // the template is AgentO's; the brief at its end is what the manager wrote
     return { kind: 'New project', text: brief ?? '', auto: !brief };
   }
-  if (body.startsWith('[Organize the team]')) return { kind: 'Organize Team', text: 'AgentO asked the head coach to sort the project’s sessions into parts and pick coaches.', auto: true };
+  if (body.startsWith('[Organize the team]')) return { kind: 'Organize Team', text: 'AgentO asked the coach to sort the project’s sessions into parts.', auto: true };
   const via = /· (.+)$/.exec(sender)?.[1];
   if (via) return { kind: via, text: body, auto: true };
   return { kind: 'Order', text: body, auto: false };

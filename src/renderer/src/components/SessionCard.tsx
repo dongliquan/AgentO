@@ -4,7 +4,8 @@ import type { Session } from '@shared/protocol';
 import { useStore } from '@/store';
 import { send } from '@/client';
 import { exportSession, focusTerminal, removeSession, selectAndReveal } from '@/commands';
-import { AGENT_LABELS, agentColor, basename, formatElapsed, roleLabel, displayTitle } from '@/lib/format';
+import { AGENT_LABELS, agentColor, basename, formatElapsed, displayTitle } from '@/lib/format';
+import { RoleTag } from './RoleTag';
 import { lastLines } from '@/lib/ansi';
 import { startDrag, throttle } from '@/lib/drag';
 import { useNow } from '@/lib/hooks';
@@ -151,7 +152,7 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
     >
       <div className="card-header" onPointerDown={onHeaderDown} onDoubleClick={() => { setDraft(s.title); setEditing(true); }}>
         <AgentIcon kind={s.agent} color={s.color} size={16} />
-        {s.role !== 'player' && <span className={`role-tag ${s.role}`}>{roleLabel(s)}</span>}
+        <RoleTag s={s} />
         {editing ? (
           <input
             className="title-input"

@@ -10,12 +10,14 @@ export const AGENT_COLORS: Record<AgentKind, string> = {
 };
 
 /** Team hierarchy labels (football club: the user is the manager · head coach · coach · player). */
-export const ROLE_LABELS: Record<SessionRole, string> = { head: 'Head Coach', coach: 'Coach', player: 'Player' };
+export const ROLE_LABELS: Record<SessionRole, string> = { head: 'Coach', coach: 'Part Coach', player: 'Player' };
 
-/** Role label of a session; a coach that works in a project folder is a playing coach. */
-export function roleLabel(s: { role: SessionRole; folderId: string }): string {
-  // a player promoted to coach (it keeps its own work) is labelled like any coach
-  return ROLE_LABELS[s.role];
+/**
+ * Role label of a session: the team-wide head coach (no project) is "Head Coach", a project's head coach "Coach", a
+ * part's coach "Part Coach" (a player promoted to coach is labelled the same).
+ */
+export function roleLabel(s: { role: SessionRole; folderId: string; projectId?: string }): string {
+  return s.role === 'head' && !s.projectId ? 'Head Coach' : ROLE_LABELS[s.role];
 }
 
 /**
@@ -23,7 +25,7 @@ export function roleLabel(s: { role: SessionRole; folderId: string }): string {
  * title keeps it — agents address each other by title.
  */
 export function displayTitle(s: { title: string }): string {
-  const t = s.title.replace(/^(Head Coach|Playing Coach|Coach|Player) · /, '');
+  const t = s.title.replace(/^(Head Coach|Playing Coach|Part Coach|Coach|Player) · /, '');
   return t || s.title;
 }
 

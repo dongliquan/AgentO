@@ -3,7 +3,8 @@ import type { InboxItem, Routine, Session, TeamOrderTarget } from '@shared/proto
 import { unreadCount, useStore, type RightTab } from '@/store';
 import { requestChanged, send } from '@/client';
 import { exportSession, focusTerminal, removeSession, selectAndReveal } from '@/commands';
-import { AGENT_LABELS, STATUS_LABELS, projectLabel, roleLabel, displayTitle, basename, formatDateTime, formatTime, relativeTime } from '@/lib/format';
+import { AGENT_LABELS, STATUS_LABELS, projectLabel, displayTitle, basename, formatDateTime, formatTime, relativeTime } from '@/lib/format';
+import { RoleTag } from './RoleTag';
 import { useNow } from '@/lib/hooks';
 import { openFile } from '@/lib/openfile';
 import { StatusBadge } from './StatusBadge';
@@ -199,7 +200,7 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
           <StatusBadge status={s.status} attention={s.attention} />
         </div>
         <div className="rp-meta">
-          {s.role !== 'player' && <span className={`role-tag ${s.role}`}>{roleLabel(s)}</span>}
+          <RoleTag s={s} />
           <span>{projectLabel(s.projectId, projects)}</span>
           <span className="muted">· {AGENT_LABELS[s.agent]}</span>
           <span className="grow" />
@@ -555,7 +556,7 @@ function Orders(): JSX.Element {
         <span className="muted">to the team: it splits the work and reports back here</span>
       </div>
       <div className="new-task-to" role="tablist">
-        <button role="tab" className={`project-tag all ${isTeam ? 'on' : ''}`} onClick={() => setTab('team')} title="Not tied to a project: the team's head coach decides which project it is for, or starts a new one">
+        <button role="tab" className={`project-tag all ${isTeam ? 'on' : ''}`} onClick={() => setTab('team')} title="Not tied to a project: the Head Coach decides which project it is for, or starts a new one">
           Team
         </button>
         <span className="chip-sep" aria-hidden="true" />
@@ -570,7 +571,7 @@ function Orders(): JSX.Element {
           const headBusy = busyHeads.has(p.id);
           const pct = pr ? Math.round((pr.done / pr.total) * 100) : 0;
           const stateText = pr?.state === 'working' ? 'working now' : pr?.state === 'waiting' ? 'waiting — nobody is running; it may need an answer or a nudge' : pr?.state === 'error' ? 'a session failed' : '';
-          const info = `${pr ? ` — ${pr.done}/${pr.total} pieces done · ${stateText}` : ''}${headBusy ? ' · head coach working' : ''}`;
+          const info = `${pr ? ` — ${pr.done}/${pr.total} pieces done · ${stateText}` : ''}${headBusy ? ' · coach working' : ''}`;
           return (
             <button
               key={p.id}
@@ -586,7 +587,7 @@ function Orders(): JSX.Element {
           );
         })}
         {tops.length > 0 && <span className="chip-sep" aria-hidden="true" />}
-        <button className="project-tag new" onClick={() => useNewProject.getState().show()} title="New project: name, folders and a brief for its head coach">
+        <button className="project-tag new" onClick={() => useNewProject.getState().show()} title="New project: name, folders and a brief for its coach">
           ＋ New Project
         </button>
       </div>
@@ -601,9 +602,9 @@ function Orders(): JSX.Element {
           <div className="order-to">
             <span className="muted">To</span>
             {teamHead ? (
-              <span className="team-chip head" title="Routes the order to the right project's head coach, or starts a new project">{teamHead.title}</span>
+              <span className="team-chip head" title="Routes the order to the right project's coach, or starts a new project">{teamHead.title}</span>
             ) : (
-              <span className="muted" title="Routes the order to the right project's head coach, or starts a new project">Head Coach (team) — created with your first order</span>
+              <span className="muted" title="Routes the order to the right project's coach, or starts a new project">Head Coach — created with your first order</span>
             )}
             <span className="grow" />
           </div>
@@ -624,8 +625,8 @@ function Orders(): JSX.Element {
             )}
             <span className="grow" />
             {takers.filter((t) => !t.head).map(({ project }) => (
-              <button key={project.id} className="btn sm ghost" onClick={() => send({ type: 'head.create', projectId: project.id })} title={`Add ${project.name}'s head coach: it splits your orders among the parts`}>
-                + Head Coach{currents.length > 1 ? ` · ${project.name}` : ''}
+              <button key={project.id} className="btn sm ghost" onClick={() => send({ type: 'head.create', projectId: project.id })} title={`Add ${project.name}'s coach: it splits your orders among the parts`}>
+                + Coach{currents.length > 1 ? ` · ${project.name}` : ''}
               </button>
             ))}
           </div>
@@ -636,9 +637,9 @@ function Orders(): JSX.Element {
             value={text}
             placeholder={
               isNew
-                ? 'Brief for the new project: what to build, how to proceed. The head coach designs the team. Paste or drop images.'
+                ? 'Brief for the new project: what to build, how to proceed. The coach designs the team. Paste or drop images.'
                 : isTeam
-                  ? 'Any order, no project needed — the team head coach finds the project (or starts one) and reports back here.'
+                  ? 'Any order, no project needed — the Head Coach finds the project (or starts one) and reports back here.'
                   : currents.length > 1
                   ? `Your order to ${currents.length} projects at once: each team handles its own side, and you get a report from each. Paste or drop images.`
                   : 'Your order — the team splits the work and reports back here. Ctrl+Enter to send · paste or drop images.'

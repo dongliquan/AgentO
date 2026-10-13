@@ -6,6 +6,8 @@ import { openNotification } from '@/lib/notify';
 import { Toasts } from '@/components/Toasts';
 import { OrderFlowDialog } from '@/components/OrderFlow';
 import { NewProjectDialog } from '@/components/NewProjectDialog';
+import { FileRefMenu } from '@/components/FileRefMenu';
+import { ProjectColorMenu } from '@/components/ProjectColorMenu';
 import { reconnectClient } from '@/client';
 import { TopBar } from '@/components/TopBar';
 import { Sidebar } from '@/components/Sidebar';
@@ -192,6 +194,8 @@ export function App(): JSX.Element {
       <Toasts />
       <OrderFlowDialog />
       <NewProjectDialog />
+      <FileRefMenu />
+      <ProjectColorMenu />
       <PromptDialog />
     </div>
   );

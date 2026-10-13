@@ -90,7 +90,7 @@ function NewTask({ pid, setPid }: { pid: string; setPid: (id: string) => void })
             ? 'Pick a project above to add a task'
             : hasTaker
               ? kbd(`New task for ${project.name} — Ctrl+Enter. Paste or drop images.`)
-              : `${project.name} has no sessions yet: add a head coach first`
+              : `${project.name} has no sessions yet: add a coach first`
         }
         disabled={!project}
         onChange={(e) => setText(e.target.value)}

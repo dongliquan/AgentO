@@ -280,6 +280,8 @@ export class Store {
     // the AI "manager" became the head coach (the user is the manager)
     this.db.exec("UPDATE sessions SET role = 'head' WHERE role = 'manager'");
     this.db.exec("UPDATE sessions SET title = 'Head Coach' WHERE role = 'head' AND title = 'Manager'");
+    // a project's head coach is called "Coach" (the team-wide one stays "Head Coach")
+    this.db.exec("UPDATE sessions SET title = 'Coach · ' || substr(title, 14) WHERE role = 'head' AND project_id <> '' AND title LIKE 'Head Coach · %'");
   }
 
   close(): void {

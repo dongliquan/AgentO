@@ -18,11 +18,30 @@ const INDEX_MAX = 150_000;
 const INDEX_TTL_MS = 60_000;
 const index = new Map<string, { at: number; files: Promise<string[]> }>();
 
-/** Every file under a folder (relative paths, capped), cached for a minute. */
+/**
+ * Every file under a folder (relative paths, capped), cached. After a minute the cached list is still answered at once
+ * while a fresh walk runs in the background (a big folder takes seconds to walk).
+ */
 function filesOf(root: string): Promise<string[]> {
   const hit = index.get(root);
   if (hit && Date.now() - hit.at < INDEX_TTL_MS) return hit.files;
-  const files = (async () => {
+  const files = walk(root);
+  if (hit) {
+    hit.at = Date.now();
+    void files.then((f) => index.set(root, { at: Date.now(), files: Promise.resolve(f) }));
+    return hit.files;
+  }
+  index.set(root, { at: Date.now(), files });
+  return files;
+}
+
+/** Start indexing folders ahead of the first search. */
+export function warmIndex(roots: string[]): void {
+  for (const r of new Set(roots.map((x) => path.resolve(x)))) void filesOf(r);
+}
+
+function walk(root: string): Promise<string[]> {
+  return (async () => {
     const out: string[] = [];
     const stack = [''];
     while (stack.length && out.length < INDEX_MAX) {
@@ -42,8 +61,6 @@ function filesOf(root: string): Promise<string[]> {
     }
     return out;
   })();
-  index.set(root, { at: Date.now(), files });
-  return files;
 }
 
 /**

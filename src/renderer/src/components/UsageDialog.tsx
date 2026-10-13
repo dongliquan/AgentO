@@ -20,7 +20,7 @@ export function fmt(n: number): string {
 }
 const pct = (a: number, b: number): string => (b > 0 ? `${Math.round((a / b) * 100)}%` : '—');
 const total = (b: { input: number; output: number; cacheWrite: number; cacheRead: number }): number => b.input + b.output + b.cacheWrite + b.cacheRead;
-const ROLE_NAME: Record<string, string> = { head: 'Head coach', coach: 'Coach', player: 'Player', outside: 'Outside AgentO' };
+const ROLE_NAME: Record<string, string> = { head: 'Coach', coach: 'Part coach', player: 'Player', outside: 'Outside AgentO' };
 const shortModel = (m: string): string => m.replace(/^claude-/, '').replace(/-\d{8}$/, '') || '?';
 
 interface Agg {
@@ -233,7 +233,7 @@ function build(r: UsageReport, projects: { id: string; name: string; parentId?: 
     add(get(byProject, g.name, g.name, g.color), b);
     const s = info.get(b.key);
     add(get(bySession, b.key, s ? `${s.title}${s.role === 'outside' ? '' : ` · ${g.name}`}` : b.key, g.color), b);
-    const role = s?.role === 'head' && !s.projectId ? 'Team head coach' : ROLE_NAME[s?.role ?? 'outside'] ?? s?.role ?? '?';
+    const role = s?.role === 'head' && !s.projectId ? 'Head Coach' : ROLE_NAME[s?.role ?? 'outside'] ?? s?.role ?? '?';
     add(get(byRole, role), b);
     add(get(byModel, shortModel(b.model)), b);
     (sessionModels.get(b.key) ?? sessionModels.set(b.key, new Set()).get(b.key)!).add(shortModel(b.model));
@@ -313,7 +313,7 @@ function tips(all: Agg, sessions: Built['sessions']): Built['tips'] {
   if (top.length)
     out.push({
       title: 'Coordination on the top model:',
-      body: `${top.length} head coach/coach session(s) run on ${[...new Set(top.flatMap((s) => s.models))].join(', ')}. Splitting orders and reviewing reports runs well on a lighter model (e.g. Sonnet) at a fraction of the usage; keep the strongest model for players.`
+      body: `${top.length} coach session(s) run on ${[...new Set(top.flatMap((s) => s.models))].join(', ')}. Splitting orders and reviewing reports runs well on a lighter model (e.g. Sonnet) at a fraction of the usage; keep the strongest model for players.`
     });
   const trafficChars = team.reduce((a, s) => a + s.teamMessageBytes + s.tools.filter((x) => x.tool.startsWith('mcp__agento__')).reduce((b, x) => b + x.bytes, 0), 0);
   out.push({

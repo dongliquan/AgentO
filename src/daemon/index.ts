@@ -19,7 +19,7 @@ import { CodexParser, findCodexRollout } from './codex';
 import { CARD_PORTRAIT } from '@shared/layout';
 import { detectAgents } from './agents';
 import { collectUsage } from './usage';
-import { gitChanged, listDir, readFileCapped, searchFiles } from './fsapi';
+import { gitChanged, listDir, readFileCapped, searchFiles, warmIndex } from './fsapi';
 import { TranscriptTail, findTranscript } from './transcript';
 import { Team } from './team';
 import { Routines } from './routines';
@@ -170,6 +170,13 @@ function listen(startPort: number, attempts = 11): Promise<{ server: http.Server
   });
 }
 
+/** The open projects' folders (a closed project's are left out). */
+function openRoots(store: Store): string[] {
+  const all = store.listProjects();
+  const closed = new Set(all.filter((p) => !p.parentId && p.closed).map((p) => p.id));
+  return all.filter((p) => !closed.has(p.id) && !(p.parentId && closed.has(p.parentId))).flatMap((p) => p.folders.map((f) => f.path));
+}
+
 async function main(): Promise<void> {
   ensureDir(dataDir());
   logsDir();
@@ -193,6 +200,8 @@ async function main(): Promise<void> {
   const info: DaemonInfoFile = { port, token, pid: process.pid, version: VERSION };
   fs.writeFileSync(daemonJsonPath(), JSON.stringify(info, null, 2));
   log.info(`listening on ws://127.0.0.1:${port}`);
+  // walk the project folders once in the background, so the first Quick Open / file link click answers at once
+  setTimeout(() => warmIndex(openRoots(store)), 15_000);
 
   const store = new Store();
   const sessions = new SessionManager(store);
@@ -553,6 +562,10 @@ async function main(): Promise<void> {
         if (msg.cols !== undefined) opts.cols = msg.cols;
         if (msg.rows !== undefined) opts.rows = msg.rows;
         const session = sessions.create(opts);
+        // a project with a head coach is laid out as a team: the new card joins its part's rows
+        const own = store.listProjects().find((p) => p.id === msg.projectId);
+        const root = own?.parentId ?? own?.id;
+        if (root && team.headOf(root)) team.arrange(root);
         clients.get(ws)?.add(session.id);
         return;
       }
@@ -669,10 +682,7 @@ async function main(): Promise<void> {
         return;
       case 'fs.search': {
         // the open projects' folders (a closed project's are left out)
-        const all = store.listProjects();
-        const closed = new Set(all.filter((p) => !p.parentId && p.closed).map((p) => p.id));
-        const roots = all.filter((p) => !closed.has(p.id) && !(p.parentId && closed.has(p.parentId))).flatMap((p) => p.folders.map((f) => f.path));
-        sendTo(ws, { type: 'fs.search.result', ref: msg.ref, items: await searchFiles(roots, msg.query) });
+        sendTo(ws, { type: 'fs.search.result', ref: msg.ref, items: await searchFiles(openRoots(store), msg.query) });
         return;
       }
       case 'fs.list': {

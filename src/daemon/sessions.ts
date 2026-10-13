@@ -101,10 +101,11 @@ export class SessionManager extends EventEmitter {
         s.updatedAt = Date.now();
         store.upsertSession(s);
       }
-      // head coach cards were larger than a coach's: shrink a stored one about its centre
-      const head = cardSize('head');
-      if (s.role === 'head' && (s.w > head.w * 1.2 || s.h > head.h * 1.2)) {
+      // head coach cards had other sizes (wide, earlier 1.5x): reshape a stored one about its centre
+      const head = cardSize('head', s.projectId);
+      if (s.role === 'head' && (s.w !== head.w || s.h !== head.h)) {
         s.x = Math.round(s.x + (s.w - head.w) / 2);
+        s.y = Math.round(s.y + (s.h - head.h) / 2);
         s.w = head.w;
         s.h = head.h;
         store.upsertSession(s);
@@ -508,7 +509,7 @@ export class SessionManager extends EventEmitter {
     const def = getAgentDef(opts.agent);
     const now = Date.now();
     const role = opts.role ?? 'player';
-    const size = cardSize(role);
+    const size = cardSize(role, opts.projectId);
     const pos = opts.at ?? this.freeSlot(role === 'player' ? opts.projectId : null, size.w, size.h);
     const s: StoredSession = {
       id: randomUUID(),
@@ -549,7 +550,7 @@ export class SessionManager extends EventEmitter {
     const def = getAgentDef(opts.agent);
     const now = Date.now();
     // no saved layout: a free spot like a new session
-    const size = { w: opts.w ?? cardSize(opts.role ?? 'player').w, h: opts.h ?? cardSize(opts.role ?? 'player').h };
+    const size = { w: opts.w ?? cardSize(opts.role ?? 'player', opts.projectId).w, h: opts.h ?? cardSize(opts.role ?? 'player', opts.projectId).h };
     // (clear of every card: imports land in several parts at once)
     const pos = opts.x !== undefined && opts.y !== undefined ? { x: opts.x, y: opts.y } : this.freeSlot(null, size.w, size.h);
     const s: StoredSession = {

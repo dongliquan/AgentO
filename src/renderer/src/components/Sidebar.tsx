@@ -3,7 +3,7 @@ import { useStore, type TreeFilter } from '@/store';
 import { send } from '@/client';
 import { AgentPicker } from './AgentPicker';
 import { newProject } from '@/commands';
-import { ProjectTree } from './ProjectTree';
+import { ProjectTree, SessionRow } from './ProjectTree';
 import { SidebarOrders } from './SidebarOrders';
 
 const FILTERS: { id: TreeFilter; label: string }[] = [
@@ -17,6 +17,10 @@ export function Sidebar(): JSX.Element {
   const setFilter = useStore((s) => s.setTreeFilter);
   const setRightTab = useStore((s) => s.setRightTab);
   const [chatAt, setChatAt] = useState<{ x: number; y: number } | null>(null);
+  const teamHead = useStore((s) => {
+    for (const x of s.sessions.values()) if (x.role === 'head' && !x.projectId) return x;
+    return undefined;
+  });
 
   return (
     <div className="sidebar">
@@ -44,6 +48,12 @@ export function Sidebar(): JSX.Element {
       </div>
       {/* the manager's orders sit above the projects they go to */}
       <SidebarOrders />
+      {/* the team-wide Head Coach: between the manager's orders and the projects it routes them to */}
+      {teamHead && (
+        <div className="sidebar-head">
+          <SessionRow session={teamHead} depth={10} />
+        </div>
+      )}
       <div className="sidebar-header">
         <span>PROJECTS</span>
         <span className="grow" />

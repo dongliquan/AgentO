@@ -152,7 +152,7 @@ export function ChatView({
   }, [tail, s.attention]);
 
   return (
-    <div className="chat" onPointerDown={(e) => e.stopPropagation()} onWheel={(e) => { if (!e.ctrlKey) e.stopPropagation(); }}>
+    <div className="chat" data-cwd={s.cwd} onPointerDown={(e) => e.stopPropagation()} onWheel={(e) => { if (!e.ctrlKey) e.stopPropagation(); }}>
       {hasTeam && !searching && (
         <div className="chat-filter" role="tablist" aria-label="Show messages">
           {(['all', 'me', 'team'] as const).map((f) => (

@@ -625,14 +625,17 @@ export class Team {
     if (projectId && !project) throw new Error('Project not found');
     if (project?.parentId) throw new Error('A head coach belongs to a project, not to a part');
     if (this.all().some((s) => s.role === 'head' && s.projectId === projectId)) throw new Error('That project already has a head coach');
-    return this.sessions.create({
+    const head = this.sessions.create({
       projectId,
       folderId: '',
       cwd: this.headDir(projectId),
       agent: 'claude',
       role: 'head',
-      title: project ? `Head Coach · ${project.name}` : 'Head Coach'
+      title: project ? `Coach · ${project.name}` : 'Head Coach'
     });
+    // its place in the team layout right away (a new project: the next spot in the grid), as Auto Arrange would
+    if (projectId) this.arrange(projectId);
+    return head;
   }
 
   createCoach(projectId: string, agent: AgentKind = 'claude'): Session {
