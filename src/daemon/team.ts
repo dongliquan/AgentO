@@ -200,6 +200,9 @@ function projectPath(id: string, projects: Project[]): string {
   return parent ? `${parent.name} › ${p.name}` : p.name;
 }
 
+/** The cross-check reviewer every new project gets: a Codex session (a second model) beside the Claude players. */
+export const REVIEWER_TITLE = 'Codex 검토';
+
 function headMd(project: Project | undefined, projects: Project[]): string {
   const parts = project ? projects.filter((p) => p.parentId === project.id).map((p) => `- ${p.name} (id ${p.id})`).join('\n') : '';
   const scope = project
@@ -237,7 +240,11 @@ ${scope}
 - When a session finishes what you sent, you get an "[AgentO] … finished" message with its last reply — no need to poll.
   Its last reply is normally enough — \`read_session\` (max_entries 3) only when it is unclear. Decide the next step,
   and \`report_up\` to the manager when an order is done or blocked.
-- Questions you cannot answer yourself go to the manager with \`report_up\`.
+- Questions you cannot answer yourself go to the manager with \`report_up\`.${project ? `
+- Review: if your project has a Codex session titled "${REVIEWER_TITLE}" (\`list_sessions\`), it is the cross-check reviewer —
+  a second model. Claude players do the work; before you report a finished piece to the manager, \`send_to_session\` the
+  reviewer what to check (goal, changed files or commits, how to verify). It reviews only and does not edit files.
+  Put its verdict in your report and send real problems back to the player. Never give it implementation work.` : ''}
 
 ${LEAN_CONTEXT}
 `;

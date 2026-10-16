@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import type { DesktopApi, MenuNode } from '@shared/protocol';
-import type { PanelsRelay, WindowRole } from '@shared/extra';
+import type { DispatchRequest, PanelsRelay, WindowRole } from '@shared/extra';
 
 const desktop: DesktopApi = {
   getDaemonInfo: () => ipcRenderer.invoke('daemon.info') as Promise<{ port: number; token: string }>,
@@ -47,6 +47,18 @@ const desktopEvents = {
     ipcRenderer.on('daemon-restarted', listener);
     return () => {
       ipcRenderer.removeListener('daemon-restarted', listener);
+    };
+  },
+  /** agento:// requests (and rejected ones); subscribing tells the main process this page listens */
+  onDispatch: (cb: (req: DispatchRequest) => void, onError: (err: { error: string; url: string }) => void) => {
+    const a = (_e: IpcRendererEvent, req: DispatchRequest) => cb(req);
+    const b = (_e: IpcRendererEvent, err: { error: string; url: string }) => onError(err);
+    ipcRenderer.on('dispatch', a);
+    ipcRenderer.on('dispatch.error', b);
+    ipcRenderer.send('dispatch.ready');
+    return () => {
+      ipcRenderer.removeListener('dispatch', a);
+      ipcRenderer.removeListener('dispatch.error', b);
     };
   },
   /** find-in-page results: matches and which one is selected (1-based) */

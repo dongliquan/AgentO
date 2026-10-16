@@ -37,7 +37,10 @@ function filesOf(root: string): Promise<string[]> {
 
 /** Start indexing folders ahead of the first search. */
 export function warmIndex(roots: string[]): void {
-  for (const r of new Set(roots.map((x) => path.resolve(x)))) void filesOf(r);
+  // one folder at a time: a background job, not a burst of disk reads
+  void (async () => {
+    for (const r of new Set(roots.map((x) => path.resolve(x)))) await filesOf(r).catch(() => undefined);
+  })();
 }
 
 function walk(root: string): Promise<string[]> {

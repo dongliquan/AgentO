@@ -6,6 +6,7 @@ import { send } from '@/client';
 import { exportSession, focusTerminal, removeSession, selectAndReveal } from '@/commands';
 import { AGENT_LABELS, agentColor, basename, formatElapsed, displayTitle } from '@/lib/format';
 import { RoleTag } from './RoleTag';
+import { useNeedsIds } from './NeedsYou';
 import { lastLines } from '@/lib/ansi';
 import { startDrag, throttle } from '@/lib/drag';
 import { useNow } from '@/lib/hooks';
@@ -31,6 +32,7 @@ const MIN_H = 160;
 
 function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.Element {
   const s = session;
+  const needsYou = useNeedsIds((st) => st.ids.has(s.id));
   const patchLocal = useStore((st) => st.patchSessionLocal);
   const select = useStore((st) => st.select);
   const setFocusMode = useStore((st) => st.setFocusMode);
@@ -180,6 +182,7 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
           </div>
         )}
         <ContextSize session={s} />
+        {needsYou && <span className="needs-badge" title="Waiting for your decision — answer in its chat">Needs you</span>}
         <StatusBadge status={s.status} attention={s.attention} compact={s.w < 300} />
         <button
           className="card-menu-btn"

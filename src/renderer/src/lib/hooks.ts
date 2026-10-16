@@ -9,3 +9,15 @@ export function useNow(ms = 1000): number {
   }, [ms]);
   return now;
 }
+
+/** Escape closes a popover or dialog while it is open. */
+export function useEscape(active: boolean, close: () => void): void {
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') close();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [active, close]);
+}

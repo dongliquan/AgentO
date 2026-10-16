@@ -4,6 +4,26 @@
  */
 import type { AgentDef } from './protocol';
 
+/** An `agento://dispatch` request from another app (ReadO's Commit / Push), checked by the main process. */
+export interface DispatchRequest {
+  id: string;
+  kind: 'commit' | 'push';
+  /** absolute path of the repository */
+  repo: string;
+  branch?: string;
+  /** commits ahead of the remote (push) */
+  ahead?: number;
+  /** number of changed files (commit) */
+  files?: number;
+  /** a short commit message draft */
+  msg?: string;
+  /** the changed files, from the request's ref file */
+  fileList?: string[];
+  /** the sending app, e.g. "ReadO" */
+  from: string;
+  url: string;
+}
+
 /** AgentDef plus a best-effort "is the command installed on this machine" flag. */
 export type AgentDefEx = AgentDef & { available?: boolean };
 

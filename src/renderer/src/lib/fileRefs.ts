@@ -1,14 +1,10 @@
 import { create } from 'zustand';
 import { useStore } from '@/store';
 import { send } from '@/client';
-
-import { isFileRef } from './fileRefPattern';
-
-export { isFileRef };
+import { normPath } from './format';
 
 /** "src/a.ts:12-20" → "src/a.ts" */
 const stripLine = (t: string): string => t.trim().replace(/:\d+(?:[-~]\d+)?$/, '');
-const norm = (p: string): string => p.replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase();
 const isAbs = (p: string): boolean => /^[A-Za-z]:[\\/]/.test(p) || p.startsWith('\\\\');
 
 /**
@@ -20,8 +16,7 @@ export async function resolveFileRef(ref: string, cwd?: string): Promise<string 
   if (isAbs(want)) return want;
   if (cwd && /[\\/]/.test(want)) {
     // a relative path inside the session's folder
-    const joined = `${cwd.replace(/[\\/]+$/, '')}\\${want.replace(/\//g, '\\')}`;
-    return joined;
+    return `${cwd.replace(/[\\/]+$/, '')}\\${want.replace(/\//g, '\\')}`;
   }
   const name = want.split(/[\\/]/).pop()!;
   const tag = `ref:${Date.now()}:${Math.random()}`;
@@ -37,10 +32,10 @@ export async function resolveFileRef(ref: string, cwd?: string): Promise<string 
       resolve([]);
     }, 30000); // the first search walks every project folder: seconds on big ones
   });
-  const tail = norm(want);
-  const hits = items.map((i) => i.path).filter((p) => norm(p).endsWith(`\\${tail}`) || norm(p) === tail);
+  const tail = normPath(want);
+  const hits = items.map((i) => i.path).filter((p) => normPath(p).endsWith(`\\${tail}`) || normPath(p) === tail);
   if (!hits.length) return null;
-  const inCwd = cwd ? hits.find((p) => norm(p).startsWith(norm(cwd) + '\\')) : undefined;
+  const inCwd = cwd ? hits.find((p) => normPath(p).startsWith(normPath(cwd) + '\\')) : undefined;
   return inCwd ?? hits[0]!;
 }
 

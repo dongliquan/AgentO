@@ -1,13 +1,15 @@
 import { useState } from 'react';
+import { NeedsYouAlerts } from './NeedsYou';
 import { openNotification, useNotifyPrefs, useToasts, type NotifyPrefs } from '@/lib/notify';
 
 /** Reports and finished orders while the window is in front (in the background they are OS notifications). */
-export function Toasts(): JSX.Element | null {
+export function Toasts(): JSX.Element {
   const toasts = useToasts((s) => s.toasts);
   const dismiss = useToasts((s) => s.dismiss);
-  if (toasts.length === 0) return null;
   return (
     <div className="toasts" role="status" aria-live="polite">
+      {/* what waits for the manager stays on top until it is clicked */}
+      <NeedsYouAlerts />
       {toasts.map((t) => (
         <div
           key={t.id}

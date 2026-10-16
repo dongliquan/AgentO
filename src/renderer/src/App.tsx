@@ -8,6 +8,9 @@ import { OrderFlowDialog } from '@/components/OrderFlow';
 import { NewProjectDialog } from '@/components/NewProjectDialog';
 import { FileRefMenu } from '@/components/FileRefMenu';
 import { ProjectColorMenu } from '@/components/ProjectColorMenu';
+import { NeedsYouWatcher } from '@/components/NeedsYou';
+import { PathMenu } from '@/components/PathMenu';
+import { DispatchDialog } from '@/components/DispatchDialog';
 import { reconnectClient } from '@/client';
 import { TopBar } from '@/components/TopBar';
 import { Sidebar } from '@/components/Sidebar';
@@ -196,6 +199,9 @@ export function App(): JSX.Element {
       <NewProjectDialog />
       <FileRefMenu />
       <ProjectColorMenu />
+      <NeedsYouWatcher />
+      <PathMenu />
+      <DispatchDialog />
       <PromptDialog />
     </div>
   );

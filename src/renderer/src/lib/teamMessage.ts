@@ -11,6 +11,8 @@ export interface TeamMessage {
   from: string;
   role?: string;
   sessionId?: string;
+  /** an AgentO notice about a session ("<title>" (<role>, session <id>) finished …): that session's id or id prefix */
+  aboutId?: string;
   /** e.g. 'Routine "Daily stand-up" #3' */
   via?: string;
   body: string;
@@ -39,6 +41,12 @@ export function parseTeamMessages(raw: string): TeamMessage[] | null {
     if (cur) cur.body += (cur.body ? '\n' : '') + line;
   }
   if (cur) out.push(cur);
-  for (const t of out) t.body = t.body.trim();
+  for (const t of out) {
+    t.body = t.body.trim();
+    if (t.kind === 'notice') {
+      const m = /^"[^"]*" \([^,]+, session ([0-9a-f-]{6,36})\)/.exec(t.body);
+      if (m) t.aboutId = m[1];
+    }
+  }
   return out;
 }

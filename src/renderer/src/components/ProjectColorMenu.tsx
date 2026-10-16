@@ -1,9 +1,9 @@
-import { useEffect } from 'react';
 import { create } from 'zustand';
 import { PROJECT_COLORS } from '@shared/protocol';
 import { send } from '@/client';
 import { useStore } from '@/store';
 import { projectColor } from '@/lib/format';
+import { useEscape } from '@/lib/hooks';
 
 /** The color picker a project's color dot opens: the palette, or any color. */
 export const useColorMenu = create<{ at: { x: number; y: number; projectId: string } | null; show: (at: { x: number; y: number; projectId: string }) => void; hide: () => void }>((set) => ({
@@ -16,14 +16,7 @@ export function ProjectColorMenu(): JSX.Element | null {
   const at = useColorMenu((s) => s.at);
   const hide = useColorMenu((s) => s.hide);
   const projects = useStore((s) => s.projects);
-  useEffect(() => {
-    if (!at) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') hide();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [at, hide]);
+  useEscape(!!at, hide);
   if (!at) return null;
   const project = projects.find((p) => p.id === at.projectId);
   if (!project) return null;

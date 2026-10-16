@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { resolveFileRef, useFileRefMenu, useReveal } from '@/lib/fileRefs';
 import { openFile } from '@/lib/openfile';
+import { useEscape } from '@/lib/hooks';
+import { copyPath } from './PathMenu';
 
 /**
  * File names in chats and reports (`status-report.md`, `src/a.ts:12`, links to local files) are clickable: this menu
@@ -34,14 +36,7 @@ export function FileRefMenu(): JSX.Element | null {
       live = false;
     };
   }, [at]);
-  useEffect(() => {
-    if (!at) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') hide();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [at, hide]);
+  useEscape(!!at, hide);
   if (!at) return null;
 
   const left = Math.min(at.x, window.innerWidth - 260);
@@ -59,7 +54,7 @@ export function FileRefMenu(): JSX.Element | null {
         </div>
         <button className="item" disabled={!path} onClick={act((p) => openFile(p, at.cwd ?? ''))}>Open</button>
         <button className="item" disabled={!path} onClick={act((p) => useReveal.getState().reveal(p))}>Show in sidebar</button>
-        <button className="item" disabled={!path} onClick={act((p) => void navigator.clipboard.writeText(p))}>Copy path</button>
+        <button className="item" disabled={!path} onClick={act((p) => copyPath(p, 'Path'))}>Copy path</button>
       </div>
     </>
   );

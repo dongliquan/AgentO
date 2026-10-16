@@ -167,12 +167,19 @@ export function formatBytes(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
+/** A project's top-level project (a part's project; a project is its own). */
+export function rootProject<P extends { id: string; parentId?: string }>(projectId: string, projects: P[]): P | undefined {
+  const p = projects.find((x) => x.id === projectId);
+  return p?.parentId ? projects.find((x) => x.id === p.parentId) ?? p : p;
+}
+
 /** A project's color (a part takes its project's), for tags, the tree, the Ground frame and the Manager tab. */
 export function projectColor(projectId: string, projects: { id: string; parentId?: string; color?: string }[]): string {
-  const p = projects.find((x) => x.id === projectId);
-  const root = p?.parentId ? projects.find((x) => x.id === p.parentId) : p;
-  return root?.color ?? '#64748b';
+  return rootProject(projectId, projects)?.color ?? '#64748b';
 }
+
+/** A Windows path as a comparison key: backslashes, no trailing separator, lower case. */
+export const normPath = (p: string): string => p.replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase();
 
 /** CSS custom property carrying a project color: style={pcStyle(color)}, used as var(--pc) in styles.css. */
 export function pcStyle(color: string): Record<string, string> {

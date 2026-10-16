@@ -13,6 +13,11 @@ extraResources:
   # built-in demo workspace (the "/demo shop" order in the Orders tab)
   - from: demo/shop-team/workspace
     to: demo/shop-team/workspace
+# agento:// links (ReadO's Commit / Push buttons); the app also registers itself at start (main/deeplink.ts)
+protocols:
+  - name: AgentO
+    schemes:
+      - agento
 asarUnpack:
   - "**/node_modules/node-pty/**"
   - "**/node_modules/better-sqlite3/**"

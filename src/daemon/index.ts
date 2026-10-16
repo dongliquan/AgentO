@@ -21,7 +21,7 @@ import { detectAgents } from './agents';
 import { collectUsage } from './usage';
 import { gitChanged, listDir, readFileCapped, searchFiles, warmIndex } from './fsapi';
 import { TranscriptTail, findTranscript } from './transcript';
-import { Team } from './team';
+import { Team, REVIEWER_TITLE } from './team';
 import { Routines } from './routines';
 import { parseDemoCommand, runDemo } from './demo';
 import { exportProject, importProject } from './projectfile';
@@ -30,8 +30,16 @@ import { agentConnections } from './agentstatus';
 import { usageReport } from './usagereport';
 import { fixPathFromLoginShell } from '@shared/loginpath';
 
+const REVIEWER_NOTE = (id: string): string => `
+Review: the project has a Codex session "${REVIEWER_TITLE}" (session ${id.slice(0, 8)}) for cross-checking — a second
+opinion from another model. Claude players do the work; Codex only reviews. When a piece of work is finished, before
+you report it to the manager as done, send_to_session the reviewer what to check: the goal, the changed files or
+commits, and how to verify. It reads and runs checks but does not edit files. Put its verdict in your report and send
+real problems back to the player. Do not give it implementation work, and do not create other reviewers.
+`;
+
 /** New project from Orders: how the head coach is briefed (plan: report the plan first and wait for the go). */
-const START_ORDER = (plan: boolean, brief: string): string =>
+const START_ORDER = (plan: boolean, brief: string, reviewer?: string): string =>
   `[New project]
 You lead this new project. Below is the manager's brief.
 1. Get the starting point from list_projects and a quick look at the top level of the folder(s) — do not read the
@@ -45,7 +53,7 @@ You lead this new project. Below is the manager's brief.
 ${plan ? `5. report_up to the manager, in Korean: the parts, the players, the first tasks and the order of work. Then WAIT for
    the manager's go before sending anyone work.` : `5. Hand out the first tasks (send_to_session to the players), then
    report_up the team and the plan to the manager, in Korean.`}
-
+${reviewer ? REVIEWER_NOTE(reviewer) : ''}
 Brief from the manager:
 ${brief}`;
 
@@ -312,7 +320,18 @@ async function main(): Promise<void> {
     for (const d of dirs) store.addFolder(project.id, d, path.basename(d) || d, true);
     broadcast({ type: 'projects', projects: store.listProjects() });
     const head = team.createHead(project.id);
-    team.order({ kind: 'session', sessionId: head.id }, START_ORDER(plan, text.trim()), via, true);
+    // the cross-check reviewer: a Codex session in the project folder, stopped until the head coach sends it a review
+    let reviewer: Session | undefined;
+    try {
+      const folder = store.listProjects().find((p) => p.id === project.id)?.folders[0];
+      if (folder) {
+        reviewer = sessions.restore({ projectId: project.id, folderId: folder.id, cwd: folder.path, agent: 'codex', role: 'player', title: REVIEWER_TITLE });
+        team.arrange(project.id);
+      }
+    } catch (e) {
+      log.warn('could not add the Codex reviewer', name, (e as Error).message);
+    }
+    team.order({ kind: 'session', sessionId: head.id }, START_ORDER(plan, text.trim(), reviewer?.id), via, true);
     broadcast({ type: 'orders.done', done: store.listDoneOrders(), tasks: store.listTaskOrders() });
     log.info('project started from an order', name, dirs.join(', '), via);
     return head;

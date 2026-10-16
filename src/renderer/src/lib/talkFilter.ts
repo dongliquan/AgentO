@@ -12,8 +12,8 @@ function load(): string {
 }
 
 /**
- * The Manager tab's project filter (the conversation above the order box). Shared, so picking a project in the order
- * box below narrows the conversation to it too. '' = all projects.
+ * The project filter shared by the Manager tab (and its order box), the Inbox and the Logs: picking a project in one
+ * narrows the others too, in every window. '' = all projects.
  */
 export const useTalkProject = create<{ project: string; setProject: (id: string) => void }>((set) => ({
   project: load(),
@@ -26,3 +26,12 @@ export const useTalkProject = create<{ project: string; setProject: (id: string)
     }
   }
 }));
+
+// the other window (panels / main) picked a project: follow it
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key !== KEY) return;
+    const id = load();
+    if (useTalkProject.getState().project !== id) useTalkProject.setState({ project: id });
+  });
+}

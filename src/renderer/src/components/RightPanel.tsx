@@ -3,8 +3,10 @@ import type { InboxItem, Routine, Session, TeamOrderTarget } from '@shared/proto
 import { unreadCount, useStore, type RightTab } from '@/store';
 import { requestChanged, send } from '@/client';
 import { exportSession, focusTerminal, removeSession, selectAndReveal } from '@/commands';
-import { AGENT_LABELS, STATUS_LABELS, projectLabel, displayTitle, basename, formatDateTime, formatTime, relativeTime } from '@/lib/format';
+import { AGENT_LABELS, STATUS_LABELS, projectLabel, displayTitle, roleLabel, basename, formatDateTime, formatTime, relativeTime } from '@/lib/format';
 import { RoleTag } from './RoleTag';
+import { inboxHtml, inboxViewOf } from '@/lib/inboxText';
+import { openNeed, useNeedsIds } from './NeedsYou';
 import { useNow } from '@/lib/hooks';
 import { openFile } from '@/lib/openfile';
 import { StatusBadge } from './StatusBadge';
@@ -15,9 +17,8 @@ import { TeamLog } from './TeamLog';
 import { WebPanel } from './WebPanel';
 import { TAB_ORDER, useDock } from '@/lib/dock';
 import { ShareSplitter } from './Splitter';
-import { TaskList } from './TaskList';
-import { useOpenInbox as useTaskInbox, threadsOf } from '@/lib/closed';
-import { isTask, orderStatus, pieceResult } from '@/lib/threads';
+import { threadsOf } from '@/lib/closed';
+import { pieceResult } from '@/lib/threads';
 import { orderProgress } from '@/lib/progress';
 import { lastLines } from '@/lib/ansi';
 import { matches, selecting, useHighlight } from '@/lib/search';
@@ -35,33 +36,23 @@ import { AttachmentBar } from './AttachmentBar';
 import { kbd } from '@/lib/keys';
 import { useBuffer } from '@/lib/buffers';
 
-const TAB_LABEL: Record<RightTab, string> = { orders: 'Manager', tasks: 'Tasks', inbox: 'Inbox', detail: 'Session', log: 'Logs', web: 'Web' };
+const TAB_LABEL: Record<RightTab, string> = { orders: 'Manager', inbox: 'Inbox', detail: 'Session', log: 'Logs', web: 'Web' };
 const TAB_TITLE: Partial<Record<RightTab, string>> = {
   orders: 'You, the manager: what you said and the answers, and the order box (projects, new project, routines)',
-  tasks: 'Your orders: what is open, reported, done',
   log: 'Everything the team sent each other, by order',
   web: 'Gemini, ChatGPT, ERNIE on the web — your own sign-in and subscription'
 };
 
-/** Badge counts for the tab strip and the docked columns: reports to review (Tasks), unread (Inbox). */
+/** Badge counts for the tab strip and the docked columns: unread (Inbox). */
 function useTabCounts(): Partial<Record<RightTab, number>> {
   const unread = useStore(unreadCount);
-  const taskInbox = useTaskInbox();
-  const sessionsAll = useStore((s) => s.sessions);
-  const doneOrders = useStore((s) => s.doneOrders);
-  const taskOrders = useStore((s) => s.taskOrders);
-  const toReview = useMemo(() => {
-    const explicit = new Set(taskOrders);
-    return threadsOf(taskInbox).filter((t) => isTask(t, sessionsAll, explicit) && !doneOrders[t.item.id] && orderStatus(t, sessionsAll) === 'reported').length;
-  }, [taskInbox, sessionsAll, doneOrders, taskOrders]);
-  return { tasks: toReview, inbox: unread };
+  return { inbox: unread };
 }
 
 /** A tab's content (the Web tab is handled apart: its pages stay mounted). */
 function TabContent({ tab, session }: { tab: RightTab; session: Session | undefined }): JSX.Element | null {
   if (tab === 'detail') return session ? <Detail session={session} /> : <div className="rp-body muted dock-empty">Select a session on the Ground or in the tree.</div>;
   if (tab === 'orders') return <ManagerTab />;
-  if (tab === 'tasks') return <TaskList />;
   if (tab === 'log') return <TeamLog />;
   if (tab === 'inbox') return <Inbox />;
   return null;
@@ -302,20 +293,31 @@ function Inbox(): JSX.Element {
   const projects = useStore((s) => s.projects);
   const now = useNow(15000);
   const [query, setQuery] = useState('');
-  const [pick, setPick] = useDraft('inbox.project', '');
+  // the project filter is shared with the Manager tab and the Logs
+  const pick = useTalkProject((s) => s.project);
+  const setPick = useTalkProject((s) => s.setProject);
   const { only, rootOf } = useProjectFilter(pick);
   const body = useRef<HTMLDivElement>(null);
+  // what waits for the manager's decision is pinned on top and marked
+  const needs = useNeedsIds((st) => st.list);
+  const needItems = useMemo(() => new Set(needs.flatMap((n) => (n.itemId ? [n.itemId] : []))), [needs]);
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const items = inbox
     .filter(forUser)
     .filter((it) => !only || rootOf(it.sessionId) === only)
     .filter((it) => matches(query, it.text, sessions.get(it.sessionId)?.title))
-    .sort((a, b) => Number(a.read) - Number(b.read) || b.createdAt - a.createdAt);
+    // newest first, read or not (what waits for the manager is marked, not moved)
+    .sort((a, b) => b.createdAt - a.createdAt);
   useHighlight(body, query, [items.length, inbox]);
 
-  const open = (it: InboxItem): void => {
+  // a click reads the whole notification in place (and marks it read); Open goes to the session's conversation
+  const toggle = (it: InboxItem): void => {
     if (selecting()) return; // the user is selecting text to copy
     if (!it.read) send({ type: 'inbox.read', id: it.id });
-    if (sessions.has(it.sessionId)) selectAndReveal(it.sessionId);
+    const next = new Set(expanded);
+    if (next.has(it.id)) next.delete(it.id);
+    else next.add(it.id);
+    setExpanded(next);
   };
 
   return (
@@ -328,23 +330,47 @@ function Inbox(): JSX.Element {
         <div className="muted" style={{ fontSize: 12 }}>{query ? 'No matches.' : only ? 'No notifications for this project.' : 'No notifications.'}</div>
       ) : (
         <div className="inbox-list">
-          {items.map((it) => (
-            <div key={it.id} className={`inbox-item ${it.read ? '' : 'unread'}`} onClick={() => open(it)}>
+          {items.map((it) => {
+            // what happened, said plainly (the session's name is already in the row); cached per record
+            const s = sessions.get(it.sessionId);
+            const v = inboxViewOf(it, s?.title);
+            // a Coach / Head Coach by its role (the project tag already names the project), others by name
+            const who = !s ? '(deleted session)' : s.role === 'head' ? roleLabel(s) : s.role === 'coach' ? `${roleLabel(s)} · ${displayTitle(s)}` : displayTitle(s);
+            return (
+            <div key={it.id} className={`inbox-item ${it.read ? '' : 'unread'} ${needItems.has(it.id) ? 'needs' : ''} ${expanded.has(it.id) ? 'open' : ''}`} onClick={() => toggle(it)}>
               <span className={`ic ${it.kind}`}>{KIND_ICON[it.kind]}</span>
               <div className="body">
                 <div className="st">
-                  {(() => {
-                    const s = sessions.get(it.sessionId);
-                    return s && s.projectId ? <span className="project-tag" style={pcStyle(projectColor(s.projectId, projects))} title={projectLabel(s.projectId, projects)}>{projectLabel(s.projectId, projects)}</span> : null;
-                  })()}
-                  <span className="ellipsis">{sessions.get(it.sessionId)?.title ?? '(deleted session)'}</span>
+                  {s && s.projectId && <span className="project-tag" style={pcStyle(projectColor(s.projectId, projects))} title={projectLabel(s.projectId, projects)}>{projectLabel(s.projectId, projects)}</span>}
+                  <span className="ellipsis inbox-who">{who}</span>
+                  <span className={`inbox-label ${v.tone}`}>{v.label}</span>
+                  {needItems.has(it.id) && <span className="needs-badge">Needs you</span>}
                   <span className="time" title={formatDateTime(it.createdAt)}>{relativeTime(it.createdAt, now)}</span>
-                  <CopyButton text={it.text} title="Copy this notification" />
+                  <CopyButton text={v.body} title="Copy this notification" />
+                  {sessions.has(it.sessionId) && (
+                    <button
+                      className="btn sm ghost inbox-open"
+                      title="Open the session's conversation (to answer it)"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!it.read) send({ type: 'inbox.read', id: it.id });
+                        openNeed(it.sessionId);
+                      }}
+                    >
+                      Open
+                    </button>
+                  )}
                 </div>
-                <div className={`tx ${query ? 'full' : ''}`} title={it.text}>{it.text}</div>
+                {query || expanded.has(it.id) ? (
+                  // the whole notification, formatted (headings, lists, tables, code, file links)
+                  <div className="tx full md chat-md" dangerouslySetInnerHTML={{ __html: inboxHtml(it, s?.title) }} />
+                ) : (
+                  <div className="tx">{v.line}</div>
+                )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
       {items.some((i) => !i.read) && (

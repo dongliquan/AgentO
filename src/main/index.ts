@@ -17,6 +17,7 @@ import {
 import type { FocusSessionEvent, PanelsRelay } from '@shared/extra';
 import type { MenuNode } from '@shared/protocol';
 import { fixPathFromLoginShell } from '@shared/loginpath';
+import { DispatchQueue, linkInArgs, registerScheme } from './deeplink';
 
 /** Windows AppUserModelId (taskbar grouping/icon). Declared before bootstrap() runs below. */
 const APP_ID = 'app.agento.desktop';
@@ -24,13 +25,25 @@ const APP_ID = 'app.agento.desktop';
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
+/** agento:// links (ReadO's Commit / Push), held until the main window's page listens */
+const dispatches = new DispatchQueue(() => getWindow(), () => showWindow());
 
 /* ---------- single instance ---------- */
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', () => showWindow());
+  // a second launch: Windows passes an agento:// link this way when AgentO already runs
+  app.on('second-instance', (_e, argv) => {
+    const link = linkInArgs(argv);
+    if (link) dispatches.push(link);
+    showWindow();
+  });
+  // macOS delivers links as an event (also before the app is ready)
+  app.on('open-url', (e, url) => {
+    e.preventDefault();
+    dispatches.push(url);
+  });
   void bootstrap();
 }
 
@@ -188,6 +201,11 @@ function createWindow(): BrowserWindow {
   });
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null;
+    dispatches.unloaded();
+  });
+  // the page itself reloads (not a frame or an in-page jump): links wait until it listens again
+  win.webContents.on('did-start-navigation', (e) => {
+    if (e.isMainFrame && !e.isSameDocument) dispatches.unloaded();
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -359,6 +377,9 @@ function serializeMenu(menu: Menu | null): MenuNode[] {
 /* ---------- IPC (DesktopApi) ---------- */
 
 function registerIpc(): void {
+  ipcMain.on('dispatch.ready', (e) => {
+    if (e.sender === getWindow()?.webContents) dispatches.loaded();
+  });
   // In-app title bar menu: the renderer draws the top-level labels, main pops the native submenu.
   ipcMain.handle('menu.labels', () => (appMenu?.items ?? []).filter((i) => i.visible !== false && i.submenu).map((i) => i.label));
   // HTML menu bar: the menu as data, and running an item by its index path (roles and checkboxes behave as native)
@@ -540,6 +561,10 @@ async function bootstrap(): Promise<void> {
   registerToastIdentity();
 
   await app.whenReady();
+  registerScheme();
+  // started by a link (AgentO was not running)
+  const startLink = linkInArgs(process.argv);
+  if (startLink) dispatches.push(startLink);
   setupWebviews();
   // macOS dev run: the Dock shows Electron's own icon (BrowserWindow.icon is ignored there); the packaged .app has icon.icns
   if (process.platform === 'darwin' && !app.isPackaged) {

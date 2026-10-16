@@ -11,6 +11,7 @@ import { AGENT_LABELS, basename, fileIcon, displayTitle, statusClass } from '@/l
 import { RoleTag } from './RoleTag';
 import { pcStyle, projectColor } from '@/lib/format';
 import { useColorMenu } from './ProjectColorMenu';
+import { copyPath, usePathMenu } from './PathMenu';
 import { AgentPicker } from './AgentPicker';
 import { AgentIcon } from './AgentIcon';
 
@@ -140,7 +141,8 @@ export function ProjectTree(): JSX.Element {
     const folderName = (id: string): string | undefined => (p.folders.length > 1 ? p.folders.find((f) => f.id === id)?.name : undefined);
     const kind = isPart ? 'Part' : 'Project';
     return (
-      <div key={p.id}>
+      // a top-level project's block is tinted with its color, so each project reads as one area when expanded
+      <div key={p.id} className={isPart ? undefined : 'tree-project-block'} style={isPart ? undefined : pcStyle(projectColor(p.id, projects))}>
         <div
           className={`tree-row ${isPart ? 'tree-part' : 'tree-project'}`}
           style={{ paddingLeft: depth }}
@@ -458,6 +460,16 @@ function FolderNode({ folder, depth = 20, expanded, toggle, filter, onNewSession
         <span className="label">{shortPath(folder.path)}</span>
         <button
           className="icon-btn hover-act"
+          title="Copy Path"
+          onClick={(e) => {
+            e.stopPropagation();
+            copyPath(folder.path, 'Path');
+          }}
+        >
+          ⧉
+        </button>
+        <button
+          className="icon-btn hover-act"
           title="New Session Here"
           onClick={(e) => {
             e.stopPropagation();
@@ -603,7 +615,7 @@ function DirChildren({ path, cwd, depth, expanded, toggle, gitMap }: DirProps): 
         e.isDir ? (
           <DirNode key={e.path} entry={e} cwd={cwd} depth={depth} expanded={expanded} toggle={toggle} gitMap={gitMap} />
         ) : (
-          <FileRow key={e.path} entry={e} depth={depth} git={e.gitStatus ?? gitMap.get(e.path)} onClick={() => openFile(e.path, cwd)} />
+          <FileRow key={e.path} entry={e} depth={depth} git={e.gitStatus ?? gitMap.get(e.path)} onClick={() => openFile(e.path, cwd)} base={cwd} />
         )
       )}
     </>
@@ -618,31 +630,73 @@ function DirNode({ entry, cwd, depth, expanded, toggle, gitMap }: Omit<DirProps,
   }, [open, entry.path]);
   return (
     <div>
-      <div className="tree-row" style={{ paddingLeft: depth }} onClick={() => toggle(key)}>
+      <div
+        className="tree-row"
+        style={{ paddingLeft: depth }}
+        onClick={() => toggle(key)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          usePathMenu.getState().show({ x: e.clientX, y: e.clientY, path: entry.path, base: cwd, isDir: true });
+        }}
+        title={`${entry.path}
+Right-click: copy path`}
+      >
         <span className="caret">{open ? '▾' : '▸'}</span>
         <FolderIcon open={open} />
         <span className="label">{entry.name}</span>
+        <button
+          className="icon-btn hover-act"
+          title="Copy Path"
+          onClick={(e) => {
+            e.stopPropagation();
+            copyPath(entry.path, 'Path');
+          }}
+        >
+          ⧉
+        </button>
       </div>
       {open && <DirChildren path={entry.path} cwd={cwd} depth={depth + 14} expanded={expanded} toggle={toggle} gitMap={gitMap} />}
     </div>
   );
 }
 
-function FileRow({ entry, depth, git, onClick, onDouble, showRelative }: { entry: FsEntry; depth: number; git?: FsEntry['gitStatus']; onClick: () => void; onDouble?: () => void; showRelative?: string }): JSX.Element {
+function FileRow({ entry, depth, git, onClick, onDouble, showRelative, base }: { entry: FsEntry; depth: number; git?: FsEntry['gitStatus']; onClick: () => void; onDouble?: () => void; showRelative?: string; base?: string }): JSX.Element {
   const cardPath = useStore((s) => {
     const c = s.selectedFileCardId ? s.fileCards.get(s.selectedFileCardId) : undefined;
     return c?.path;
   });
-  const revealed = useReveal((s) => s.path);
-  const selectedPath = revealed && revealed.toLowerCase() === entry.path.toLowerCase() ? entry.path : cardPath;
+  const revealedHere = useReveal((s) => !!s.path && s.path.toLowerCase() === entry.path.toLowerCase());
+  const selectedPath = revealedHere ? entry.path : cardPath;
   let label = entry.name;
   if (showRelative && entry.path.startsWith(showRelative)) label = entry.path.slice(showRelative.length).replace(/^[\\/]/, '') || basename(entry.path);
   return (
-    <div className={`tree-row ${selectedPath === entry.path ? 'selected' : ''}`} data-path={entry.path.toLowerCase()} style={{ paddingLeft: depth }} onClick={onClick} onDoubleClick={onDouble} title={entry.path}>
+    <div
+      className={`tree-row ${selectedPath === entry.path ? 'selected' : ''}`}
+      data-path={entry.path.toLowerCase()}
+      style={{ paddingLeft: depth }}
+      onClick={onClick}
+      onDoubleClick={onDouble}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        usePathMenu.getState().show({ x: e.clientX, y: e.clientY, path: entry.path, base: base ?? showRelative ?? '', isDir: false });
+      }}
+      title={`${entry.path}
+Right-click: copy path`}
+    >
       <span className="caret" />
       <span className="ficon mono">{fileIcon(entry.name)}</span>
       <span className="label">{label}</span>
       {git && <span className={`git ${git}`}>{git}</span>}
+      <button
+        className="icon-btn hover-act"
+        title="Copy Path"
+        onClick={(e) => {
+          e.stopPropagation();
+          copyPath(entry.path, 'Path');
+        }}
+      >
+        ⧉
+      </button>
     </div>
   );
 }

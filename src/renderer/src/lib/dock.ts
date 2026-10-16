@@ -6,7 +6,7 @@ import { IS_PANELS } from '@/lib/role';
  * Right-panel tabs moved to the second panel beside it (⇥ on the main panel's tab strip, ⇤ on the second panel's) —
  * per window: the main window and the panels window each remember their own.
  */
-export const TAB_ORDER: RightTab[] = ['orders', 'tasks', 'inbox', 'detail', 'log', 'web'];
+export const TAB_ORDER: RightTab[] = ['orders', 'inbox', 'detail', 'log', 'web'];
 
 const KEY = `asm.docked.${IS_PANELS ? 'panels' : 'main'}`;
 

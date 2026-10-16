@@ -14,6 +14,8 @@ import { OrderFlowDialog } from '@/components/OrderFlow';
 import { NewProjectDialog } from '@/components/NewProjectDialog';
 import { FileRefMenu } from '@/components/FileRefMenu';
 import { ProjectColorMenu } from '@/components/ProjectColorMenu';
+import { NeedsYouWatcher } from '@/components/NeedsYou';
+import { PathMenu } from '@/components/PathMenu';
 import { UsageDialog } from '@/components/UsageDialog';
 import { Splitter } from '@/components/Splitter';
 import logo from '@/assets/logo.png';
@@ -86,6 +88,8 @@ export function PanelsApp(): JSX.Element {
       <NewProjectDialog />
       <FileRefMenu />
       <ProjectColorMenu />
+      <NeedsYouWatcher />
+      <PathMenu />
     </div>
   );
 }

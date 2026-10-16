@@ -25,7 +25,7 @@ export function Sidebar(): JSX.Element {
   return (
     <div className="sidebar">
       {/* the manager is the user, above every project: gives orders from the Manager tab */}
-      <div className="sidebar-manager" title="You are the manager — your tasks: what you ordered and where it stands" onClick={() => setRightTab('tasks')}>
+      <div className="sidebar-manager" title="You are the manager — your orders and the answers (Manager tab)" onClick={() => setRightTab('orders')}>
         <span className="manager-ico">♛</span>
         <span className="label">Welcome</span>
         <span className="role-tag manager">MANAGER</span>

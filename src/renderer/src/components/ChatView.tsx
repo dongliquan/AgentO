@@ -1,6 +1,6 @@
 import { parseTeamMessages, type TeamMessage } from '@/lib/teamMessage';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { ChatEntry, ChatTool, Session } from '@shared/protocol';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { ChatEntry, ChatTool, Project, Session } from '@shared/protocol';
 import { useStore } from '@/store';
 import { send } from '@/client';
 import { useChats } from '@/lib/chat';
@@ -15,6 +15,8 @@ import { getBuffer, useBuffer } from '@/lib/buffers';
 import { restoreEarlier } from './ContextSize';
 import { quickReplyOf, type QuickOption, type QuickReply } from '@/lib/quickReply';
 import { kbd } from '@/lib/keys';
+import { makeScoper, ScopeCtx, toolScope, useScoper, type Scope } from '@/lib/chatScope';
+import { displayTitle, pcStyle, projectColor, roleLabel } from '@/lib/format';
 
 /** Searchable text of a transcript entry: its text, or a tool's name, input and result. */
 function entryText(e: ChatEntry): string {
@@ -117,6 +119,12 @@ export function ChatView({
     }
   };
   const src = useMemo(() => sources(all), [all]);
+  // the Head Coach's chat labels each message with its project, a Coach's with its part (other chats do not watch the
+  // sessions: every status change replaces that map)
+  const isHead = s.role === 'head';
+  const sessions = useStore((st) => (isHead ? st.sessions : NO_SESSIONS));
+  const projects = useStore((st) => (isHead ? st.projects : NO_PROJECTS));
+  const scoper = useMemo(() => (isHead ? makeScoper(s, sessions, projects, all) : null), [isHead, s.id, s.projectId, sessions, projects, all]);
   const hasTeam = useMemo(() => [...src.values()].includes('team'), [src]);
   const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
   const found = useMemo(
@@ -169,6 +177,7 @@ export function ChatView({
           ))}
         </div>
       )}
+      <ScopeCtx.Provider value={scoper}>
       <div
         className="chat-scroll"
         ref={scroller}
@@ -231,6 +240,7 @@ export function ChatView({
           </div>
         )}
       </div>
+      </ScopeCtx.Provider>
       {choice && <WaitingBar session={s} tail={tail ?? ''} onShowTerminal={onShowTerminal} />}
       <Composer session={s} quick={quick} />
     </div>
@@ -255,14 +265,17 @@ function TeamRun({ entries, cwd, open, onToggle }: { entries: ChatEntry[]; cwd: 
   );
 }
 
-function Entry({ entry: e, cwd }: { entry: ChatEntry; cwd: string }): JSX.Element | null {
+const Entry = memo(EntryView);
+
+function EntryView({ entry: e, cwd }: { entry: ChatEntry; cwd: string }): JSX.Element | null {
   if (e.kind === 'user') {
     const team = e.text ? parseTeamMessages(e.text) : null;
-    if (team) return <>{team.map((t, i) => <TeamBubble key={i} msg={t} />)}</>;
+    if (team) return <>{team.map((t, i) => <TeamBubble key={i} msg={t} turn={e.id} />)}</>;
     // a long paste is recorded inside <pasted_content> tags: show just the text
     const text = e.text?.replace(/<\/?pasted_content\b[^>]*>/g, '').trim();
     return (
       <div className="chat-user">
+        <TurnScopes id={e.id} />
         {text && <CopyButton text={text} />}
         {e.images ? <div className="chat-attach">📎 {e.images} image{e.images > 1 ? 's' : ''}</div> : null}
         {text && <div className="chat-user-text">{text}</div>}
@@ -354,6 +367,8 @@ function patchStats(lines: string[]): string {
 
 function Tool({ tool: t, cwd }: { tool: ChatTool; cwd: string }): JSX.Element {
   const { title, detail } = toolSummary(t, cwd);
+  const sc = useScoper();
+  const scope = sc ? toolScope(t, sc) : null;
   const state = !t.done ? 'run' : t.isError ? 'err' : 'ok';
   let body: JSX.Element | null = null;
 
@@ -392,6 +407,7 @@ function Tool({ tool: t, cwd }: { tool: ChatTool; cwd: string }): JSX.Element {
       <div className="chat-tool">
         <div className="chat-tool-head">
           <b>{title}</b>
+          {scope && <ScopeTag scope={scope} />}
           {detail && <span className="chat-tool-detail" title={detail}>{detail}</span>}
         </div>
         {body}
@@ -695,7 +711,12 @@ export function Composer({ session: s, quick }: { session: Session; quick?: Quic
     files.clear();
   };
   // quick replies: one id per offered set, so "Other" (closing it) holds until the session asks again
-  const quickId = quick ? quick.options.map((o) => o.key + o.label).join('|') : '';
+  const quickId = quick ? [...quick.options.map((o) => o.key + o.label), ...(quick.questions ?? [])].join('|') : '';
+  // yes/no questions: one picked = sent as is; several = each one answered (checked = yes)
+  const words = quick?.ko ? { yes: '네', no: '아니요', goAhead: '네, 그렇게 해 주세요.', dont: '아니요, 하지 말아 주세요.' } : { yes: 'Yes', no: 'No', goAhead: 'Yes, go ahead.', dont: 'No, don’t.' };
+  const { yes, no } = words;
+  const answerAll = (qs: string[], ok: (i: number) => boolean): string =>
+    qs.length === 1 ? (ok(0) ? words.goAhead : words.dont) : qs.map((q, i) => `${i + 1}. ${q} → ${ok(i) ? yes : no}`).join('\n');
   const showQuick = !!quick && !text && !ghost && quickClosed !== quickId && (live || wakeable);
   const pickOne = (o: QuickOption): void => submit(`${o.key}. ${o.label}`);
 
@@ -710,8 +731,39 @@ export function Composer({ session: s, quick }: { session: Session; quick?: Quic
   return (
     <>
     {showQuick && quick && (
-      <div className="quick-reply" role="group" aria-label="Quick reply">
-        <span className="quick-reply-title">{quick.multi ? 'Pick any' : 'Pick one'}</span>
+      <div className={`quick-reply ${quick.questions ? 'yesno' : ''}`} role="group" aria-label="Quick reply">
+        {quick.questions && quick.questions.length === 1 && (
+          <>
+            <span className="quick-reply-title">Answer</span>
+            <label className="quick-opt" title={`Send "${answerAll(quick.questions, () => true)}"`}>
+              <input type="radio" name={`quick-${s.id}`} onChange={() => submit(answerAll(quick.questions!, () => true))} />
+              <b>{yes}</b>
+            </label>
+            <label className="quick-opt" title={`Send "${answerAll(quick.questions, () => false)}"`}>
+              <input type="radio" name={`quick-${s.id}`} onChange={() => submit(answerAll(quick.questions!, () => false))} />
+              <b>{no}</b>
+            </label>
+          </>
+        )}
+        {quick.questions && quick.questions.length > 1 && (
+          <>
+            <span className="quick-reply-title">Check = {yes}</span>
+            {quick.questions.map((q, i) => (
+              <label key={q} className={`quick-opt quick-q ${picked.includes(String(i)) ? 'on' : ''}`} title={q}>
+                <input
+                  type="checkbox"
+                  checked={picked.includes(String(i))}
+                  onChange={(e) => setPicked(e.target.checked ? [...picked, String(i)] : picked.filter((k) => k !== String(i)))}
+                />
+                <span className="ellipsis">{q}</span>
+              </label>
+            ))}
+            <button className="btn sm primary" onClick={() => submit(answerAll(quick.questions!, (i) => picked.includes(String(i))))}>
+              Send
+            </button>
+          </>
+        )}
+        {!quick.questions && <span className="quick-reply-title">{quick.multi ? 'Pick any' : 'Pick one'}</span>}
         {quick.options.map((o) =>
           quick.multi ? (
             <label key={o.key} className={`quick-opt ${picked.includes(o.key) ? 'on' : ''}`}>
@@ -729,7 +781,7 @@ export function Composer({ session: s, quick }: { session: Session; quick?: Quic
             </label>
           )
         )}
-        {quick.multi && (
+        {quick.multi && !quick.questions && (
           <button
             className="btn sm primary"
             disabled={!picked.length}
@@ -796,17 +848,39 @@ export function Composer({ session: s, quick }: { session: Session; quick?: Quic
   );
 }
 
+const NO_SESSIONS = new Map<string, Session>();
+const NO_PROJECTS: Project[] = [];
+
+/** How a sender shows on a team bubble: chip class, name, role, chip color — one string (cheap to compare). */
+function senderView(x: Session | undefined, projects: Project[]): string {
+  if (!x) return '';
+  const cls = x.role === 'head' ? (x.projectId ? 'project' : 'manager') : x.role;
+  return [cls, displayTitle(x), roleLabel(x), cls === 'project' ? projectColor(x.projectId, projects) : ''].join('\u0001');
+}
+
 /** A message from the team (another session, the manager's order, an AgentO notice) — sender chip + body. */
-function TeamBubble({ msg }: { msg: TeamMessage }): JSX.Element {
+function TeamBubble({ msg, turn }: { msg: TeamMessage; turn: string }): JSX.Element {
   const [open, setOpen] = useState(false);
+  const sc = useScoper();
+  // the sender as it is named now ("Head Coach · Shop" (head coach) → Shop · Coach), when the session still exists —
+  // selected as one string, so a status change of the sender does not re-render the bubble
+  const view = useStore((st) => senderView(msg.sessionId ? st.sessions.get(msg.sessionId) : undefined, st.projects));
+  const [senderClass, senderName, senderRole, senderColor] = view ? view.split('\u0001') : [];
+  // a session's message: its own project/part; a notice: the session it is about; an order: what the turn touched
+  const ref = msg.sessionId ?? msg.aboutId;
+  const own = ref && sc ? sc.ofSession(ref) : null;
+  const scopes = own ? [own] : msg.kind === 'session' ? [] : sc?.turns.get(turn) ?? [];
   const long = msg.body.length > 600;
-  const roleClass = msg.kind === 'order' ? 'manager' : msg.kind === 'notice' ? 'notice' : msg.role?.includes('head') ? 'head' : msg.role?.includes('coach') ? 'coach' : 'player';
+  const roleClass = senderClass ?? (msg.kind === 'order' ? 'manager' : msg.kind === 'notice' ? 'notice' : msg.role?.includes('head') ? 'head' : msg.role?.includes('coach') ? 'coach' : 'player');
+  const from = senderName ?? msg.from;
+  const role = senderRole ?? msg.role;
   return (
     <div className={`chat-team ${msg.kind}`}>
       <div className="chat-team-head">
-        <span className={`team-chip ${roleClass}`}>{msg.from}</span>
-        {msg.role && <span className="muted">{msg.role}</span>}
+        <span className={`team-chip ${roleClass}`} style={senderColor ? pcStyle(senderColor) : undefined}>{from}</span>
+        {role && role !== from && <span className="muted">{role}</span>}
         {msg.via && <span className="muted">{msg.via}</span>}
+        {scopes.map((x) => <ScopeTag key={x.name} scope={x} />)}
         <span className="grow" />
         <CopyButton text={msg.body} />
       </div>
@@ -816,4 +890,16 @@ function TeamBubble({ msg }: { msg: TeamMessage }): JSX.Element {
       )}
     </div>
   );
+}
+
+/** Project (Head Coach) or part (Coach) a message is about. */
+function ScopeTag({ scope }: { scope: Scope }): JSX.Element {
+  return <span className="scope-tag" style={pcStyle(scope.color)} title={scope.name}>{scope.name}</span>;
+}
+
+/** The projects/parts the user's own turn went to (in a Head Coach or Coach chat). */
+function TurnScopes({ id }: { id: string }): JSX.Element | null {
+  const list = useScoper()?.turns.get(id);
+  if (!list?.length) return null;
+  return <div className="chat-user-scopes">{list.map((x) => <ScopeTag key={x.name} scope={x} />)}</div>;
 }

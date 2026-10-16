@@ -1,5 +1,5 @@
 import type { DesktopApi } from '@shared/protocol';
-import type { PanelsRelay, WindowRole } from '@shared/extra';
+import type { DispatchRequest, PanelsRelay, WindowRole } from '@shared/extra';
 
 export interface DesktopEvents {
   /** fired when a notification is clicked */
@@ -7,6 +7,8 @@ export interface DesktopEvents {
   /** fired after Help › Restart Daemon succeeds; re-read getDaemonInfo() and reconnect */
   onDaemonRestarted(cb: () => void): () => void;
   onFindResult(cb: (r: { matches: number; active: number }) => void): () => void;
+  /** agento:// requests from other apps (main window only) */
+  onDispatch(cb: (req: DispatchRequest) => void, onError: (err: { error: string; url: string }) => void): () => void;
 }
 
 /** Detached panels window (left sidebar + right panel in one window). */

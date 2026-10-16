@@ -8,7 +8,7 @@ import { TeamFeedItem } from './TeamFeedItem';
 import { OrderCard } from './MyOrders';
 import { SearchBox } from './SearchBox';
 import { ProjectFilter, useProjectFilter } from './ProjectFilter';
-import { useDraft } from '@/lib/draft';
+import { useTalkProject } from '@/lib/talkFilter';
 
 import { count, descendants, prune, withManager, type LogNode } from '@/lib/threads';
 
@@ -91,7 +91,9 @@ export function TeamLog(): JSX.Element {
   const [query, setQuery] = useState('');
   const [bulk, setBulk] = useState<Bulk>({ open: false, nonce: 0 });
   const [shown, setShown] = useState(15);
-  const [pick, setPick] = useDraft('log.project', '');
+  // the project filter is shared with the Manager tab and the Inbox
+  const pick = useTalkProject((s) => s.project);
+  const setPick = useTalkProject((s) => s.setProject);
   const { only, rootOf } = useProjectFilter(pick);
   const body = useRef<HTMLDivElement>(null);
 

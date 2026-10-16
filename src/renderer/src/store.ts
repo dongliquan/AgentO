@@ -12,7 +12,7 @@ export const ZOOM_MIN = 0.2;
 export const ZOOM_MAX = 2.5;
 export type ViewMode = 'board' | 'split' | 'tabs';
 /** orders: the Manager tab (conversation + order box) */
-export type RightTab = 'detail' | 'inbox' | 'orders' | 'tasks' | 'log' | 'web';
+export type RightTab = 'detail' | 'inbox' | 'orders' | 'log' | 'web';
 /** projects: the left sidebar's tree · inbox: also opens the right panel's Inbox tab */
 export type ActivityView = 'projects' | 'inbox';
 export type TreeFilter = 'all' | 'sessions';
@@ -106,8 +106,6 @@ export interface AppState {
   claudeSessions: { path: string; items: ClaudeSessionInfo[] } | null;
   /** the manager's orders marked done (Tasks): order record id → when */
   doneOrders: Record<string, number>;
-  /** orders added as tasks explicitly (Tasks › Add Task, a new project) */
-  taskOrders: string[];
   /** Quick Open file search: the latest answer (ref = the query it answers) */
   fileSearch: { ref: string; items: { path: string; root: string }[] } | null;
   activeTabSessionId: string | null;
@@ -246,7 +244,6 @@ export const useStore = create<AppState>((set, get) => ({
   claudeSessions: null,
   fileSearch: null,
   doneOrders: {},
-  taskOrders: [],
   activeTabSessionId: null,
 
   fsLists: new Map(),
@@ -267,7 +264,6 @@ export const useStore = create<AppState>((set, get) => ({
           sessions,
           inbox: msg.inbox,
           doneOrders: msg.doneOrders ?? {},
-          taskOrders: msg.taskOrders ?? [],
           routines: msg.routines ?? [],
           usage: msg.usage,
           agents: msg.agents as AgentDefEx[],
@@ -347,7 +343,7 @@ export const useStore = create<AppState>((set, get) => ({
         set({ agentConnections: msg.items });
         break;
       case 'orders.done':
-        set({ doneOrders: msg.done, taskOrders: msg.tasks ?? [] });
+        set({ doneOrders: msg.done });
         break;
       case 'fs.search.result':
         set({ fileSearch: { ref: msg.ref, items: msg.items } });
