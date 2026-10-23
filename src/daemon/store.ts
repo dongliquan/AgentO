@@ -13,6 +13,7 @@ interface ProjectRow {
   parent_id: string | null;
   closed: number | null;
   color: string | null;
+  sort_order: number | null;
 }
 interface FolderRow {
   id: string;
@@ -46,6 +47,7 @@ interface SessionRow {
   pid: number | null;
   resume_id: string | null;
   prev_resume_ids: string | null;
+  model_pref: string | null;
   created_at: number;
   updated_at: number;
   exit_code: number | null;
@@ -175,6 +177,7 @@ function rowToSession(r: SessionRow): StoredSession {
     }
   }
   if (r.exit_code != null) s.exitCode = r.exit_code;
+  if (r.model_pref) s.modelPref = r.model_pref;
   if (r.command != null) s.command = r.command;
   if (r.args != null) {
     try {
@@ -266,6 +269,7 @@ export class Store {
     if (!cols.has('sort_order')) this.db.exec('ALTER TABLE sessions ADD COLUMN sort_order REAL');
     if (!cols.has('role')) this.db.exec("ALTER TABLE sessions ADD COLUMN role TEXT NOT NULL DEFAULT 'player'");
     if (!cols.has('prev_resume_ids')) this.db.exec('ALTER TABLE sessions ADD COLUMN prev_resume_ids TEXT');
+    if (!cols.has('model_pref')) this.db.exec('ALTER TABLE sessions ADD COLUMN model_pref TEXT');
     const inboxCols = new Set((this.db.prepare('PRAGMA table_info(inbox)').all() as { name: string }[]).map((c) => c.name));
     if (!inboxCols.has('from_id')) this.db.exec('ALTER TABLE inbox ADD COLUMN from_id TEXT');
     const projectCols = new Set((this.db.prepare('PRAGMA table_info(projects)').all() as { name: string }[]).map((c) => c.name));
@@ -276,6 +280,7 @@ export class Store {
     const uncolored = this.db.prepare('SELECT id FROM projects WHERE parent_id IS NULL AND color IS NULL ORDER BY created_at').all() as { id: string }[];
     for (const { id } of uncolored) this.db.prepare('UPDATE projects SET color = ? WHERE id = ?').run(this.nextColor(), id);
     const folderCols = new Set((this.db.prepare('PRAGMA table_info(folders)').all() as { name: string }[]).map((c) => c.name));
+    if (!projectCols.has('sort_order')) this.db.exec('ALTER TABLE projects ADD COLUMN sort_order REAL');
     if (!folderCols.has('auto_trust')) this.db.exec('ALTER TABLE folders ADD COLUMN auto_trust INTEGER NOT NULL DEFAULT 0');
     // the AI "manager" became the head coach (the user is the manager)
     this.db.exec("UPDATE sessions SET role = 'head' WHERE role = 'manager'");
@@ -297,7 +302,8 @@ export class Store {
   }
 
   private readProjects(): Project[] {
-    const projects = this.stmt('SELECT * FROM projects ORDER BY created_at').all() as ProjectRow[];
+    // the manager's order (dragged in the tree) first, then newer projects at the end
+    const projects = this.stmt('SELECT * FROM projects ORDER BY sort_order IS NULL, sort_order, created_at').all() as ProjectRow[];
     const folders = this.stmt('SELECT * FROM folders ORDER BY rowid').all() as FolderRow[];
     const byProject = new Map<string, Folder[]>();
     for (const f of folders) {
@@ -314,6 +320,25 @@ export class Store {
       ...(p.closed ? { closed: true } : {}),
       ...(p.color ? { color: p.color } : {})
     }));
+  }
+
+  /** When the manager last sent this session something (an order or a direct message), from the records. */
+  lastFromUserAt(sessionId: string): number | undefined {
+    const r = this.stmt("SELECT MAX(created_at) AS at FROM inbox WHERE session_id = ? AND from_id = 'user'").get(sessionId) as { at: number | null } | undefined;
+    return r?.at ?? undefined;
+  }
+
+  /** Move a project before another of its siblings (same parent), or to the end; the siblings are renumbered. */
+  moveProject(id: string, beforeId?: string): void {
+    const all = this.listProjects();
+    const me = all.find((p) => p.id === id);
+    if (!me) throw new Error('Project not found');
+    const siblings = all.filter((p) => (p.parentId ?? null) === (me.parentId ?? null) && p.id !== id);
+    const at = beforeId ? siblings.findIndex((p) => p.id === beforeId) : -1;
+    siblings.splice(at < 0 ? siblings.length : at, 0, me);
+    const set = this.db.prepare('UPDATE projects SET sort_order = ? WHERE id = ?');
+    this.db.transaction(() => siblings.forEach((p, i) => set.run(i, p.id)))();
+    this.projectsCache = null;
   }
 
   /** The first project color no project uses yet (then they repeat, least used first). */
@@ -446,16 +471,16 @@ export class Store {
   upsertSession(s: StoredSession): void {
     this.stmt(
         `INSERT INTO sessions (id, project_id, folder_id, cwd, agent, title, color, status, pid, resume_id,
-           created_at, updated_at, exit_code, x, y, w, h, cols, rows, command, args, role, sort_order, prev_resume_ids)
+           created_at, updated_at, exit_code, x, y, w, h, cols, rows, command, args, role, sort_order, prev_resume_ids, model_pref)
          VALUES (@id, @project_id, @folder_id, @cwd, @agent, @title, @color, @status, @pid, @resume_id,
-           @created_at, @updated_at, @exit_code, @x, @y, @w, @h, @cols, @rows, @command, @args, @role, @sort_order, @prev_resume_ids)
+           @created_at, @updated_at, @exit_code, @x, @y, @w, @h, @cols, @rows, @command, @args, @role, @sort_order, @prev_resume_ids, @model_pref)
          ON CONFLICT(id) DO UPDATE SET
            project_id=excluded.project_id, folder_id=excluded.folder_id, cwd=excluded.cwd, agent=excluded.agent,
            title=excluded.title, color=excluded.color, status=excluded.status, pid=excluded.pid,
            resume_id=excluded.resume_id, updated_at=excluded.updated_at, exit_code=excluded.exit_code,
            x=excluded.x, y=excluded.y, w=excluded.w, h=excluded.h, cols=excluded.cols, rows=excluded.rows,
            command=excluded.command, args=excluded.args, role=excluded.role, sort_order=excluded.sort_order,
-           prev_resume_ids=excluded.prev_resume_ids`
+           prev_resume_ids=excluded.prev_resume_ids, model_pref=excluded.model_pref`
       )
       .run({
         id: s.id,
@@ -469,6 +494,7 @@ export class Store {
         pid: s.pid ?? null,
         resume_id: s.resumeId ?? null,
         prev_resume_ids: s.prevResumeIds?.length ? JSON.stringify(s.prevResumeIds.slice(-10)) : null,
+        model_pref: s.modelPref ?? null,
         created_at: s.createdAt,
         updated_at: s.updatedAt,
         exit_code: s.exitCode ?? null,

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useGitSubjects } from '@/lib/gitSubjects';
 import type { AgentConnection, ClaudeSessionInfo, FsEntry, InboxItem, Project, Routine, ServerMessage, Session, SessionStatus, UsageInfo, UsageReport } from '@shared/protocol';
 import type { AgentDefEx } from '@shared/extra';
 import { emitTerm } from '@/lib/termbus';
@@ -7,15 +8,13 @@ import { arrangeTeam } from '@shared/layout';
 import { closedSessionIds, openSessions } from '@/lib/closedIds';
 import { applyChatSnapshot, applyChatUpsert, dropChat } from '@/lib/chat';
 
-export { BUFFER_CAP } from '@/lib/buffers';
 export const ZOOM_MIN = 0.2;
 export const ZOOM_MAX = 2.5;
-export type ViewMode = 'board' | 'split' | 'tabs';
+export type ViewMode = 'board' | 'split' | 'tabs' | 'timeline';
 /** orders: the Manager tab (conversation + order box) */
-export type RightTab = 'detail' | 'inbox' | 'orders' | 'log' | 'web';
+export type RightTab = 'detail' | 'files' | 'inbox' | 'orders' | 'log' | 'web';
 /** projects: the left sidebar's tree · inbox: also opens the right panel's Inbox tab */
 export type ActivityView = 'projects' | 'inbox';
-export type TreeFilter = 'all' | 'sessions';
 
 export interface FileCard {
   id: string;
@@ -84,6 +83,8 @@ export interface AppState {
   timeline: TimelineEntry[];
   focusMode: boolean;
   sidebarOpen: boolean;
+  /** the Ground's minimap (View › Minimap) */
+  minimapOpen: boolean;
   rightOpen: boolean;
   /** main window: the sidebar and right panel are shown in the separate panels window instead */
   panelsDetached: boolean;
@@ -91,7 +92,6 @@ export interface AppState {
   collapsedGroups: string[];
   rightTab: RightTab;
   activity: ActivityView;
-  treeFilter: TreeFilter;
   paletteOpen: boolean;
   paletteMode: 'quick' | 'command';
   newSessionOpen: boolean;
@@ -133,12 +133,12 @@ export interface AppState {
   setCenterView(v: 'sessions' | 'viewer'): void;
   setFocusMode(v: boolean): void;
   toggleSidebar(): void;
+  toggleMinimap(): void;
   toggleRight(): void;
   setPanelsDetached(v: boolean): void;
   toggleGroup(id: string): void;
   setRightTab(t: RightTab): void;
   setActivity(a: ActivityView): void;
-  setTreeFilter(f: TreeFilter): void;
   openPalette(mode: 'quick' | 'command'): void;
   closePalette(): void;
   openNewSession(preset?: NewSessionPreset): void;
@@ -226,12 +226,12 @@ export const useStore = create<AppState>((set, get) => ({
   timeline: [],
   focusMode: false,
   sidebarOpen: readFlag('asm.sidebarOpen', true),
+  minimapOpen: readFlag('asm.minimapOpen', true),
   rightOpen: readFlag('asm.rightOpen', true),
   panelsDetached: false,
   collapsedGroups: readList('asm.collapsedGroups'),
   rightTab: 'orders',
   activity: 'projects',
-  treeFilter: 'all',
   paletteOpen: false,
   paletteMode: 'quick',
   newSessionOpen: false,
@@ -347,6 +347,9 @@ export const useStore = create<AppState>((set, get) => ({
         break;
       case 'fs.search.result':
         set({ fileSearch: { ref: msg.ref, items: msg.items } });
+        break;
+      case 'git.subjects.result':
+        useGitSubjects.getState().add(msg.subjects);
         break;
       case 'claude.sessions':
         set({ claudeSessions: { path: msg.path, items: msg.items } });
@@ -467,6 +470,7 @@ export const useStore = create<AppState>((set, get) => ({
   setCenterView: (v) => set({ centerView: v }),
   setFocusMode: (v) => set({ focusMode: v }),
   toggleSidebar: () => set({ sidebarOpen: writeFlag('asm.sidebarOpen', !get().sidebarOpen) }),
+  toggleMinimap: () => set({ minimapOpen: writeFlag('asm.minimapOpen', !get().minimapOpen) }),
   toggleRight: () => set({ rightOpen: writeFlag('asm.rightOpen', !get().rightOpen) }),
   setPanelsDetached: (v) => set({ panelsDetached: v }),
   toggleGroup: (id) => {
@@ -489,7 +493,6 @@ export const useStore = create<AppState>((set, get) => ({
     if (a === 'projects') patch.sidebarOpen = true;
     set(patch);
   },
-  setTreeFilter: (f) => set({ treeFilter: f }),
   openPalette: (mode) => set({ paletteOpen: true, paletteMode: mode }),
   closePalette: () => set({ paletteOpen: false }),
   openNewSession: (preset) => set({ newSessionOpen: true, newSessionPreset: preset ?? {} }),

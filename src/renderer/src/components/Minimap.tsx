@@ -11,7 +11,7 @@ const STATUS_COLOR: Record<string, string> = {
   working: '#3fb950',
   waiting: '#e5a50a',
   done: '#6a6a70',
-  error: '#f85149',
+  error: '#e06c75',
   hibernated: '#48484d'
 };
 

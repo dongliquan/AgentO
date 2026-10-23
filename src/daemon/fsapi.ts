@@ -201,3 +201,47 @@ export function gitChanged(cwd: string): Promise<FsEntry[]> {
     );
   });
 }
+
+/* ---------- commit subjects (the Timeline names a feature by its commit) ---------- */
+
+const subjects = new Map<string, string | null>();
+
+/** The git repositories in a folder: the folder itself, or its direct subfolders (a folder of many repositories). */
+async function reposIn(folder: string): Promise<string[]> {
+  try {
+    if ((await fs.stat(path.join(folder, '.git')).catch(() => null)) !== null) return [folder];
+    const subs = await fs.readdir(folder, { withFileTypes: true });
+    const out: string[] = [];
+    for (const d of subs) if (d.isDirectory() && (await fs.stat(path.join(folder, d.name, '.git')).catch(() => null)) !== null) out.push(path.join(folder, d.name));
+    return out.slice(0, 40);
+  } catch {
+    return [];
+  }
+}
+
+const gitSubject = (repo: string, hash: string): Promise<string | null> =>
+  new Promise((resolve) => {
+    execFile('git', ['-C', repo, 'log', '-1', '--format=%s', hash], { timeout: 3000, windowsHide: true }, (err, out) => resolve(err ? null : String(out).trim() || null));
+  });
+
+/** Commit subjects for hashes, looked up once each in the repositories of the given folders (cached). */
+export async function commitSubjects(folders: string[], hashes: string[]): Promise<Record<string, string>> {
+  const want = [...new Set(hashes.filter((h) => /^[0-9a-f]{7,40}$/i.test(h)))].slice(0, 200).filter((h) => !subjects.has(h));
+  const result: Record<string, string> = {};
+  if (want.length) {
+    const repos = [...new Set((await Promise.all([...new Set(folders)].slice(0, 20).map(reposIn))).flat())];
+    for (const h of want) {
+      let found: string | null = null;
+      for (const r of repos) {
+        found = await gitSubject(r, h);
+        if (found) break;
+      }
+      subjects.set(h, found);
+    }
+  }
+  for (const h of hashes) {
+    const v = subjects.get(h);
+    if (v) result[h] = v;
+  }
+  return result;
+}

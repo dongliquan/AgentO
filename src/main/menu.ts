@@ -79,7 +79,8 @@ export function buildMenu(actions: MenuActions): Menu {
       { role: 'paste', label: 'Paste' },
       { role: 'selectAll', label: 'Select All' },
       sep,
-      item('Find in Terminal', 'terminal.find', 'CmdOrCtrl+F'),
+      item('Find', 'edit.find', 'CmdOrCtrl+F'),
+      item('Find in Terminal', 'terminal.find'),
       item('Clear Terminal', 'terminal.clear', 'CmdOrCtrl+K'),
       sep,
       item('Rename Session', 'session.rename', 'F2')
@@ -92,6 +93,7 @@ export function buildMenu(actions: MenuActions): Menu {
       item('Ground', 'view.board', 'CmdOrCtrl+1'),
       item('Split View', 'view.split', 'CmdOrCtrl+2'),
       item('Tab View', 'view.tabs', 'CmdOrCtrl+3'),
+      item('Timeline', 'view.timeline', 'CmdOrCtrl+4'),
       sep,
       item('Zoom In', 'view.zoom-in', 'CmdOrCtrl+='),
       item('Zoom Out', 'view.zoom-out', 'CmdOrCtrl+-'),
@@ -103,6 +105,7 @@ export function buildMenu(actions: MenuActions): Menu {
       item('Inbox', 'view.inbox', 'CmdOrCtrl+Shift+I'),
       sep,
       item('Focus Mode', 'view.focus-mode', 'F11'),
+      item('Minimap', 'view.minimap'),
       sep,
       {
         label: 'Theme',

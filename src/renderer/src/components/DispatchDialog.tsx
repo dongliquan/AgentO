@@ -83,6 +83,7 @@ export function DispatchDialog(): JSX.Element | null {
   return (
     <div className="overlay center" onMouseDown={(e) => { if (e.target === e.currentTarget) next(); }}>
       <div className="dialog dispatch-dialog" role="dialog" aria-label={`Request from ${req.from}`}>
+        <button className="icon-btn dialog-x" onClick={() => next()} title="Close (Esc)" aria-label="Close">×</button>
         <h3>{req.from} asks to {req.kind}</h3>
         <dl className="dispatch-facts">
           <dt>Repository</dt>

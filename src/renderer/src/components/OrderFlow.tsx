@@ -5,6 +5,8 @@ import { useStore } from '@/store';
 import { selectAndReveal } from '@/commands';
 import { useOpenInbox, threadsOf } from '@/lib/closed';
 import { descendants, type LogNode } from '@/lib/threads';
+import { kindSlug, msgKind, type MsgKind } from '@/lib/msgKind';
+import { MsgTag } from './MsgTag';
 import { formatDateTime } from '@/lib/format';
 import { CopyButton } from './SearchBox';
 import { renderMarkdown } from '@/lib/markdown';
@@ -23,6 +25,8 @@ interface Step {
   from: string;
   to: string;
   kind: 'directive' | 'report';
+  /** what the message is (order · task · ask · report · finished · handed on): the tag and the line's color */
+  tag: MsgKind;
 }
 
 /** "<from> → <to>: body" → body, one line. */
@@ -52,7 +56,7 @@ function stepOf(it: InboxItem): Step {
   const kind = it.kind === 'report' ? 'report' : 'directive';
   const from = it.fromId ?? 'user';
   const to = kind === 'report' && it.fromId === it.sessionId ? 'user' : it.sessionId;
-  return { item: it, from, to, kind };
+  return { item: it, from, to, kind, tag: msgKind(it) };
 }
 
 const LANE_W = 150;
@@ -110,11 +114,13 @@ export function OrderFlowDialog(): JSX.Element | null {
         <div className="flow-head">
           <h3>Order flow</h3>
           <span className="muted ellipsis">{node ? gist(node.item) : 'This order is no longer in the log.'}</span>
-          <button className="icon-btn flow-close" onClick={close} title="Close (Esc)" aria-label="Close">×</button>
+          <button className="icon-btn dialog-x" onClick={close} title="Close (Esc)" aria-label="Close">×</button>
         </div>
         <div className="flow-legend muted">
-          <span><i className="flow-key directive" /> order / instruction</span>
-          <span><i className="flow-key report" /> report back</span>
+          <span><MsgTag kind="order" /><MsgTag kind="task" /> down the chain</span>
+          <span><MsgTag kind="ask" /> a question</span>
+          <span><MsgTag kind="report" /><MsgTag kind="finished" /> back up</span>
+          <span><MsgTag kind="handed on" /> no result yet</span>
           <span><i className="flow-dot pending" /> still on it</span>
           <span>{steps.length} message{steps.length === 1 ? '' : 's'}</span>
         </div>
@@ -159,7 +165,7 @@ export function OrderFlowDialog(): JSX.Element | null {
                 const self = x1 === x2;
                 const d = self ? `M${x1},${y - 8} h28 v16 h-26` : `M${x1},${y} L${x2 + (x2 > x1 ? -4 : 4)},${y}`;
                 return (
-                  <g key={s.item.id} className={`flow-step ${s.kind} ${sel?.item.id === s.item.id ? 'on' : ''}`} onClick={() => setPicked(s.item.id)}>
+                  <g key={s.item.id} className={`flow-step ${s.kind} k-${kindSlug(s.tag)} ${sel?.item.id === s.item.id ? 'on' : ''}`} onClick={() => setPicked(s.item.id)}>
                     <path d={d} className="flow-hit" />
                     <path d={d} className="flow-line" markerEnd={`url(#flow-arrow-${s.kind === 'report' ? 'r' : 'd'})`} />
                   </g>
@@ -175,12 +181,13 @@ export function OrderFlowDialog(): JSX.Element | null {
               return (
                 <button
                   key={s.item.id}
-                  className={`flow-label ${s.kind} ${sel?.item.id === s.item.id ? 'on' : ''}`}
+                  className={`flow-label ${s.kind} k-${kindSlug(s.tag)} ${sel?.item.id === s.item.id ? 'on' : ''}`}
                   style={{ left, top: y, width: w }}
                   title={`${formatDateTime(s.item.createdAt)}\n${gist(s.item)}`}
                   onClick={() => setPicked(s.item.id)}
                 >
-                  {gist(s.item) || (s.kind === 'report' ? '(report)' : '(message)')}
+                  <MsgTag kind={s.tag} />
+                  {gist(s.item).replace(/^\(report\)\s*/, '').replace(/^(?:finished|replied|stopped|handed on)(?: \([^)]*\))?:\s*/, '') || '(empty)'}
                 </button>
               );
             })}
@@ -190,6 +197,7 @@ export function OrderFlowDialog(): JSX.Element | null {
           <div className="flow-detail">
             <div className="flow-detail-head">
               <span className={`team-chip ${sel.from === 'user' ? 'manager' : roleClass(sessions.get(sel.from))}`}>{label(sel.from)}</span>
+              <MsgTag kind={sel.tag} />
               <span className="muted">{sel.kind === 'report' ? 'reported to' : 'sent to'}</span>
               <span className={`team-chip ${sel.to === 'user' ? 'manager' : roleClass(sessions.get(sel.to))}`}>{label(sel.to)}</span>
               {outcome(sel.item) && <span className={`flow-outcome ${outcome(sel.item)!.split(' ')[0]}`}>{outcome(sel.item)}</span>}

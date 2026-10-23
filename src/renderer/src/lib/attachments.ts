@@ -64,6 +64,31 @@ export function withAttachments(text: string, items: Attachment[]): string {
   return `${text}\n\n[Attached image${paths.length > 1 ? 's' : ''} — open ${paths.length > 1 ? 'them' : 'it'} to see]\n${paths.map((p) => `- ${p}`).join('\n')}`;
 }
 
+const ATTACHED_RE = /\n*\[Attached images? — open (?:it|them) to see\](?:\n((?:- ?[^\n]*(?:\n|$))*))?/;
+
+/**
+ * A sent message split back into its text and the image paths `withAttachments` appended. Claude Code records a pasted
+ * image path as "[Image #1]" and an empty "- " line: then the paths are empty (see ChatView's lookup in the inbox).
+ */
+export function splitAttachments(text: string): { body: string; images: string[] } {
+  const m = ATTACHED_RE.exec(text);
+  if (!m) return { body: text, images: [] };
+  const images = (m[1] ?? '').split('\n').map((l) => l.replace(/^-\s?/, '').trim()).filter(Boolean);
+  return { body: (text.slice(0, m.index) + text.slice(m.index + m[0].length)).trim(), images };
+}
+
+const dataUrls = new Map<string, Promise<string | null>>();
+/** An image file as a data: URL, read once per path through the desktop bridge (null without it or when unreadable). */
+export function imageDataUrl(path: string): Promise<string | null> {
+  let p = dataUrls.get(path);
+  if (!p) {
+    const api = window.desktop?.fileDataUrl;
+    p = api ? api(path).catch(() => null) : Promise.resolve(null);
+    dataUrls.set(path, p);
+  }
+  return p;
+}
+
 /** Attachments of one message box: add (paste / drop / pick), remove, clear after sending. */
 export function useAttachments(): {
   items: Attachment[];

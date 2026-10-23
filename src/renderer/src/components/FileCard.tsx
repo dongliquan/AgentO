@@ -2,7 +2,8 @@ import { memo, useEffect } from 'react';
 import type React from 'react';
 import { useStore, type FileCard as FileCardModel } from '@/store';
 import { requestRead } from '@/client';
-import { basename, extname, fileIcon } from '@/lib/format';
+import { basename, extname } from '@/lib/format';
+import { FileIcon } from './FileIcon';
 import { startDrag } from '@/lib/drag';
 import { CodeView } from './CodeView';
 import { languageOf } from '@/lib/highlight';
@@ -60,7 +61,7 @@ function FileCardImpl({ card, selected }: { card: FileCardModel; selected: boole
       }}
     >
       <div className="card-header" onPointerDown={onHeaderDown}>
-        <span className="ficon mono" style={{ color: 'var(--accent)', fontSize: 11, width: 18 }}>{fileIcon(name)}</span>
+        <FileIcon name={name} />
         <span className="title ellipsis" title={card.path}>{name}</span>
         {git && <span className={`git-letter ${git}`}>{git}</span>}
         <span style={{ flex: 1 }} />

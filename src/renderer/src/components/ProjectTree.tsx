@@ -1,17 +1,16 @@
 import type React from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { AgentKind, Folder, FsEntry, Project, Session } from '@shared/protocol';
+import { useEffect, useMemo, useState } from 'react';
+import { useExpanded } from './FileTree';
+import type { AgentKind, Folder, Project, Session } from '@shared/protocol';
 import { useStore } from '@/store';
-import { requestChanged, requestList, send } from '@/client';
+import { send } from '@/client';
 import { organizeTeam, removeSession, renameProject, renameSession, saveProject, selectAndReveal } from '@/commands';
 import { askText } from '@/lib/prompt';
-import { openFile } from '@/lib/openfile';
-import { useReveal } from '@/lib/fileRefs';
-import { AGENT_LABELS, basename, fileIcon, displayTitle, statusClass } from '@/lib/format';
+import { AGENT_LABELS, displayTitle, statusClass } from '@/lib/format';
 import { RoleTag } from './RoleTag';
+import { DelegationChip } from './Delegations';
 import { pcStyle, projectColor } from '@/lib/format';
 import { useColorMenu } from './ProjectColorMenu';
-import { copyPath, usePathMenu } from './PathMenu';
 import { AgentPicker } from './AgentPicker';
 import { AgentIcon } from './AgentIcon';
 
@@ -25,62 +24,10 @@ interface PickerState {
 /** Coaches ask and review; they may run on another vendor. Players (coding) stay on Claude. */
 const COACH_KINDS: AgentKind[] = ['claude', 'codex', 'gemini'];
 
-function useExpanded(): [Set<string>, (key: string, v?: boolean) => void] {
-  const [set, setSet] = useState<Set<string>>(() => new Set());
-  const toggle = useCallback((key: string, v?: boolean) => {
-    setSet((prev) => {
-      const next = new Set(prev);
-      const on = v ?? !next.has(key);
-      if (on) next.add(key);
-      else next.delete(key);
-      return next;
-    });
-  }, []);
-  return [set, toggle];
-}
-
 export function ProjectTree(): JSX.Element {
   const projects = useStore((s) => s.projects);
-  const revealNonce = useReveal((s) => s.nonce);
   const sessions = useStore((s) => s.sessions);
-  const filter = useStore((s) => s.treeFilter);
   const [expanded, toggle] = useExpanded();
-  // "Show in sidebar": open the project, its folders row, the folder and every subfolder down to the file
-  useEffect(() => {
-    const target = useReveal.getState().path;
-    if (!target) return;
-    const low = target.toLowerCase().replace(/\//g, '\\');
-    let best: { project: Project; folder: Folder } | undefined;
-    // the tree shows folders under projects (parts list only their sessions)
-    for (const p of projects.filter((x) => !x.parentId && !x.closed)) {
-      for (const f of p.folders) {
-        const fp = f.path.toLowerCase().replace(/[\\/]+$/, '');
-        if (low.startsWith(fp + '\\') && (!best || fp.length > best.folder.path.length)) best = { project: p, folder: f };
-      }
-    }
-    if (!best) return;
-    const root = best.project.parentId ? projects.find((x) => x.id === best!.project.parentId) ?? best.project : best.project;
-    toggle(`p:${root.id}`, true);
-    if (best.project.id !== root.id) toggle(`p:${best.project.id}`, true);
-    toggle(`folders:${root.id}`, true);
-    toggle(`f:${best.folder.id}`, true);
-    const base = best.folder.path.replace(/[\\/]+$/, '');
-    const rest = target.slice(base.length + 1).split(/[\\/]/);
-    let cur = base;
-    for (const seg of rest.slice(0, -1)) {
-      cur = `${cur}\\${seg}`;
-      toggle(`d:${cur}`, true);
-    }
-    // the folders load as they open: look for the row a few times, then scroll to it
-    let tries = 0;
-    const find = (): void => {
-      const row = document.querySelector(`.tree-row[data-path="${CSS.escape(low)}"]`);
-      if (row) row.scrollIntoView({ block: 'center' });
-      else if (++tries < 20) setTimeout(find, 250);
-    };
-    setTimeout(find, 200);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [revealNonce]);
   const [picker, setPicker] = useState<PickerState | null>(null);
   const [coachPicker, setCoachPicker] = useState<{ x: number; y: number; projectId: string } | null>(null);
   const openNewSession = useStore((s) => s.openNewSession);
@@ -136,9 +83,7 @@ export function ProjectTree(): JSX.Element {
     const members = [...own, ...parts.flatMap((x) => sessionsByProject.get(x.id) ?? []), ...(isPart ? [] : heads.filter((h) => h.projectId === p.id))];
     const agg = aggregateStatus(members);
     const head = isPart ? undefined : heads.find((h) => h.projectId === p.id);
-    const showFolders = filter !== 'sessions';
     const inner = depth + 14;
-    const folderName = (id: string): string | undefined => (p.folders.length > 1 ? p.folders.find((f) => f.id === id)?.name : undefined);
     const kind = isPart ? 'Part' : 'Project';
     return (
       // a top-level project's block is tinted with its color, so each project reads as one area when expanded
@@ -147,7 +92,8 @@ export function ProjectTree(): JSX.Element {
           className={`tree-row ${isPart ? 'tree-part' : 'tree-project'}`}
           style={{ paddingLeft: depth }}
           onClick={() => toggle(`p:${p.id}`)}
-          {...dropInto(p.id)}
+          {...dropInto(p.id, p)}
+          {...dragProject(p)}
           onContextMenu={(e) => {
             e.preventDefault();
             const f = p.folders[0];
@@ -311,39 +257,9 @@ Not touched: your folders on disk and the Claude / Codex conversation files.`)) 
               </button>
             </div>
           ))}
-        {open && own.map((s) => <SessionRow key={s.id} session={s} depth={inner} folderName={folderName(s.folderId)} />)}
+        {open && own.map((s) => <SessionRow key={s.id} session={s} depth={inner} />)}
         {open && parts.map((x) => renderNode(x, inner))}
         {open && isPart && own.length === 0 && <div className="tree-empty" style={{ paddingLeft: inner + 8 }}>No sessions.</div>}
-        {open && showFolders && !isPart && leafFolders(p.folders).length > 0 && (
-          // all the folders of a project under one row, folded until clicked (parts show only their sessions)
-          <div
-            className="tree-row tree-folders"
-            style={{ paddingLeft: inner }}
-            onClick={() => toggle(`folders:${p.id}`)}
-            title={p.folders.map((f) => f.path).join('\n')}
-          >
-            <span className="caret">{expanded.has(`folders:${p.id}`) ? '▾' : '▸'}</span>
-            <FolderIcon open={false} />
-            <span className="label">Folders</span>
-            <span className="muted" style={{ fontSize: 11 }}>{leafFolders(p.folders).length}</span>
-          </div>
-        )}
-        {open &&
-          showFolders &&
-          !isPart &&
-          expanded.has(`folders:${p.id}`) &&
-          leafFolders(p.folders).map((f) => (
-            <FolderNode
-              key={f.id}
-              project={p}
-              folder={f}
-              depth={inner + 14}
-              expanded={expanded}
-              toggle={toggle}
-              filter={filter}
-              onNewSession={(x, y) => setPicker({ x, y, project: p, folder: f })}
-            />
-          ))}
       </div>
     );
   };
@@ -416,113 +332,56 @@ Not touched: your folders on disk and the Claude / Codex conversation files.`)) 
   );
 }
 
-interface FolderProps {
-  project: Project;
-  folder: Folder;
-  /** indent of the folder row */
-  depth?: number;
-  expanded: Set<string>;
-  toggle: (k: string, v?: boolean) => void;
-  filter: 'all' | 'sessions';
-  onNewSession: (x: number, y: number) => void;
-}
-
-function FolderNode({ folder, depth = 20, expanded, toggle, filter, onNewSession }: FolderProps): JSX.Element {
-  const key = `f:${folder.id}`;
-  const open = expanded.has(key);
-  const changed = useStore((s) => s.changed.get(folder.path));
-
-  useEffect(() => {
-    if (open && filter === 'all') requestList(folder.path);
-    if (open) requestChanged(folder.path);
-  }, [open, filter, folder.path]);
-
-  const gitMap = useMemo(() => {
-    const m = new Map<string, FsEntry['gitStatus']>();
-    for (const e of changed ?? []) m.set(e.path, e.gitStatus);
-    return m;
-  }, [changed]);
-
-  return (
-    <div>
-      <div
-        className="tree-row"
-        style={{ paddingLeft: depth }}
-        onClick={() => toggle(key)}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          onNewSession(e.clientX, e.clientY);
-        }}
-        title={folder.path}
-      >
-        <span className="caret">{open ? '▾' : '▸'}</span>
-        <FolderIcon open={false} />
-        <span className="label">{shortPath(folder.path)}</span>
-        <button
-          className="icon-btn hover-act"
-          title="Copy Path"
-          onClick={(e) => {
-            e.stopPropagation();
-            copyPath(folder.path, 'Path');
-          }}
-        >
-          ⧉
-        </button>
-        <button
-          className="icon-btn hover-act"
-          title="New Session Here"
-          onClick={(e) => {
-            e.stopPropagation();
-            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-            onNewSession(r.left, r.bottom + 2);
-          }}
-        >
-          +
-        </button>
-        <button
-          className="icon-btn hover-act"
-          title="Import Claude Code Sessions — conversations started in VS Code or a terminal in this folder"
-          onClick={(e) => {
-            e.stopPropagation();
-            useStore.getState().openImportClaude({ projectId: folder.projectId, folderId: folder.id });
-          }}
-        >
-          ⇲
-        </button>
-        <button
-          className="icon-btn hover-act"
-          title="Remove Folder"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (window.confirm(`Remove folder "${folder.name}" from the project?`)) send({ type: 'folder.remove', id: folder.id });
-          }}
-        >
-          ×
-        </button>
-      </div>
-      {open && (
-        <>
-          {filter === 'all' && <DirChildren path={folder.path} cwd={folder.path} depth={depth + 20} expanded={expanded} toggle={toggle} gitMap={gitMap} />}
-        </>
-      )}
-    </div>
-  );
-}
-
 /* ---------- drag a session: reorder within its part, or drop it into another part / project ---------- */
 
 const DRAG_TYPE = 'application/x-agento-session';
+const PROJECT_DRAG = 'application/x-agento-project';
+
+/** A project row can be dragged before another project (a part before another part of the same project). */
+function dragProject(p: Project): React.HTMLAttributes<HTMLDivElement> & { draggable: boolean } {
+  const level = p.parentId ?? '';
+  return {
+    draggable: true,
+    onDragStart: (e) => {
+      e.dataTransfer.setData(PROJECT_DRAG, `${level}|${p.id}`);
+      e.dataTransfer.effectAllowed = 'move';
+    }
+  };
+}
+
+/** Drop target props for a project row: a dragged project goes before it (same level only). */
+function dropProject(p: Project, e: React.DragEvent<HTMLDivElement>, phase: 'over' | 'leave' | 'drop'): boolean {
+  if (!e.dataTransfer.types.includes(PROJECT_DRAG)) return false;
+  if (phase === 'leave') {
+    e.currentTarget.classList.remove('drop-before');
+    return true;
+  }
+  e.preventDefault();
+  if (phase === 'over') {
+    e.currentTarget.classList.add('drop-before');
+    return true;
+  }
+  e.currentTarget.classList.remove('drop-before');
+  const [level, id] = e.dataTransfer.getData(PROJECT_DRAG).split('|');
+  if (id && id !== p.id && level === (p.parentId ?? '')) send({ type: 'project.move', id, beforeId: p.id });
+  return true;
+}
 
 /** Drop target props for a project / part row: the session goes last in it. */
-function dropInto(projectId: string): React.HTMLAttributes<HTMLDivElement> {
+function dropInto(projectId: string, project?: Project): React.HTMLAttributes<HTMLDivElement> {
   return {
     onDragOver: (e) => {
+      if (project && dropProject(project, e, 'over')) return;
       if (!e.dataTransfer.types.includes(DRAG_TYPE)) return;
       e.preventDefault();
       e.currentTarget.classList.add('drop-into');
     },
-    onDragLeave: (e) => e.currentTarget.classList.remove('drop-into'),
+    onDragLeave: (e) => {
+      if (project) dropProject(project, e, 'leave');
+      e.currentTarget.classList.remove('drop-into');
+    },
     onDrop: (e) => {
+      if (project && dropProject(project, e, 'drop')) return;
       e.currentTarget.classList.remove('drop-into');
       const id = e.dataTransfer.getData(DRAG_TYPE);
       if (id) {
@@ -533,7 +392,7 @@ function dropInto(projectId: string): React.HTMLAttributes<HTMLDivElement> {
   };
 }
 
-export function SessionRow({ session: s, depth, folderName }: { session: Session; depth: number; folderName?: string }): JSX.Element {
+export function SessionRow({ session: s, depth }: { session: Session; depth: number }): JSX.Element {
   const selected = useStore((st) => st.selectedId === s.id);
   // the head coach stays at the project level; every other session can be dragged
   const movable = s.role !== 'head';
@@ -571,7 +430,7 @@ ${s.cwd}`}
       <AgentIcon kind={s.agent} color={s.color} />
       <span className="label" onDoubleClick={(e) => { e.stopPropagation(); void renameSession(s.id); }}>{displayTitle(s)}</span>
       <RoleTag s={s} />
-      {folderName && <span className="muted tree-session-folder">{folderName}</span>}
+      {s.role !== 'player' && <DelegationChip id={s.id} />}
       <button
         className="icon-btn hover-act"
         title="Rename (F2, or double-click the name)"
@@ -594,140 +453,6 @@ ${s.cwd}`}
       </button>
     </div>
   );
-}
-
-interface DirProps {
-  path: string;
-  cwd: string;
-  depth: number;
-  expanded: Set<string>;
-  toggle: (k: string, v?: boolean) => void;
-  gitMap: Map<string, FsEntry['gitStatus']>;
-}
-
-function DirChildren({ path, cwd, depth, expanded, toggle, gitMap }: DirProps): JSX.Element {
-  const entries = useStore((s) => s.fsLists.get(path));
-  if (!entries) return <div className="tree-empty" style={{ paddingLeft: depth }}>Loading…</div>;
-  const sorted = [...entries].sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1));
-  return (
-    <>
-      {sorted.map((e) =>
-        e.isDir ? (
-          <DirNode key={e.path} entry={e} cwd={cwd} depth={depth} expanded={expanded} toggle={toggle} gitMap={gitMap} />
-        ) : (
-          <FileRow key={e.path} entry={e} depth={depth} git={e.gitStatus ?? gitMap.get(e.path)} onClick={() => openFile(e.path, cwd)} base={cwd} />
-        )
-      )}
-    </>
-  );
-}
-
-function DirNode({ entry, cwd, depth, expanded, toggle, gitMap }: Omit<DirProps, 'path'> & { entry: FsEntry }): JSX.Element {
-  const key = `d:${entry.path}`;
-  const open = expanded.has(key);
-  useEffect(() => {
-    if (open) requestList(entry.path);
-  }, [open, entry.path]);
-  return (
-    <div>
-      <div
-        className="tree-row"
-        style={{ paddingLeft: depth }}
-        onClick={() => toggle(key)}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          usePathMenu.getState().show({ x: e.clientX, y: e.clientY, path: entry.path, base: cwd, isDir: true });
-        }}
-        title={`${entry.path}
-Right-click: copy path`}
-      >
-        <span className="caret">{open ? '▾' : '▸'}</span>
-        <FolderIcon open={open} />
-        <span className="label">{entry.name}</span>
-        <button
-          className="icon-btn hover-act"
-          title="Copy Path"
-          onClick={(e) => {
-            e.stopPropagation();
-            copyPath(entry.path, 'Path');
-          }}
-        >
-          ⧉
-        </button>
-      </div>
-      {open && <DirChildren path={entry.path} cwd={cwd} depth={depth + 14} expanded={expanded} toggle={toggle} gitMap={gitMap} />}
-    </div>
-  );
-}
-
-function FileRow({ entry, depth, git, onClick, onDouble, showRelative, base }: { entry: FsEntry; depth: number; git?: FsEntry['gitStatus']; onClick: () => void; onDouble?: () => void; showRelative?: string; base?: string }): JSX.Element {
-  const cardPath = useStore((s) => {
-    const c = s.selectedFileCardId ? s.fileCards.get(s.selectedFileCardId) : undefined;
-    return c?.path;
-  });
-  const revealedHere = useReveal((s) => !!s.path && s.path.toLowerCase() === entry.path.toLowerCase());
-  const selectedPath = revealedHere ? entry.path : cardPath;
-  let label = entry.name;
-  if (showRelative && entry.path.startsWith(showRelative)) label = entry.path.slice(showRelative.length).replace(/^[\\/]/, '') || basename(entry.path);
-  return (
-    <div
-      className={`tree-row ${selectedPath === entry.path ? 'selected' : ''}`}
-      data-path={entry.path.toLowerCase()}
-      style={{ paddingLeft: depth }}
-      onClick={onClick}
-      onDoubleClick={onDouble}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        usePathMenu.getState().show({ x: e.clientX, y: e.clientY, path: entry.path, base: base ?? showRelative ?? '', isDir: false });
-      }}
-      title={`${entry.path}
-Right-click: copy path`}
-    >
-      <span className="caret" />
-      <span className="ficon mono">{fileIcon(entry.name)}</span>
-      <span className="label">{label}</span>
-      {git && <span className={`git ${git}`}>{git}</span>}
-      <button
-        className="icon-btn hover-act"
-        title="Copy Path"
-        onClick={(e) => {
-          e.stopPropagation();
-          copyPath(entry.path, 'Path');
-        }}
-      >
-        ⧉
-      </button>
-    </div>
-  );
-}
-
-/** A folder in the file tree (the caret before it already shows open / closed as an arrow). */
-function FolderIcon({ open }: { open: boolean }): JSX.Element {
-  return (
-    <svg className="ficon folder-ico" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-      {open ? (
-        <path d="M1.5 4.5v8a1 1 0 0 0 1 1h10.2a1 1 0 0 0 .95-.7l1.6-4.8a.5.5 0 0 0-.47-.65H4.6a1 1 0 0 0-.95.7L2 12M1.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h5a1 1 0 0 1 1 1v1.3" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-      ) : (
-        <path d="M1.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h6.5a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-      )}
-    </svg>
-  );
-}
-
-const norm = (p: string): string => p.replace(/[\\/]+$/, '').toLowerCase().replace(/\//g, '\\');
-
-/**
- * The folders a project / part actually works in: a folder that contains another of its folders is left out, so a
- * parent and its subfolder never sit side by side at one level.
- */
-function leafFolders(folders: Folder[]): Folder[] {
-  return folders.filter((f) => !folders.some((o) => o !== f && norm(o.path).startsWith(norm(f.path) + '\\')));
-}
-
-/** A folder's last two path parts ("work\shop-web"): where it sits, not just its name. */
-function shortPath(p: string): string {
-  const parts = p.replace(/[\\/]+$/, '').split(/[\\/]/).filter(Boolean);
-  return parts.slice(-2).join('\\') || p;
 }
 
 type AggState = 'error' | 'needs' | 'working' | 'idle' | 'off';

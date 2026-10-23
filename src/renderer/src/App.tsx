@@ -9,6 +9,7 @@ import { NewProjectDialog } from '@/components/NewProjectDialog';
 import { FileRefMenu } from '@/components/FileRefMenu';
 import { ProjectColorMenu } from '@/components/ProjectColorMenu';
 import { NeedsYouWatcher } from '@/components/NeedsYou';
+import { DelegationWatcher } from '@/components/Delegations';
 import { PathMenu } from '@/components/PathMenu';
 import { DispatchDialog } from '@/components/DispatchDialog';
 import { reconnectClient } from '@/client';
@@ -17,14 +18,17 @@ import { Sidebar } from '@/components/Sidebar';
 import { Board } from '@/components/Board';
 import { SplitView } from '@/components/SplitView';
 import { TabView } from '@/components/TabView';
+import { TimelineView } from '@/components/TimelineView';
 import { ViewerTabs } from '@/components/ViewerTabs';
-import { RightPanel, SecondPanel } from '@/components/RightPanel';
+import { RightPanel, SecondPanel, useFollowSelection } from '@/components/RightPanel';
 import { StatusBar } from '@/components/StatusBar';
 import { Palette } from '@/components/Palette';
 import { NewSessionDialog } from '@/components/NewSessionDialog';
 import { ImportClaudeDialog } from '@/components/ImportClaudeDialog';
 import { AgentsDialog } from '@/components/AgentsDialog';
 import { UsageDialog } from '@/components/UsageDialog';
+import { DailyReport } from '@/components/DailyReport';
+import { FindBar } from '@/components/FindBar';
 import { Toolbar } from '@/components/Toolbar';
 import { FocusView } from '@/components/FocusView';
 import { PromptDialog } from '@/components/PromptDialog';
@@ -104,6 +108,9 @@ function handleKey(e: KeyboardEvent): void {
   } else if (k === '3') {
     e.preventDefault();
     runCommand('view.tabs');
+  } else if (k === '4') {
+    e.preventDefault();
+    runCommand('view.timeline');
   } else if (k === '=' || k === '+') {
     e.preventDefault();
     zoomBy(1.2);
@@ -117,6 +124,7 @@ function handleKey(e: KeyboardEvent): void {
 }
 
 export function App(): JSX.Element {
+  useFollowSelection();
   const sidebarOpen = useStore((s) => s.sidebarOpen);
   const rightOpen = useStore((s) => s.rightOpen);
   const detached = useStore((s) => s.panelsDetached);
@@ -172,6 +180,7 @@ export function App(): JSX.Element {
   else if (centerView === 'viewer') center = <ViewerTabs />;
   else if (viewMode === 'split') center = <SplitView />;
   else if (viewMode === 'tabs') center = <TabView />;
+  else if (viewMode === 'timeline') center = <TimelineView />;
   else center = <Board />;
 
   return (
@@ -194,12 +203,15 @@ export function App(): JSX.Element {
       {importOpen && <ImportClaudeDialog />}
       <AgentsDialog />
       <UsageDialog />
+      <DailyReport />
+      <FindBar />
       <Toasts />
       <OrderFlowDialog />
       <NewProjectDialog />
       <FileRefMenu />
       <ProjectColorMenu />
       <NeedsYouWatcher />
+      <DelegationWatcher />
       <PathMenu />
       <DispatchDialog />
       <PromptDialog />

@@ -9,30 +9,30 @@ const media = window.matchMedia('(prefers-color-scheme: dark)');
 
 /**
  * CLI TUIs (Claude Code etc.) are designed for dark terminals, so terminals stay dark in every app theme.
- * Palette: VS Code "Dark Modern" integrated terminal.
+ * Palette: One Dark (as ReadO's dark theme) — softer reds and greens than VS Code's.
  */
 export const TERMINAL_THEME: ITheme = {
-  background: '#1f1f1f',
-  foreground: '#cccccc',
-  cursor: '#cccccc',
-  cursorAccent: '#1f1f1f',
-  selectionBackground: 'rgba(38,79,120,0.8)',
-  black: '#000000',
-  red: '#cd3131',
-  green: '#0dbc79',
-  yellow: '#e5e510',
-  blue: '#2472c8',
-  magenta: '#bc3fbc',
-  cyan: '#11a8cd',
-  white: '#e5e5e5',
-  brightBlack: '#666666',
-  brightRed: '#f14c4c',
-  brightGreen: '#23d18b',
-  brightYellow: '#f5f543',
-  brightBlue: '#3b8eea',
-  brightMagenta: '#d670d6',
-  brightCyan: '#29b8db',
-  brightWhite: '#e5e5e5'
+  background: '#21252b',
+  foreground: '#abb2bf',
+  cursor: '#abb2bf',
+  cursorAccent: '#21252b',
+  selectionBackground: 'rgba(97,175,239,0.3)',
+  black: '#282c34',
+  red: '#e06c75',
+  green: '#98c379',
+  yellow: '#e5c07b',
+  blue: '#61afef',
+  magenta: '#c678dd',
+  cyan: '#56b6c2',
+  white: '#abb2bf',
+  brightBlack: '#5c6370',
+  brightRed: '#e06c75',
+  brightGreen: '#98c379',
+  brightYellow: '#e5c07b',
+  brightBlue: '#61afef',
+  brightMagenta: '#c678dd',
+  brightCyan: '#56b6c2',
+  brightWhite: '#ffffff'
 };
 
 export function getThemePref(): ThemePref {

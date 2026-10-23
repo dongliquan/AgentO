@@ -5,6 +5,8 @@ export interface QuickOption {
   key: string;
   /** a short label for the button */
   label: string;
+  /** the reply sent when it is picked (default: "<key>. <label>") */
+  send?: string;
 }
 export interface QuickReply {
   options: QuickOption[];
@@ -74,6 +76,9 @@ export function quickReplyOf(entries: ChatEntry[]): QuickReply | null {
     }
   }
   if (best.length >= 2 && best.length <= 8) return { options: best, multi: MULTI.test(tail) };
+  // an either-or question ("삭제할까요, 남길까요?", "Should I delete them or keep them?"): its alternatives
+  const choice = choiceOf(text.slice(-600));
+  if (choice) return { options: choice, multi: false };
   // no options: yes/no questions at the end ("1244 하나입니다. 이어서 할까요?", "커밋 5건 push 해도 될까요?")
   const questions = yesNoQuestions(text.slice(-900));
   return questions.length ? { options: [], multi: questions.length > 1, questions, ko: /[가-힣]/.test(questions.join('')) } : null;
@@ -82,6 +87,27 @@ export function quickReplyOf(entries: ChatEntry[]): QuickReply | null {
 // a question answered yes or no (not "어느 쪽 / which / how …")
 const YES_NO = /(할까요|될까요|드릴까요|볼까요|갈까요|넘어갈까요|진행할까요|좋을까요|괜찮을까요|되나요|할지요|맞나요|맞습니까|합니까|하시겠어요|하시겠습니까|원하시나요|\b(?:shall|should|can|may) i\b|\bdo you want\b|\bwould you like\b|\bis it ok\b|\bok to\b)/i;
 const WH = /어느|어떤|어떻게|무엇|뭘|뭐를|언제|어디|몇 |\b(?:which|what|how|when|where|why)\b/i;
+
+/**
+ * The alternatives of the last either-or question: Korean "삭제할까요, 남길까요?" / "A로 할까요 아니면 B로 할까요?"
+ * (each part ends in -까요), English "Should I delete them or keep them?". Each option replies with its own words.
+ */
+function choiceOf(tail: string): QuickOption[] | null {
+  const qs = plain(tail).match(/[^.!?。？\n]+[?？]/g);
+  const q = qs?.[qs.length - 1]?.trim();
+  if (!q) return null;
+  const ko = q
+    .replace(/[?？]$/, '')
+    .split(/\s*(?:[,，]|\s아니면|\s또는|\s혹은)\s*/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (ko.length >= 2 && ko.length <= 4 && ko.every((p) => /까요$/.test(p))) {
+    return ko.map((p, i) => ({ key: String(i + 1), label: p.replace(/^(?:그냥|아예)\s+/, '').replace(/\s*할까요$|까요$/, ''), send: `${p.replace(/까요$/, '')} 쪽으로 해 주세요. ("${q}")` }));
+  }
+  const en = /^(?:should i|shall i|do you want me to|would you like me to|do you want to|should we)\s+(.+?)\s+or\s+(.+?)\?$/i.exec(q);
+  if (en) return [en[1]!, en[2]!].map((p, i) => ({ key: String(i + 1), label: p, send: `${p[0]!.toUpperCase()}${p.slice(1)}, please. ("${q}")` }));
+  return null;
+}
 
 function yesNoQuestions(tail: string): string[] {
   // sentences that end with "?", from the last paragraphs

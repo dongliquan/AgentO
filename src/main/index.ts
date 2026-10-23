@@ -288,6 +288,52 @@ function togglePanelsWindow(): void {
   sendPanelsState();
 }
 
+/* ---------- "Open in ReadO": the user's editor, a sibling app ---------- */
+
+/**
+ * How to launch ReadO with a file ("%1"): the running instance's exe (its instance.json in %APPDATA%\ReadO — a second
+ * launch hands the file to the running window), else the file association it registered, else AGENTO_READO.
+ */
+function readoCommand(): string | null {
+  const templates: string[] = [];
+  if (process.env['AGENTO_READO']) templates.push(`"${process.env['AGENTO_READO']}" "%1"`);
+  try {
+    const inst = JSON.parse(fs.readFileSync(path.join(app.getPath('appData'), 'ReadO', 'instance.json'), 'utf8')) as { exe?: unknown };
+    if (typeof inst.exe === 'string') templates.push(`"${inst.exe}" "%1"`);
+  } catch {
+    /* ReadO never ran (or is not installed) */
+  }
+  if (process.platform === 'win32') {
+    try {
+      const out = spawnSync('reg', ['query', 'HKCU\\Software\\Classes\\ReadO.File\\shell\\open\\command', '/ve'], { encoding: 'utf8', windowsHide: true }).stdout ?? '';
+      const m = /REG_SZ\s+(.+)$/m.exec(out);
+      if (m) templates.push(m[1]!.trim());
+    } catch {
+      /* no association */
+    }
+  }
+  // the first template whose program exists
+  for (const t of templates) {
+    const exe = /^"([^"]+)"/.exec(t)?.[1];
+    if (exe && fs.existsSync(exe)) return t;
+  }
+  return null;
+}
+
+/** Open a file in ReadO; the error text when it cannot be. */
+function openInReadO(file: string): string | null {
+  const cmd = readoCommand();
+  if (!cmd) return 'ReadO was not found — start it once (or set AGENTO_READO to reado.exe).';
+  try {
+    // the command is the association's template ("exe" "%1" or "pythonw" "reado.py" "%1"): a path has no quotes
+    const child = spawn(cmd.replace('%1', file.replace(/"/g, '')), { shell: true, detached: true, stdio: 'ignore', windowsHide: true });
+    child.unref();
+    return null;
+  } catch (e) {
+    return `Could not start ReadO: ${(e as Error).message}`;
+  }
+}
+
 /* ---------- file viewer windows (one per file) ---------- */
 
 const fileWindows = new Map<string, BrowserWindow>();
@@ -407,6 +453,7 @@ function registerIpc(): void {
 
   ipcMain.on('panels.toggle', () => togglePanelsWindow());
   ipcMain.on('file.openWindow', (_e, file: string) => openFileWindow(file));
+  ipcMain.handle('file.openInReadO', (_e, file: string) => (typeof file === 'string' && path.isAbsolute(file) ? openInReadO(file) : 'Not a file path'));
   ipcMain.on('find.start', (e, text: string, forward: boolean, next: boolean) => {
     if (typeof text === 'string' && text) e.sender.findInPage(text, { forward: forward !== false, findNext: next === true });
   });

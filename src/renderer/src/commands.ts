@@ -9,6 +9,7 @@ import { useWebPages } from '@/lib/webpages';
 import { IS_PANELS, relay } from '@/lib/role';
 import { openSessions } from '@/lib/closedIds';
 import { kbd } from '@/lib/keys';
+import { useFindBar } from '@/components/FindBar';
 import { getBuffer } from '@/lib/buffers';
 
 export interface CommandDef {
@@ -271,14 +272,17 @@ export const COMMANDS: CommandDef[] = [
   { id: 'session.export', label: 'Export Session Log', run: withSelected((s) => exportSession(s.id)) },
   { id: 'session.open-log', label: 'Open Session Log', run: withSelected((s) => exportSession(s.id)) },
   { id: 'terminal.clear', label: 'Clear Terminal', run: withSelected((s) => send({ type: 'session.input', id: s.id, data: '\x0c' })) },
+  { id: 'edit.find', label: 'Find', shortcut: kbd('Ctrl+F'), run: () => useFindBar.getState().show() },
   { id: 'terminal.find', label: 'Find in Terminal', run: withSelected((s) => focusTerminal(s.id)) },
   { id: 'view.board', label: 'View: Ground', shortcut: kbd('Ctrl+1'), run: () => useStore.getState().setViewMode('board') },
   { id: 'view.split', label: 'View: Split', shortcut: kbd('Ctrl+2'), run: () => useStore.getState().setViewMode('split') },
   { id: 'view.tabs', label: 'View: Tabs', shortcut: kbd('Ctrl+3'), run: () => useStore.getState().setViewMode('tabs') },
+  { id: 'view.timeline', label: 'View: Timeline', shortcut: kbd('Ctrl+4'), run: () => useStore.getState().setViewMode('timeline') },
   { id: 'view.zoom-in', label: 'Zoom In', shortcut: kbd('Ctrl+='), run: () => zoomBy(ZOOM_STEP) },
   { id: 'view.zoom-out', label: 'Zoom Out', shortcut: kbd('Ctrl+-'), run: () => zoomBy(1 / ZOOM_STEP) },
   { id: 'view.zoom-reset', label: 'Reset Zoom', shortcut: kbd('Ctrl+0'), run: () => useStore.getState().setZoom(1) },
   { id: 'view.zoom-fit', label: 'Fit All', run: fitAll },
+  { id: 'view.minimap', label: 'Toggle Minimap', run: () => useStore.getState().toggleMinimap() },
   { id: 'view.auto-arrange', label: 'Auto Arrange', run: autoArrange },
   { id: 'view.sidebar', label: 'Toggle Sidebar', shortcut: kbd('Ctrl+B'), run: () => useStore.getState().toggleSidebar() },
   { id: 'view.right-panel', label: 'Toggle Right Panel', shortcut: kbd('Ctrl+Alt+B'), run: () => useStore.getState().toggleRight() },

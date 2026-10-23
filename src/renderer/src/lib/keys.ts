@@ -14,7 +14,7 @@ export function isAppShortcut(e: KeyboardEvent): boolean {
   if (!ctrl) return false;
   if (e.shiftKey && (k === 'p' || k === 'w')) return true;
   if (!e.shiftKey && (k === 'p' || k === 'b' || k === 'n')) return true;
-  if (k === '1' || k === '2' || k === '3') return true;
+  if (k === '1' || k === '2' || k === '3' || k === '4') return true;
   if (k === '=' || k === '+' || k === '-' || k === '_' || k === '0') return true;
   return false;
 }

@@ -13,8 +13,8 @@ import { findTranscript } from './transcript';
 import { logsDir } from './paths';
 import { cardSize } from '@shared/layout';
 import { plainTerminalLines } from '@shared/plaintext';
-import { PROMPT_RE } from '@shared/prompts';
-import { contextSize } from './freshstart';
+import { LIMIT_RE, PROMPT_RE, limitResetText } from '@shared/prompts';
+import { transcriptInfo } from './freshstart';
 import { discoverCodexId, findCodexRollout, readCodex } from './codex';
 import { log } from './log';
 
@@ -56,7 +56,7 @@ interface Live {
   /** output since the last input was written (what is on screen now — a prompt shown here is still unanswered) */
   sinceInput: string;
   /** asksSomething's last answer and the screen text it was for */
-  asked?: { text: string; value: boolean };
+  asked?: { text: string; value: boolean; limit?: string };
 }
 
 export interface SessionManagerEvents {
@@ -110,8 +110,7 @@ export class SessionManager extends EventEmitter {
         s.h = head.h;
         store.upsertSession(s);
       }
-      if (s.agent === 'claude') s.context = contextSize(s.cwd, s.resumeId);
-      else if (s.agent === 'codex' && s.resumeId) s.context = codexContext(s.resumeId);
+      this.readConversation(s);
       this.sessions.set(s.id, s);
       this.buffers.set(s.id, this.loadLogTail(s.id));
     }
@@ -127,6 +126,8 @@ export class SessionManager extends EventEmitter {
 
   /** The manager is using it (selected in a window, or typed into it lately); set by the server. */
   inUse: (id: string) => boolean = () => false;
+  /** how long ago the manager typed into the session (Infinity: not since the daemon started); set by the server */
+  typedAgo: (id: string) => number = () => Infinity;
 
   /** Sessions that must not be auto-hibernated now (a fresh start under way); set by the team. */
   keepAwake: (id: string) => boolean = () => false;
@@ -165,19 +166,21 @@ export class SessionManager extends EventEmitter {
   private publicSession(s: StoredSession): Session {
     // Extra fields (command/args) are harmless for the renderer, but keep the wire shape tidy.
     const { command: _c, args: _a, ...rest } = s;
-    return { ...rest, attention: this.asksSomething(s) };
+    const sc = this.screenState(s);
+    return { ...rest, attention: sc.value, ...(sc.limit ? { limit: sc.limit } : {}) };
   }
 
-  /** Waiting, with a question on screen that came after the last input (idle after a finished turn is not this). */
-  private asksSomething(s: StoredSession): boolean {
-    if (s.status !== 'waiting') return false;
+  /** What the screen shows since the last input: a question waiting for the user, and / or the usage-limit notice. */
+  private screenState(s: StoredSession): { value: boolean; limit?: string } {
+    if (s.status !== 'waiting') return { value: false };
     const live = this.live.get(s.id);
-    if (!live) return false;
+    if (!live) return { value: false };
     // saves (card moves, reorders) repeat this: render the screen again only when it printed something new
-    if (live.asked && live.asked.text === live.sinceInput) return live.asked.value;
-    const value = PROMPT_RE.test(plainTerminalLines(live.sinceInput.slice(-20_000)).join('\n').slice(-1500));
-    live.asked = { text: live.sinceInput, value };
-    return value;
+    if (live.asked && live.asked.text === live.sinceInput) return live.asked;
+    const screen = plainTerminalLines(live.sinceInput.slice(-20_000)).join('\n').slice(-1500);
+    const limit = LIMIT_RE.test(screen) ? (limitResetText(screen) ?? 'later') : undefined;
+    live.asked = { text: live.sinceInput, value: PROMPT_RE.test(screen), ...(limit ? { limit } : {}) };
+    return live.asked;
   }
 
   private logPath(id: string): string {
@@ -212,16 +215,47 @@ export class SessionManager extends EventEmitter {
     this.emit('upsert', this.publicSession(s));
   }
 
+  /** The conversation's size and model now (what the next turn re-reads, and with which model). */
+  private readConversation(s: StoredSession): void {
+    if (s.agent === 'claude') {
+      const info = transcriptInfo(s.cwd, s.resumeId);
+      s.context = info?.context;
+      if (info?.model) s.model = info.model;
+    } else if (s.agent === 'codex' && s.resumeId) {
+      const file = findCodexRollout(s.resumeId);
+      if (file) {
+        const r = readCodex(file, 512 * 1024);
+        s.context = r.context;
+        const m = codexModel(file);
+        if (m) s.model = m;
+      }
+    }
+  }
+
+  /**
+   * The model the manager picked ('' = the CLI's default). It is passed at every start; a running Claude waiting for
+   * input switches now with /model (a busy one, and Codex, at the next start).
+   */
+  setModel(id: string, model: string): void {
+    const s = this.sessions.get(id);
+    if (!s) throw new Error('Session not found');
+    const m = model.trim();
+    if (m && !/^[\w.:\[\]-]{1,80}$/.test(m)) throw new Error('Not a model name');
+    if (m) s.modelPref = m;
+    else delete s.modelPref;
+    this.save(s);
+    if (s.agent === 'claude' && this.live.has(id) && s.status === 'waiting' && m) this.input(id, `/model ${m}\r`);
+  }
+
   private setStatus(s: StoredSession, status: SessionStatus): void {
     if (s.status === status) return;
     const prev = s.status;
     s.status = status;
     // a turn ended: how big the conversation is now (what the next turn re-reads)
-    if (s.agent === 'claude' && (status === 'waiting' || status === 'hibernated')) s.context = contextSize(s.cwd, s.resumeId);
-    if (s.agent === 'codex' && (status === 'waiting' || status === 'hibernated')) {
+    if (status === 'waiting' || status === 'hibernated') {
       // Codex prints no session id: find its rollout once it has written one, then it can hibernate / resume like Claude
-      if (!s.resumeId) this.discoverCodex(s);
-      if (s.resumeId) s.context = codexContext(s.resumeId);
+      if (s.agent === 'codex' && !s.resumeId) this.discoverCodex(s);
+      this.readConversation(s);
     }
     if (status === 'waiting') this.waitingSince.set(s.id, Date.now());
     else this.waitingSince.delete(s.id);
@@ -927,8 +961,21 @@ function probeOf(text: string): string {
   return best.slice(0, 24);
 }
 
-/** The latest Codex call's input tokens (its conversation size), from the end of its rollout. */
-function codexContext(id: string): number | undefined {
-  const file = findCodexRollout(id);
-  return file ? readCodex(file, 512 * 1024).context : undefined;
+/** The model of a Codex rollout's latest turn (its turn_context records name it). */
+function codexModel(file: string): string | undefined {
+  try {
+    const size = fs.statSync(file).size;
+    const fd = fs.openSync(file, 'r');
+    try {
+      const len = Math.min(size, 256 * 1024);
+      const buf = Buffer.alloc(len);
+      fs.readSync(fd, buf, 0, len, size - len);
+      const all = [...buf.toString('utf8').matchAll(/"turn_context"[^\n]*?"model":"([^"]+)"/g)];
+      return all[all.length - 1]?.[1];
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return undefined;
+  }
 }

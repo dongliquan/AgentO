@@ -15,6 +15,7 @@ function PromptBody({ req }: { req: PromptRequest }): JSX.Element {
   return (
     <div className="overlay center" onMouseDown={(e) => { if (e.target === e.currentTarget) cancel(); }}>
       <div className="dialog" style={{ width: 360 }}>
+        <button className="icon-btn dialog-x" onClick={() => cancel()} title="Close (Esc)" aria-label="Close">×</button>
         <h3>{req.title}</h3>
         <div className="field">
           <input

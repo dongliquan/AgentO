@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react';
+import { msgKind } from '@/lib/msgKind';
+import { MsgTag } from './MsgTag';
 import type { InboxItem, Session } from '@shared/protocol';
 import { send } from '@/client';
 import { selectAndReveal } from '@/commands';
@@ -52,7 +54,7 @@ ${body}`;
   return (
     <div className={`feed-item ${it.kind} ${it.read ? '' : 'unread'}`}>
       <div className="feed-head">
-        <span className={`feed-kind ${it.kind}`}>{it.kind === 'directive' ? 'Order' : 'Report'}</span>
+        <MsgTag kind={msgKind(it)} />
         <Chip user={fromUser} session={fromSession} />
         <span className="feed-arrow">→</span>
         {toUser ? <Chip user /> : <Chip session={target} />}

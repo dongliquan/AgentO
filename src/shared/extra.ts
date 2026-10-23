@@ -58,6 +58,7 @@ export const MENU_COMMANDS = [
   'app.quit-keep',
   'app.quit-all',
   // Edit
+  'edit.find',
   'terminal.find',
   'terminal.clear',
   'session.rename',
@@ -73,6 +74,8 @@ export const MENU_COMMANDS = [
   'view.right-panel',
   'view.inbox',
   'view.focus-mode',
+  'view.minimap',
+  'view.timeline',
   'view.fullscreen',
   'view.theme.light',
   'view.theme.dark',

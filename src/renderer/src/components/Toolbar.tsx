@@ -1,7 +1,10 @@
+import { useEffect, useState } from 'react';
 import { useStore, type ViewMode } from '@/store';
-import { autoArrange, fitAll, newSessionFor, newProject } from '@/commands';
+import { autoArrange, fitAll, newSessionFor, newProject, runCommand } from '@/commands';
 import { kbd } from '@/lib/keys';
+import { onThemeChange, resolvedTheme, setThemePref } from '@/lib/theme';
 
+/** the three ways to lay out the live sessions; Timeline (a record of finished work) stands apart from them */
 const MODES: { id: ViewMode; label: string }[] = [
   { id: 'board', label: 'Ground' },
   { id: 'split', label: 'Split' },
@@ -32,7 +35,9 @@ function PopOutIcon({ open }: { open: boolean }): JSX.Element {
 
 export function Toolbar(): JSX.Element {
   const viewMode = useStore((s) => s.viewMode);
+  const focusMode = useStore((s) => s.focusMode);
   const centerView = useStore((s) => s.centerView);
+  const onTimeline = viewMode === 'timeline' && centerView === 'sessions';
   const setViewMode = useStore((s) => s.setViewMode);
   const setCenterView = useStore((s) => s.setCenterView);
   const projects = useStore((s) => s.projects);
@@ -73,8 +78,18 @@ export function Toolbar(): JSX.Element {
           </button>
         )}
       </div>
+      <span className="toolbar-sep" />
+      <div className="segmented">
+        <button className={onTimeline ? 'active' : ''} onClick={() => setViewMode('timeline')} title={kbd('Timeline — the features each project finished, by day (Ctrl+4)')}>
+          Timeline
+        </button>
+      </div>
       <div className="breadcrumb">
-        {project ? (
+        {onTimeline ? (
+          <>
+            <b>Timeline</b> · finished features by project and day
+          </>
+        ) : project ? (
           <>
             <b>{project.name}</b>
             {part && <> › {part.name}</>} › Sessions {count}
@@ -84,8 +99,22 @@ export function Toolbar(): JSX.Element {
         )}
       </div>
       <div className="spacer" />
-      <button className="btn ghost" onClick={autoArrange} disabled={viewMode !== 'board'}>Auto Arrange</button>
-      <button className="btn ghost" onClick={fitAll} disabled={viewMode !== 'board'}>Fit All</button>
+      {/* Auto Arrange moves the cards (and keeps them there); Fit All only moves the view; Focus opens one session full size
+          — session layout tools, not for the Timeline */}
+      {!onTimeline && (
+      <>
+      <button className="btn ghost" onClick={autoArrange} disabled={viewMode !== 'board'} title="Auto Arrange — move every card into the team layout (Head Coach in the middle, projects around it) and keep it">Auto Arrange</button>
+      <button className="btn ghost" onClick={fitAll} disabled={viewMode !== 'board'} title="Fit All — zoom and pan so every card is in view (the cards do not move)">Fit All</button>
+      <button
+        className={`btn ghost ${focusMode ? 'on' : ''}`}
+        onClick={() => runCommand('view.focus-mode')}
+        disabled={!focusMode && !selectedId}
+        title={kbd(focusMode ? 'Exit Focus Mode (Esc / F11)' : selectedId ? 'Focus — the selected session full size, nothing else (F11)' : 'Focus — select a session first (F11)')}
+      >
+        {focusMode ? 'Exit Focus' : 'Focus'}
+      </button>
+      </>
+      )}
       <button className="btn" onClick={() => void newProject()} title="New project: name, folders and an optional brief for its coach">+ New Project</button>
       <button className="btn primary" onClick={() => newSessionFor()}>+ New Session</button>
       {!detached && (
@@ -100,6 +129,30 @@ export function Toolbar(): JSX.Element {
       >
         <PopOutIcon open={detached} />
       </button>
+      <ThemeToggle />
     </div>
+  );
+}
+
+/** Light ⇄ dark (the choice is kept; "system" in View › Theme follows the OS). */
+function ThemeToggle(): JSX.Element {
+  const [theme, setTheme] = useState(resolvedTheme());
+  useEffect(() => onThemeChange(setTheme), []);
+  const dark = theme === 'dark';
+  return (
+    <button className="icon-btn layout-toggle" title={dark ? 'Light mode' : 'Dark mode'} aria-label={dark ? 'Light mode' : 'Dark mode'} onClick={() => setThemePref(dark ? 'light' : 'dark')}>
+      {dark ? (
+        // sun
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+          <circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" />
+          <path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1" stroke="currentColor" strokeLinecap="round" />
+        </svg>
+      ) : (
+        // moon
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+          <path d="M13.2 10.2A5.6 5.6 0 0 1 5.8 2.8a5.6 5.6 0 1 0 7.4 7.4z" fill="none" stroke="currentColor" strokeLinejoin="round" />
+        </svg>
+      )}
+    </button>
   );
 }

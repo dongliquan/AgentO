@@ -1,22 +1,26 @@
 import { parseTeamMessages, type TeamMessage } from '@/lib/teamMessage';
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ChatEntry, ChatTool, Project, Session } from '@shared/protocol';
 import { useStore } from '@/store';
 import { send } from '@/client';
 import { useChats } from '@/lib/chat';
 import { renderMarkdown } from '@/lib/markdown';
+import { teamMessageKind } from '@/lib/msgKind';
+import { MsgTag } from './MsgTag';
+import { openFile } from '@/lib/openfile';
 import { lastLines } from '@/lib/ansi';
 import { screenLines } from '@/lib/screen';
 import { matches, useHighlight } from '@/lib/search';
 import { CopyButton } from './SearchBox';
-import { imageFiles, useAttachments, withAttachments } from '@/lib/attachments';
+import { imageDataUrl, imageFiles, splitAttachments, useAttachments, withAttachments } from '@/lib/attachments';
 import { AttachmentBar } from './AttachmentBar';
 import { getBuffer, useBuffer } from '@/lib/buffers';
 import { restoreEarlier } from './ContextSize';
 import { quickReplyOf, type QuickOption, type QuickReply } from '@/lib/quickReply';
 import { kbd } from '@/lib/keys';
 import { makeScoper, ScopeCtx, toolScope, useScoper, type Scope } from '@/lib/chatScope';
-import { displayTitle, pcStyle, projectColor, roleLabel } from '@/lib/format';
+import { dayTime, displayTitle, formatDateTime, pcStyle, projectColor, relativeTime, roleLabel } from '@/lib/format';
+import { useNow } from '@/lib/hooks';
 
 /** Searchable text of a transcript entry: its text, or a tool's name, input and result. */
 function entryText(e: ChatEntry): string {
@@ -153,11 +157,13 @@ export function ChatView({
   const choice = useMemo(() => {
     // the daemon reads the screen for a real prompt (trust / permission / confirm): a question Claude asks in its own
     // words ("Do you want me to commit?") is not a choice to pick from
+    // paused by the usage limit (the daemon reads it off the screen): shown as that, not as a question
+    if (s.limit) return true;
     if (s.attention !== undefined) return s.attention;
     if (!tail) return false;
     const t = lastLines(tail, 14).join('\n');
     return /❯\s*\d+\.|›\s*\d+\.|^\s*\d+\.\s+(Yes|No)\b|Enter to confirm|Press enter to confirm/m.test(t);
-  }, [tail, s.attention]);
+  }, [tail, s.attention, s.limit]);
 
   return (
     <div className="chat" data-cwd={s.cwd} onPointerDown={(e) => e.stopPropagation()} onWheel={(e) => { if (!e.ctrlKey) e.stopPropagation(); }}>
@@ -197,7 +203,7 @@ export function ChatView({
         )}
         {!!s.prevResumeIds?.length && hidden === 0 && entries.length < 40 && !searching && (
           <div className="chat-restarted">
-            A new conversation (after a fresh start or restart) — the earlier one is kept.
+            A new conversation{all[0] ? ` since ${dayTime(all[0].ts)}` : ''} (after a fresh start or restart) — the earlier one is kept.
             <button className="chat-link" onClick={() => restoreEarlier(s)}>Restore earlier conversation</button>
           </div>
         )}
@@ -216,8 +222,13 @@ export function ChatView({
         {segs
           ? segs.map((g, i) =>
               g.kind === 'entry' ? (
-                <Entry key={g.entry.id} entry={g.entry} cwd={s.cwd} />
+                <Fragment key={g.entry.id}>
+                  {gapBefore(segs, i) && <TimeDivider ts={g.entry.ts} />}
+                  <Entry entry={g.entry} cwd={s.cwd} sid={s.id} />
+                </Fragment>
               ) : (
+                <Fragment key={g.key}>
+                {gapBefore(segs, i) && <TimeDivider ts={g.entries[0]!.ts} />}
                 <TeamRun
                   key={g.key}
                   entries={g.entries}
@@ -231,9 +242,15 @@ export function ChatView({
                     setOpened(next);
                   }}
                 />
+                </Fragment>
               )
             )
-          : entries.map((e) => <Entry key={e.id} entry={e} cwd={s.cwd} />)}
+          : entries.map((e, i) => (
+              <Fragment key={e.id}>
+                {(i === 0 || e.ts - entries[i - 1]!.ts > DIVIDER_GAP_MS) && <TimeDivider ts={e.ts} />}
+                <Entry entry={e} cwd={s.cwd} sid={s.id} />
+              </Fragment>
+            ))}
         {working && (
           <div className="chat-working">
             <span className="spark">✱</span> Working…
@@ -242,10 +259,38 @@ export function ChatView({
       </div>
       </ScopeCtx.Provider>
       {choice && <WaitingBar session={s} tail={tail ?? ''} onShowTerminal={onShowTerminal} />}
-      <Composer session={s} quick={quick} />
+      {/* the old-answer note: in the Session tab / Focus view, not on every Ground card (cards pass a limit) */}
+      <Composer session={s} quick={quick} lastAt={working || limit !== undefined ? undefined : lastAnswerAt(all)} />
     </div>
   );
 }
+
+/** a pause this long between turns gets a time line, so a reader sees when each part was said */
+const DIVIDER_GAP_MS = 20 * 60_000;
+
+const segTs = (g: Segment): number => (g.kind === 'entry' ? g.entry.ts : g.entries[0]!.ts);
+const segEnd = (g: Segment): number => (g.kind === 'entry' ? g.entry.ts : g.entries[g.entries.length - 1]!.ts);
+function gapBefore(segs: Segment[], i: number): boolean {
+  return i === 0 || segTs(segs[i]!) - segEnd(segs[i - 1]!) > DIVIDER_GAP_MS;
+}
+
+function TimeDivider({ ts }: { ts: number }): JSX.Element {
+  return (
+    <div className="chat-time" title={formatDateTime(ts)}>
+      <span>{dayTime(ts)}</span>
+    </div>
+  );
+}
+
+/** When the session last answered (its newest assistant text). */
+function lastAnswerAt(entries: ChatEntry[]): number | undefined {
+  for (let i = entries.length - 1; i >= 0; i--) if (entries[i]!.kind === 'assistant' && entries[i]!.text?.trim()) return entries[i]!.ts;
+  return undefined;
+}
+
+/** an answer this old may no longer match what is going on: the composer offers a short status check */
+const STALE_MS = 60 * 60_000;
+const STATUS_ASK = 'Status check: in 3–5 short lines — what is done, what is in progress, and what is waiting on me (if anything). Do not start new work.';
 
 /** A run of team turns: folded to "Team - N messages (senders)", or open with a header to fold it again. */
 function TeamRun({ entries, cwd, open, onToggle }: { entries: ChatEntry[]; cwd: string; open: boolean; onToggle: () => void }): JSX.Element {
@@ -267,18 +312,22 @@ function TeamRun({ entries, cwd, open, onToggle }: { entries: ChatEntry[]; cwd: 
 
 const Entry = memo(EntryView);
 
-function EntryView({ entry: e, cwd }: { entry: ChatEntry; cwd: string }): JSX.Element | null {
+function EntryView({ entry: e, cwd, sid }: { entry: ChatEntry; cwd: string; sid?: string }): JSX.Element | null {
   if (e.kind === 'user') {
     const team = e.text ? parseTeamMessages(e.text) : null;
     if (team) return <>{team.map((t, i) => <TeamBubble key={i} msg={t} turn={e.id} />)}</>;
     // a long paste is recorded inside <pasted_content> tags: show just the text
-    const text = e.text?.replace(/<\/?pasted_content\b[^>]*>/g, '').trim();
+    const raw = e.text?.replace(/<\/?pasted_content\b[^>]*>/g, '').trim() ?? '';
+    // images attached here are sent as paths: shown as thumbnails instead of the path list ("[Image #1]" is Claude
+    // Code's own marker for an image it took in)
+    const { body, images } = splitAttachments(raw);
+    const text = body.replace(/\[Image #\d+\]/g, '').trim();
     return (
       <div className="chat-user">
         <TurnScopes id={e.id} />
         {text && <CopyButton text={text} />}
-        {e.images ? <div className="chat-attach">📎 {e.images} image{e.images > 1 ? 's' : ''}</div> : null}
         {text && <div className="chat-user-text">{text}</div>}
+        {images.length > 0 || e.images ? <ChatImages listed={images} entry={e} sid={sid} cwd={cwd} /> : null}
       </div>
     );
   }
@@ -287,6 +336,48 @@ function EntryView({ entry: e, cwd }: { entry: ChatEntry; cwd: string }): JSX.El
   if (e.kind === 'system') return <div className="chat-system">{e.text}</div>;
   if (e.kind === 'tool' && e.tool) return <Tool tool={e.tool} cwd={cwd} />;
   return null;
+}
+
+/**
+ * Thumbnails of the images sent with a message; a click shows the image in its own window. When the transcript lost
+ * the paths (Claude Code took the pasted file in as "[Image #1]"), they come from the inbox record of the same message
+ * (the direct note or order the manager sent, kept with its attachment list).
+ */
+function ChatImages({ listed, entry: e, sid, cwd }: { listed: string[]; entry: ChatEntry; sid?: string; cwd: string }): JSX.Element | null {
+  const inbox = useStore((st) => st.inbox);
+  const paths = useMemo(() => {
+    if (listed.length || !sid) return listed;
+    const firstLine = (e.text ?? '').replace(/\[Image #\d+\]/g, '').split('\n').map((l) => l.trim()).find(Boolean) ?? '';
+    const near = inbox
+      .filter((it) => it.sessionId === sid && it.fromId === 'user' && it.text.includes('[Attached image') && (firstLine.length < 4 || it.text.includes(firstLine)))
+      .sort((a, b) => Math.abs(a.createdAt - e.ts) - Math.abs(b.createdAt - e.ts))[0];
+    return near ? splitAttachments(near.text).images : [];
+  }, [listed, sid, inbox, e.text, e.ts]);
+  if (paths.length === 0) return e.images ? <div className="chat-attach">📎 {e.images} image{e.images > 1 ? 's' : ''}</div> : null;
+  return (
+    <div className="chat-images">
+      {paths.map((p) => (
+        <ChatImage key={p} path={p} cwd={cwd} />
+      ))}
+    </div>
+  );
+}
+
+function ChatImage({ path, cwd }: { path: string; cwd: string }): JSX.Element {
+  const [url, setUrl] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    void imageDataUrl(path).then((u) => live && setUrl(u));
+    return () => {
+      live = false;
+    };
+  }, [path]);
+  const name = path.split(/[\\/]/).pop() ?? path;
+  return (
+    <button className={`chat-image ${url ? '' : 'missing'}`} title={`${path}\nClick to view`} onClick={() => openFile(path, cwd)}>
+      {url ? <img src={url} alt={name} /> : <span className="chat-image-name">🖼 {url === null ? `${name} (not found)` : name}</span>}
+    </button>
+  );
 }
 
 function Markdown({ text, className, dot, copy }: { text: string; className: string; dot?: 'text'; copy?: boolean }): JSX.Element {
@@ -503,8 +594,15 @@ function readArrowChoice(screen: string[]): { question: string; context: string[
   if (k < 0) return null;
   let i = k - 1;
   while (i >= 0 && !raw[i]!.trim()) i--;
-  const block: string[] = [];
+  let block: string[] = [];
   for (; i >= 0 && raw[i]!.trim() && block.length < 12; i--) block.unshift(raw[i]!);
+  // the options are what comes after the question line (when one is in the block), and each is a short line
+  const q = block.map((l) => /\?\s*$/.test(l.trim())).lastIndexOf(true);
+  if (q >= 0) {
+    i += q + 1;
+    block = block.slice(q + 1);
+  }
+  if (block.some((l) => l.trim().length > 90) || block.length > 8) return null;
   const marked = block.findIndex((l) => /^\s*[❯>›]\s+\S/.test(l));
   if (marked < 0 || block.length < 2) return null;
   const options: ChoiceOption[] = block.map((l, idx) => {
@@ -530,9 +628,39 @@ function readArrowChoice(screen: string[]): { question: string; context: string[
   return { question, context: (qi >= 0 ? above.slice(qi + 1) : []).slice(-3), options };
 }
 
-function readChoice(screen: string[]): { question: string; context: string[]; options: ChoiceOption[] } | null {
-  const numbered = readNumberedChoice(screen);
-  return numbered ?? readArrowChoice(screen);
+type Choice = { question: string; context: string[]; options: ChoiceOption[]; limit?: boolean };
+
+function readChoice(screen: string[]): Choice | null {
+  return readSetupDialog(screen) ?? readNumberedChoice(screen) ?? readArrowChoice(screen);
+}
+
+/** Claude Code waiting for the usage limit to reset: nothing to answer — shown as that, with a way to stop waiting. */
+function limitChoice(reset: string): Choice {
+  return {
+    limit: true,
+    question: `Claude's usage limit is reached — it resets ${reset}. The session continues by itself when it does; there is nothing to answer.`,
+    context: [],
+    options: [{ n: '1', label: 'Stop waiting (Esc) — it will not continue by itself', current: false, keys: '\x1b' }]
+  };
+}
+
+/**
+ * A CLI's own setup dialog (Claude Code's "Teach auto mode about your environment?", toggles changed with ←/→): not a
+ * choice of the work — offered as Skip (Esc) or Continue (Enter) instead of its lines read as options.
+ */
+function readSetupDialog(screen: string[]): { question: string; context: string[]; options: ChoiceOption[] } | null {
+  const text = screen.join('\n');
+  const auto = /Teach\s*auto\s*mode/i.test(text);
+  if (!auto && !/←\s*\/\s*→\s*change/i.test(text)) return null;
+  const q = screen.map((l) => l.trim()).filter((l) => /\?\s*$/.test(l)).pop() ?? 'A setup dialog of the CLI';
+  return {
+    question: auto ? 'Claude Code offers to set up auto mode (optional) — it would scan this project and your recent sessions.' : q,
+    context: [],
+    options: [
+      { n: '1', label: 'Skip (recommended)', current: true, keys: '\x1b' },
+      { n: '2', label: 'Continue with its settings', current: false, keys: '\r' }
+    ]
+  };
 }
 
 function readNumberedChoice(screen: string[]): { question: string; context: string[]; options: ChoiceOption[] } | null {
@@ -582,7 +710,7 @@ function WaitingBar({ session: s, tail, onShowTerminal }: { session: Session; ta
       void screenLines(raw.slice(-200_000), s.cols || 100, s.rows || 30).then((lines) => {
         if (!live) return;
         // the replayed screen first; when it cannot be read (or is empty), the plain-text tail — words spaced by the shared converter
-        const found = (lines.length ? readChoice(lines) : null) ?? readChoice(lastLines(tail, 30));
+        const found = s.limit ? limitChoice(s.limit) : (lines.length ? readChoice(lines) : null) ?? readChoice(lastLines(tail, 30));
         if (!found) console.warn('[chat] choice prompt not read; screen tail:', lines.slice(-12), 'plain tail:', lastLines(tail, 12));
         setChoice(found);
       });
@@ -602,9 +730,9 @@ function WaitingBar({ session: s, tail, onShowTerminal }: { session: Session; ta
     if (tellsClaude(label)) setTimeout(() => document.querySelector<HTMLTextAreaElement>(`.chat-composer[data-session="${s.id}"] textarea`)?.focus(), 150);
   };
   return (
-    <div className={`chat-choice-card ${permission ? 'permission' : 'question'}`}>
+    <div className={`chat-choice-card ${choice?.limit ? 'limit' : permission ? 'permission' : 'question'}`}>
       <div className="chat-choice-head">
-        <span className="chat-choice-kind">{permission ? '🔒 Permission' : '? Question'}</span>
+        <span className="chat-choice-kind">{choice?.limit ? '⏳ Usage limit' : permission ? '🔒 Permission' : '? Question'}</span>
         <span className="spacer" />
         <button className="btn sm ghost" onClick={onShowTerminal}>Terminal</button>
       </div>
@@ -643,7 +771,8 @@ const REPLAY_PAUSE_MS = 400;
 const REPLAY_SEND_MS = 700;
 
 /** The message box under a session's conversation — also used for terminal agents (Codex) in the Session tab. */
-export function Composer({ session: s, quick }: { session: Session; quick?: QuickReply | null }): JSX.Element {
+export function Composer({ session: s, quick, lastAt }: { session: Session; quick?: QuickReply | null; lastAt?: number }): JSX.Element {
+  const nowTick = useNow(60_000);
   const [text, setText] = useState('');
   const [picked, setPicked] = useState<string[]>([]);
   const [quickClosed, setQuickClosed] = useState<string | null>(null);
@@ -718,7 +847,7 @@ export function Composer({ session: s, quick }: { session: Session; quick?: Quic
   const answerAll = (qs: string[], ok: (i: number) => boolean): string =>
     qs.length === 1 ? (ok(0) ? words.goAhead : words.dont) : qs.map((q, i) => `${i + 1}. ${q} → ${ok(i) ? yes : no}`).join('\n');
   const showQuick = !!quick && !text && !ghost && quickClosed !== quickId && (live || wakeable);
-  const pickOne = (o: QuickOption): void => submit(`${o.key}. ${o.label}`);
+  const pickOne = (o: QuickOption): void => submit(o.send ?? `${o.key}. ${o.label}`);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -728,8 +857,20 @@ export function Composer({ session: s, quick }: { session: Session; quick?: Quic
     if (ghost) el.scrollTop = el.scrollHeight;
   }, [text, ghost]);
 
+  // the last answer is old: say when it was, and offer a status check before acting on it
+  const stale = lastAt !== undefined && nowTick - lastAt > STALE_MS && !text && !ghost && (live || wakeable);
   return (
     <>
+    {stale && (
+      <div className="chat-stale">
+        <span>
+          Last answer <b>{relativeTime(lastAt!, nowTick)}</b> ({dayTime(lastAt!, nowTick)}) — things may have moved on since.
+        </span>
+        <button className="btn sm ghost" onClick={() => submit(STATUS_ASK)} title={`Sends: "${STATUS_ASK}"`}>
+          Ask for status
+        </button>
+      </div>
+    )}
     {showQuick && quick && (
       <div className={`quick-reply ${quick.questions ? 'yesno' : ''}`} role="group" aria-label="Quick reply">
         {quick.questions && quick.questions.length === 1 && (
@@ -775,9 +916,9 @@ export function Composer({ session: s, quick }: { session: Session; quick?: Quic
               <b>{o.key}</b> <span className="ellipsis">{o.label}</span>
             </label>
           ) : (
-            <label key={o.key} className="quick-opt" title={`Send "${o.key}. ${o.label}"`}>
+            <label key={o.key} className="quick-opt" title={`Send "${o.send ?? `${o.key}. ${o.label}`}"`}>
               <input type="radio" name={`quick-${s.id}`} onChange={() => pickOne(o)} />
-              <b>{o.key}</b> <span className="ellipsis">{o.label}</span>
+              {!o.send && <b>{o.key}</b>} <span className="ellipsis">{o.label}</span>
             </label>
           )
         )}
@@ -878,6 +1019,7 @@ function TeamBubble({ msg, turn }: { msg: TeamMessage; turn: string }): JSX.Elem
     <div className={`chat-team ${msg.kind}`}>
       <div className="chat-team-head">
         <span className={`team-chip ${roleClass}`} style={senderColor ? pcStyle(senderColor) : undefined}>{from}</span>
+        <MsgTag kind={teamMessageKind(msg)} />
         {role && role !== from && <span className="muted">{role}</span>}
         {msg.via && <span className="muted">{msg.via}</span>}
         {scopes.map((x) => <ScopeTag key={x.name} scope={x} />)}

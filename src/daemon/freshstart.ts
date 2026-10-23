@@ -27,12 +27,20 @@ export const AUTO_MIN_CONTEXT_COORD = Math.max(20_000, Number(process.env['AGENT
 export const AUTO_MIN_GAP_MS = 3 * 3600_000;
 /** idle this long, and not open on screen: shortly before it would be auto-hibernated (30 min) anyway */
 export const AUTO_IDLE_MS = 25 * 60_000;
+/**
+ * A conversation twice the threshold (players 400K, coordinators 200K by default) costs that much on every turn: it is
+ * cleared after a short pause even when the manager is using the session (the earlier one can be restored).
+ */
+export const AUTO_OVERSIZE_FACTOR = 2;
+export const AUTO_OVERSIZE_IDLE_MS = 15 * 60_000;
+/** never cleared by itself while the manager is working in it: typed into in the last hour (the Large chat alert asks) */
+export const AUTO_MANAGER_QUIET_MS = 60 * 60_000;
 
 /** last answer per transcript, by file size: a turn that wrote nothing new is not read again */
-const sizes = new Map<string, { size: number; value: number | undefined }>();
+const sizes = new Map<string, { size: number; value: { context: number; model?: string } | undefined }>();
 
-/** Tokens the last call of a Claude conversation carried (input + cache): what the next turn re-reads. */
-export function contextSize(cwd: string, resumeId: string | undefined): number | undefined {
+/** The conversation's size and the model of its last call, from the end of the transcript (cached by file size). */
+export function transcriptInfo(cwd: string, resumeId: string | undefined): { context?: number; model?: string } | undefined {
   if (!resumeId) return undefined;
   const file = findTranscript(cwd, resumeId);
   if (!file) return undefined;
@@ -50,7 +58,7 @@ export function contextSize(cwd: string, resumeId: string | undefined): number |
   return value;
 }
 
-function readContext(file: string, tail: number): number | undefined {
+function readContext(file: string, tail: number): { context: number; model?: string } | undefined {
   let lines: string[];
   try {
     lines = readTranscriptLines(file, tail);
@@ -61,10 +69,14 @@ function readContext(file: string, tail: number): number | undefined {
     const l = lines[i]!;
     if (!l.includes('"usage"')) continue;
     try {
-      const j = JSON.parse(l) as { message?: { usage?: Record<string, number> } };
+      const j = JSON.parse(l) as { message?: { usage?: Record<string, number>; model?: string } };
       const u = j.message?.usage;
       if (!u) continue;
-      return (u['input_tokens'] ?? 0) + (u['cache_read_input_tokens'] ?? 0) + (u['cache_creation_input_tokens'] ?? 0);
+      const model = j.message?.model;
+      return {
+        context: (u['input_tokens'] ?? 0) + (u['cache_read_input_tokens'] ?? 0) + (u['cache_creation_input_tokens'] ?? 0),
+        ...(model && model !== '<synthetic>' ? { model } : {})
+      };
     } catch {
       /* a partial line at the start of the tail */
     }
@@ -102,4 +114,8 @@ export const HANDOFF_REQUEST =
 
 export const HANDOFF_CONTINUE = (file: string): string =>
   `[AgentO] Fresh start — this is a new conversation that continues your earlier work. Read the handoff note first:\n` +
-  `${file}\nThen carry on from its next steps. If something you need is missing from it, say so.`;
+  `${file}\nIts end has the last request and your last answer word for word: carry on from there (and from its next ` +
+  `steps). If something you need is missing from it, say so.`;
+
+/** The start of the handoff request, to find where the old conversation ended. */
+export const HANDOFF_MARK = '[AgentO] Fresh start: this conversation is getting long';

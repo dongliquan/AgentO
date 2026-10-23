@@ -9,6 +9,7 @@ import { OrderCard } from './MyOrders';
 import { SearchBox } from './SearchBox';
 import { ProjectFilter, useProjectFilter } from './ProjectFilter';
 import { useTalkProject } from '@/lib/talkFilter';
+import { RECENT_MS, RecentToggle, useRecentOnly } from './RecentToggle';
 
 import { count, descendants, prune, withManager, type LogNode } from '@/lib/threads';
 
@@ -97,12 +98,19 @@ export function TeamLog(): JSX.Element {
   const { only, rootOf } = useProjectFilter(pick);
   const body = useRef<HTMLDivElement>(null);
 
-  // a thread belongs to the project of the session its order went to
-  const threads = useMemo(
+  // a thread belongs to the project of the session its order went to; by default the last 7 days (by its last record)
+  const [recentOnly, setRecentOnly] = useRecentOnly();
+  const scoped = useMemo(
     () => [...threadsOf(inbox)].reverse().filter((t) => !only || rootOf(t.item.sessionId) === only),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [inbox, only, sessions]
   );
+  const threads = useMemo(() => {
+    if (!recentOnly) return scoped;
+    const cutoff = Date.now() - RECENT_MS;
+    return scoped.filter((t) => lastAt(t) >= cutoff);
+  }, [scoped, recentOnly]);
+  const older = scoped.length - threads.length;
   const titleOf = (id: string | undefined, map: Map<string, Session>): string | undefined =>
     id === 'user' ? 'Manager (you)' : id ? map.get(id)?.title : undefined;
   const searching = query.trim() !== '';
@@ -119,6 +127,7 @@ export function TeamLog(): JSX.Element {
     <div className="rp-body log-body" ref={body}>
       <div className="log-bar filter-bar">
         <ProjectFilter value={pick} onChange={(id) => { setPick(id); setShown(15); }} />
+        <RecentToggle value={recentOnly} onChange={setRecentOnly} hidden={older} />
         <SearchBox value={query} onChange={setQuery} count={hits} placeholder="Search the log" />
         <button className="icon-btn" onClick={() => setBulk({ open: true, nonce: Date.now() })} title="Expand all — the team messages under every order" aria-label="Expand all">
           <ExpandIcon open />
@@ -147,4 +156,9 @@ export function TeamLog(): JSX.Element {
       )}
     </div>
   );
+}
+
+/** A thread's newest record (an old order still being answered counts as recent). */
+function lastAt(n: LogNode): number {
+  return Math.max(n.item.createdAt, ...n.children.map(lastAt));
 }

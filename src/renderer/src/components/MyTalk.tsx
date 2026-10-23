@@ -3,7 +3,9 @@ import type { InboxItem } from '@shared/protocol';
 import { useStore } from '@/store';
 import { selectAndReveal } from '@/commands';
 import { useOpenInbox, threadsOf } from '@/lib/closed';
-import { descendants, isDirect, orderStatus, withManager, type LogNode } from '@/lib/threads';
+import { descendants, isAck, isDirect, orderStatus, withManager, type LogNode } from '@/lib/threads';
+import { msgKind } from '@/lib/msgKind';
+import { MsgTag } from './MsgTag';
 import { formatDateTime, pcStyle, projectColor, relativeTime } from '@/lib/format';
 import { useNow } from '@/lib/hooks';
 import { useDraft } from '@/lib/draft';
@@ -83,7 +85,7 @@ export function MyTalk(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [inbox, only, kind, sessions]
   );
-  const answersOf = (t: LogNode): InboxItem[] => descendants(t).filter((it) => it.kind === 'report' && withManager(it));
+  const answersOf = (t: LogNode): InboxItem[] => descendants(t).filter((it) => it.kind === 'report' && withManager(it) && !isAck(it));
   const searching = query.trim() !== '';
   const titleOf = (id: string): string | undefined => sessions.get(id)?.title;
   const found = searching ? all.filter((t) => [t.item, ...answersOf(t)].some((it) => matches(query, it.text, titleOf(it.sessionId)))) : all;
@@ -156,6 +158,7 @@ export function MyTalk(): JSX.Element {
                 return (
                   <div key={a.id} className="me-msg reply" onClick={() => !selecting() && from && selectAndReveal(from.id)}>
                     <div className="me-meta">
+                      <MsgTag kind={msgKind(a)} />
                       <span className="ellipsis">{from?.title ?? '(removed session)'}</span>
                       <span className="time" title={formatDateTime(a.createdAt)}>{relativeTime(a.createdAt, now)}</span>
                     </div>

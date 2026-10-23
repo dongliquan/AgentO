@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { openFile } from '@/lib/openfile';
+import { openFile, openInReadO } from '@/lib/openfile';
 import { useToasts } from '@/lib/notify';
 import { copyText } from '@/lib/search';
 import { basename, normPath } from '@/lib/format';
@@ -47,9 +47,10 @@ export function PathMenu(): JSX.Element | null {
   return (
     <>
       <div className="fileref-scrim" onMouseDown={hide} onContextMenu={(e) => { e.preventDefault(); hide(); }} />
-      <div className="popover fileref-menu" style={{ left: Math.min(at.x, window.innerWidth - 260), top: Math.min(at.y + 4, window.innerHeight - 170) }}>
+      <div className="popover fileref-menu" style={{ left: Math.min(at.x, window.innerWidth - 260), top: Math.min(at.y + 4, window.innerHeight - 200) }}>
         <div className="fileref-path muted ellipsis" title={at.path}>{at.path}</div>
         {!at.isDir && <button className="item" onClick={act(() => openFile(at.path, at.base))}>Open</button>}
+        {!at.isDir && <button className="item" onClick={act(() => openInReadO(at.path))} title="For a closer look: edit, search, git">Open in ReadO</button>}
         <button className="item" onClick={act(() => copyPath(at.path, 'Path'))}>Copy Path</button>
         <button className="item" onClick={act(() => copyPath(relative(at.path, at.base), 'Relative path'))}>Copy Relative Path</button>
         <button className="item" onClick={act(() => copyPath(name, 'Name'))}>Copy Name</button>

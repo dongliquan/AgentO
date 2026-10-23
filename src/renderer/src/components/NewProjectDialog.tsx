@@ -81,6 +81,7 @@ export function NewProjectDialog(): JSX.Element | null {
   return (
     <div className="overlay center" onMouseDown={(e) => { if (e.target === e.currentTarget) hide(); }}>
       <div className="dialog new-project-dialog" role="dialog" aria-label="New project">
+        <button className="icon-btn dialog-x" onClick={() => hide()} title="Close (Esc)" aria-label="Close">×</button>
         <h3>New Project</h3>
         <div className="new-project-row">
           <input ref={nameRef} value={name} placeholder="Project name" onChange={(e) => setName(e.target.value)} />

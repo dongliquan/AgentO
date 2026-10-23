@@ -61,6 +61,7 @@ export function ImportClaudeDialog(): JSX.Element | null {
   return (
     <div className="overlay center" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
       <div className="dialog import-claude">
+        <button className="icon-btn dialog-x" onClick={() => close()} title="Close (Esc)" aria-label="Close">×</button>
         <h3>Import Claude Code Sessions</h3>
         <div className="muted field-hint">
           Conversations started in VS Code or a terminal. They join the project as players, stopped, and continue the same

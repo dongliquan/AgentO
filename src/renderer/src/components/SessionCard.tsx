@@ -6,6 +6,8 @@ import { send } from '@/client';
 import { exportSession, focusTerminal, removeSession, selectAndReveal } from '@/commands';
 import { AGENT_LABELS, agentColor, basename, formatElapsed, displayTitle } from '@/lib/format';
 import { RoleTag } from './RoleTag';
+import { DelegationChip } from './Delegations';
+import { ModelChip } from './ModelChip';
 import { useNeedsIds } from './NeedsYou';
 import { lastLines } from '@/lib/ansi';
 import { startDrag, throttle } from '@/lib/drag';
@@ -88,6 +90,17 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
     }
   };
 
+  /** where a pick started; on release without a drag the Ground glides to the card */
+  const pick = useRef<{ x: number; y: number } | null>(null);
+  const onCardUp = (e: React.PointerEvent): void => {
+    const p = pick.current;
+    pick.current = null;
+    if (!p || layout !== 'board') return;
+    if (Math.hypot(e.clientX - p.x, e.clientY - p.y) > 4) return;
+    const st = useStore.getState();
+    if (!st.focusMode) st.requestPanTo(s.id);
+  };
+
   const onHeaderDown = (e: React.PointerEvent): void => {
     if (layout !== 'board' || editing) return;
     if ((e.target as HTMLElement).closest('button,input')) return;
@@ -137,8 +150,6 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
 
   const answer = (): void => {
     selectAndReveal(s.id);
-    const st = useStore.getState();
-    if (st.viewMode === 'board' && st.zoom < 0.6 && !st.focusMode) st.setZoom(1);
     setTimeout(() => focusTerminal(s.id), 120);
   };
 
@@ -148,13 +159,19 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
       data-session-card={s.id}
       style={style}
       data-session-id={s.id}
-      onPointerDownCapture={() => {
-        if (!selected) select(s.id);
+      onPointerUpCapture={onCardUp}
+      onPointerDownCapture={(e) => {
+        if (!selected) {
+          select(s.id);
+          // a pick (not a drag): on release the Ground glides to the card, centred and fitted
+          pick.current = { x: e.clientX, y: e.clientY };
+        }
       }}
     >
       <div className="card-header" onPointerDown={onHeaderDown} onDoubleClick={() => { setDraft(s.title); setEditing(true); }}>
         <AgentIcon kind={s.agent} color={s.color} size={16} />
         <RoleTag s={s} />
+        {s.role !== 'player' && <DelegationChip id={s.id} />}
         {editing ? (
           <input
             className="title-input"
@@ -236,6 +253,8 @@ function Footer({ session: s, onAnswer, onFocusMode }: { session: Session; onAns
   return (
     <div className="card-footer">
       <span style={{ color: agentColor(s.agent, s.color) }}>{AGENT_LABELS[s.agent]}</span>
+      {/* the model under the session, next to its CLI: click to pick another */}
+      <ModelChip session={s} />
       <span>·</span>
       <span title="Elapsed time">{formatElapsed(s.createdAt, now)}</span>
       <span className="spacer" />

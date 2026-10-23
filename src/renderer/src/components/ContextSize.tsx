@@ -30,7 +30,11 @@ export function ContextSize({ session: s }: { session: Session }): JSX.Element |
       title={
         `Conversation size: ${formatTokens(s.context)} tokens — re-read on every turn.\n` +
         `Click for a fresh start: it writes a handoff note, then continues in a new, small conversation.` +
-        (s.context >= auto ? `\nOver ${formatTokens(auto)}: done automatically after 25 minutes idle, unless you have it selected or typed into it in the last 2 hours.` : '')
+        (s.context >= auto * 2
+          ? `\nOver ${formatTokens(auto * 2)}: done automatically after 5 idle minutes, even while you use it.`
+          : s.context >= auto
+            ? `\nOver ${formatTokens(auto)}: done automatically after 25 minutes idle, unless you have it selected or typed into it in the last 2 hours.`
+            : '')
       }
     >
       {formatTokens(s.context)}

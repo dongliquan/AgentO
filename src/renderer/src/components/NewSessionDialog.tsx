@@ -73,6 +73,7 @@ export function NewSessionDialog(): JSX.Element {
   return (
     <div className="overlay center" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
       <div className="dialog" onKeyDown={(e) => { if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'SELECT') create(); }}>
+        <button className="icon-btn dialog-x" onClick={() => close()} title="Close (Esc)" aria-label="Close">×</button>
         <h3>New Session</h3>
         <div className="field">
           <label>Project</label>

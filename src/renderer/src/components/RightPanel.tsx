@@ -5,8 +5,10 @@ import { requestChanged, send } from '@/client';
 import { exportSession, focusTerminal, removeSession, selectAndReveal } from '@/commands';
 import { AGENT_LABELS, STATUS_LABELS, projectLabel, displayTitle, roleLabel, basename, formatDateTime, formatTime, relativeTime } from '@/lib/format';
 import { RoleTag } from './RoleTag';
+import { ModelChip } from './ModelChip';
 import { inboxHtml, inboxViewOf } from '@/lib/inboxText';
 import { openNeed, useNeedsIds } from './NeedsYou';
+import { RECENT_MS, RecentToggle, useRecentOnly } from './RecentToggle';
 import { useNow } from '@/lib/hooks';
 import { openFile } from '@/lib/openfile';
 import { StatusBadge } from './StatusBadge';
@@ -14,6 +16,7 @@ import { AgentIcon } from './AgentIcon';
 import { ChatView, Composer } from './ChatView';
 import { screenLines } from '@/lib/screen';
 import { TeamLog } from './TeamLog';
+import { FilesPanel } from './FilesPanel';
 import { WebPanel } from './WebPanel';
 import { TAB_ORDER, useDock } from '@/lib/dock';
 import { ShareSplitter } from './Splitter';
@@ -24,7 +27,7 @@ import { lastLines } from '@/lib/ansi';
 import { matches, selecting, useHighlight } from '@/lib/search';
 import { useOpenInbox } from '@/lib/closed';
 import { CopyButton, SearchBox } from './SearchBox';
-import { useDraft } from '@/lib/draft';
+import { readDraft, useDraft, writeDraft } from '@/lib/draft';
 import { ProjectFilter, useProjectFilter } from './ProjectFilter';
 import { MyTalk } from './MyTalk';
 import { useNewProject } from './NewProjectDialog';
@@ -36,8 +39,9 @@ import { AttachmentBar } from './AttachmentBar';
 import { kbd } from '@/lib/keys';
 import { useBuffer } from '@/lib/buffers';
 
-const TAB_LABEL: Record<RightTab, string> = { orders: 'Manager', inbox: 'Inbox', detail: 'Session', log: 'Logs', web: 'Web' };
+const TAB_LABEL: Record<RightTab, string> = { orders: 'Manager', inbox: 'Inbox', detail: 'Session', files: 'Files', log: 'Logs', web: 'Web' };
 const TAB_TITLE: Partial<Record<RightTab, string>> = {
+  files: 'Files — the selected session\'s project folders; a file name clicked in a chat is shown here',
   orders: 'You, the manager: what you said and the answers, and the order box (projects, new project, routines)',
   log: 'Everything the team sent each other, by order',
   web: 'Gemini, ChatGPT, ERNIE on the web — your own sign-in and subscription'
@@ -55,7 +59,30 @@ function TabContent({ tab, session }: { tab: RightTab; session: Session | undefi
   if (tab === 'orders') return <ManagerTab />;
   if (tab === 'log') return <TeamLog />;
   if (tab === 'inbox') return <Inbox />;
+  if (tab === 'files') return <FilesPanel />;
   return null;
+}
+
+/**
+ * The project filter (Manager order box · Inbox · Logs) follows the selected session's project from any view — a tab in
+ * Tabs, a card, a tree row — even while the Manager tab is not shown or the panel is closed (mounted by App). Like the order box itself: only while one project
+ * (or none) is picked there (a multi-project pick is kept); Team / New mode goes back to that project's orders.
+ */
+export function useFollowSelection(): void {
+  const selectedId = useStore((s) => s.selectedId);
+  const setTalkProject = useTalkProject((s) => s.setProject);
+  useEffect(() => {
+    const st = useStore.getState();
+    const sel = selectedId ? st.sessions.get(selectedId) : undefined;
+    const p = sel ? st.projects.find((x) => x.id === sel.projectId) : undefined;
+    const root = p ? p.parentId ?? p.id : undefined;
+    if (!root || !st.projects.some((x) => x.id === root && !x.parentId && !x.closed)) return;
+    const picked = readDraft<string[]>('orders.projects', []);
+    if (picked.length > 1) return;
+    if (picked[0] !== root) writeDraft('orders.projects', [root]);
+    if (readDraft<string>('orders.mode', 'order') !== 'order') writeDraft('orders.mode', 'order');
+    setTalkProject(root);
+  }, [selectedId, setTalkProject]);
 }
 
 export function RightPanel(): JSX.Element {
@@ -196,6 +223,7 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
           <span className="muted">· {AGENT_LABELS[s.agent]}</span>
           <span className="grow" />
           <button className="btn sm ghost" onClick={openTerminal}>Terminal</button>
+          <ModelChip session={s} />
           <ContextSize session={s} />
           {s.agent === 'claude' && !!s.prevResumeIds?.length && (
             <button className="btn sm ghost" onClick={() => restoreEarlier(s)} title="Resume the conversation from before the last fresh start / restart">Earlier Conversation</button>
@@ -302,9 +330,12 @@ function Inbox(): JSX.Element {
   const needs = useNeedsIds((st) => st.list);
   const needItems = useMemo(() => new Set(needs.flatMap((n) => (n.itemId ? [n.itemId] : []))), [needs]);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
-  const items = inbox
-    .filter(forUser)
-    .filter((it) => !only || rootOf(it.sessionId) === only)
+  const [recentOnly, setRecentOnly] = useRecentOnly();
+  const cutoff = Date.now() - RECENT_MS;
+  const scoped = inbox.filter(forUser).filter((it) => !only || rootOf(it.sessionId) === only);
+  const older = recentOnly ? scoped.filter((it) => it.createdAt < cutoff).length : 0;
+  const items = scoped
+    .filter((it) => !recentOnly || it.createdAt >= cutoff)
     .filter((it) => matches(query, it.text, sessions.get(it.sessionId)?.title))
     // newest first, read or not (what waits for the manager is marked, not moved)
     .sort((a, b) => b.createdAt - a.createdAt);
@@ -324,6 +355,7 @@ function Inbox(): JSX.Element {
     <div className="rp-body" ref={body}>
       <div className="filter-bar">
         <ProjectFilter value={pick} onChange={setPick} />
+        <RecentToggle value={recentOnly} onChange={setRecentOnly} hidden={older} />
         <SearchBox value={query} onChange={setQuery} count={items.length} placeholder="Search the inbox" />
       </div>
       {items.length === 0 ? (
@@ -460,7 +492,7 @@ function Orders(): JSX.Element {
   const selProject = sel ? projects.find((p) => p.id === sel.projectId) : undefined;
   const selRoot = selProject?.parentId ?? selProject?.id;
   useEffect(() => {
-    if (tab !== 'team' && selRoot && tops.some((t) => t.id === selRoot) && picked.length <= 1 && picked[0] !== selRoot) {
+    if (selRoot && tops.some((t) => t.id === selRoot) && picked.length <= 1 && (picked[0] !== selRoot || tab !== 'order')) {
       setPicked([selRoot]);
       setTab('order');
     }

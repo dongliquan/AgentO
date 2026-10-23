@@ -8,7 +8,7 @@ import { create } from 'zustand';
  * per-session version that is bumped at most once per animation frame. The terminal itself is fed directly through
  * the term bus and does not wait for that.
  */
-export const BUFFER_CAP = 200 * 1024;
+const BUFFER_CAP = 200 * 1024;
 /** trim only after this much overflow, so a full buffer is not re-copied on every chunk */
 const TRIM_AT = BUFFER_CAP + 64 * 1024;
 

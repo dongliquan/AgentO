@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { InboxItem, Session } from '@shared/protocol';
 import { useStore } from '@/store';
-import { buildThreads, isDirect, pieceResult } from '@/lib/threads';
+import { buildThreads, isAck, isDirect, pieceResult } from '@/lib/threads';
 import { firstLine, orderProgress } from '@/lib/progress';
 import { runCommand, selectAndReveal } from '@/commands';
 
@@ -98,7 +98,7 @@ export function wantsStatusNotification(s: Session): boolean {
   return Date.now() - (recent.get(s.id) ?? 0) > 15_000;
 }
 
-const isReportToManager = (i: InboxItem): boolean => i.kind === 'report' && !!i.fromId && i.fromId === i.sessionId;
+const isReportToManager = (i: InboxItem): boolean => i.kind === 'report' && !!i.fromId && i.fromId === i.sessionId && !isAck(i);
 
 /** Main window only: watches the inbox for reports to the manager and finished orders. */
 export function initNotifications(): void {

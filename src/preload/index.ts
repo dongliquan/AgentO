@@ -10,6 +10,7 @@ const desktop: DesktopApi = {
   openExternalTerminal: (p: string) => ipcRenderer.invoke('shell.openTerminal', p) as Promise<void>,
   openUrl: (url: string) => ipcRenderer.invoke('shell.openUrl', url) as Promise<void>,
   openFileWindow: (p: string) => ipcRenderer.send('file.openWindow', p),
+  openInReadO: (p: string) => ipcRenderer.invoke('file.openInReadO', p) as Promise<string | null>,
   find: (text: string, forward: boolean, next: boolean) => ipcRenderer.send('find.start', text, forward, next),
   stopFind: () => ipcRenderer.send('find.stop'),
   fileDataUrl: (p: string) => ipcRenderer.invoke('file.dataUrl', p) as Promise<string | null>,

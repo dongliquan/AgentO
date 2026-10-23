@@ -1,6 +1,7 @@
 import { memo, useEffect, useState } from 'react';
 import { create } from 'zustand';
 import { useStore } from '@/store';
+import { send } from '@/client';
 import { selectAndReveal } from '@/commands';
 import { displayTitle, pcStyle, projectColor, projectLabel, relativeTime } from '@/lib/format';
 import { dismissNeed, useNeedsYou, type NeedsYou } from '@/lib/needsYou';
@@ -74,12 +75,35 @@ function NeedAlertView({ need: n, title, project, projects, now }: { need: Needs
       }}
     >
       <div className="need-top">
-        <span className="needs-badge">Needs you</span>
+        <span className="needs-badge">{n.kind === 'context' ? 'Large chat' : 'Needs you'}</span>
         {project && <span className="project-tag" style={pcStyle(projectColor(project, projects))}>{projectLabel(project, projects)}</span>}
         <span className="need-title ellipsis">{title}</span>
         <span className="need-time">{relativeTime(n.at, now)}</span>
       </div>
       <div className="need-text">{last}</div>
+      {n.kind === 'context' && (
+        <div className="need-actions">
+          <button
+            className="btn sm primary"
+            onClick={(e) => {
+              e.stopPropagation();
+              dismissNeed(n.key);
+              send({ type: 'session.fresh', id: n.sessionId });
+            }}
+          >
+            Fresh start
+          </button>
+          <button
+            className="btn sm ghost"
+            onClick={(e) => {
+              e.stopPropagation();
+              dismissNeed(n.key);
+            }}
+          >
+            Later
+          </button>
+        </div>
+      )}
     </div>
   );
 }

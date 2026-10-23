@@ -93,7 +93,7 @@ export function UsageDialog(): JSX.Element | null {
           <span className="grow" />
           <button className="btn sm" onClick={load} disabled={loading}>{loading ? 'Loading…' : 'Refresh'}</button>
         </div>
-        <button className="icon-btn usage-close" onClick={close} title="Close (Esc)" aria-label="Close">
+        <button className="icon-btn dialog-x" onClick={close} title="Close (Esc)" aria-label="Close">
           <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
             <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
           </svg>

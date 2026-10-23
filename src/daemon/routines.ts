@@ -11,6 +11,9 @@ import { log } from './log';
 const TICK_MS = 10_000;
 
 /** Next run after `from` for a routine's schedule. */
+/** the name mark of a one-time routine (a to-do scheduled from the Report) */
+export const ONCE = 'Once · ';
+
 export function nextRun(r: Pick<Routine, 'everyMinutes' | 'dailyAt'>, from: number): number {
   if (r.dailyAt) {
     const [h, m] = r.dailyAt.split(':').map((x) => Number(x));
@@ -39,7 +42,9 @@ export class Routines {
   }
 
   save(input: RoutineInput): Routine {
-    const name = input.name.trim() || input.text.trim().slice(0, 40) || 'Routine';
+    const base = input.name.trim() || input.text.trim().slice(0, 40) || 'Routine';
+    // a one-time routine (a scheduled to-do) is marked in its name and removes itself after its run
+    const name = input.once && !base.startsWith(ONCE) ? `${ONCE}${base}` : base;
     if (!input.text.trim()) throw new Error('The routine has no order text');
     if (!input.dailyAt && !(input.everyMinutes && input.everyMinutes > 0)) throw new Error('Set "every N minutes" or "daily at"');
     if (input.dailyAt && !/^\d{1,2}:\d{2}$/.test(input.dailyAt)) throw new Error('"daily at" must look like 09:00');
@@ -96,6 +101,11 @@ export class Routines {
       log.warn(`routine "${r.name}" #${n} failed`, e);
     }
     const now = Date.now();
+    if (r.name.startsWith(ONCE)) {
+      this.store.deleteRoutine(r.id);
+      this.onChange(this.list());
+      return;
+    }
     r.runs = n;
     r.lastRunAt = now;
     r.nextAt = nextRun(r, now);

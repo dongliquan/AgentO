@@ -17,7 +17,7 @@ const BASE_CSS = `
 :where(.md) h3 { font-size: 15px; }
 :where(.md) p { margin: 8px 0; }
 :where(.md) pre { background: var(--panel); border: 1px solid var(--border); border-radius: 5px; padding: 10px 12px; overflow: auto; font-size: 12px; font-family: var(--mono); }
-:where(.md) code { color: var(--md-code); background: var(--panel2); padding: 1px 4px; border-radius: 3px; font-size: 0.9em; font-family: Consolas, var(--mono); }
+:where(.md) code { color: var(--md-code); background: var(--panel2); padding: 1px 4px; border-radius: 3px; font-size: 0.9em; font-family: var(--mono); }
 :where(.md) pre code { color: inherit; background: none; padding: 0; }
 :where(.md) ul, :where(.md) ol { padding-left: 24px; margin: 6px 0; }
 :where(.md) li > ul, :where(.md) li > ol { margin: 2px 0; }

@@ -57,11 +57,13 @@ export const STATUS_LABELS: Record<SessionStatus, string> = {
 };
 
 /** 'waiting' splits in two for display: a question on screen ("Needs input", pulsing) or just idle (still dot). */
-export function statusClass(s: { status: SessionStatus; attention?: boolean }): string {
-  // attention is sent by the daemon; an older daemon sends none, and then waiting stays waiting
+export function statusClass(s: { status: SessionStatus; attention?: boolean; limit?: string }): string {
+  // attention / limit are sent by the daemon; an older daemon sends none, and then waiting stays waiting
+  if (s.status === 'waiting' && s.limit) return 'limit';
   return s.status === 'waiting' && s.attention === false ? 'idle' : s.status;
 }
-export function statusLabel(s: { status: SessionStatus; attention?: boolean }): string {
+export function statusLabel(s: { status: SessionStatus; attention?: boolean; limit?: string }): string {
+  if (s.status === 'waiting' && s.limit) return 'Limit';
   if (s.status === 'waiting' && s.attention !== undefined) return s.attention ? 'Needs input' : 'Idle';
   return STATUS_LABELS[s.status];
 }
@@ -102,6 +104,17 @@ export function formatDateTime(ms: number): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+/** "Today 14:40", "Yesterday 09:12", "10-18 11:00" — when a conversation turn happened. */
+export function dayTime(ms: number, nowMs = Date.now()): string {
+  const d = new Date(ms);
+  const p = (n: number): string => String(n).padStart(2, '0');
+  const hm = `${p(d.getHours())}:${p(d.getMinutes())}`;
+  const day = (t: number): string => new Date(t).toDateString();
+  if (day(ms) === day(nowMs)) return `Today ${hm}`;
+  if (day(ms) === day(nowMs - 86_400_000)) return `Yesterday ${hm}`;
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${hm}`;
+}
+
 export function relativeTime(ms: number, nowMs = Date.now()): string {
   const diff = Math.max(0, nowMs - ms);
   const s = Math.floor(diff / 1000);
@@ -122,43 +135,6 @@ export function extname(p: string): string {
   const b = basename(p);
   const i = b.lastIndexOf('.');
   return i > 0 ? b.slice(i + 1).toLowerCase() : '';
-}
-
-export function fileIcon(name: string, isDir = false): string {
-  if (isDir) return '▸';
-  const ext = extname(name);
-  switch (ext) {
-    case 'ts':
-    case 'tsx':
-      return 'TS';
-    case 'js':
-    case 'jsx':
-    case 'mjs':
-    case 'cjs':
-      return 'JS';
-    case 'json':
-      return '{}';
-    case 'md':
-      return 'M↓';
-    case 'css':
-    case 'scss':
-      return '#';
-    case 'html':
-      return '<>';
-    case 'py':
-      return 'Py';
-    case 'csv':
-    case 'tsv':
-      return '▦';
-    case 'png':
-    case 'jpg':
-    case 'jpeg':
-    case 'gif':
-    case 'svg':
-      return '▣';
-    default:
-      return '·';
-  }
 }
 
 export function formatBytes(n: number): string {

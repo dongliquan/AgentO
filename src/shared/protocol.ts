@@ -119,6 +119,8 @@ export type RoutineInput = Pick<Routine, 'name' | 'target' | 'text' | 'everyMinu
   id?: string;
   /** first run right away instead of one period from now */
   runNow?: boolean;
+  /** run once at the next "daily at" time, then remove itself (a scheduled to-do) */
+  once?: boolean;
 };
 
 /** Who receives an order from the Orders panel. */
@@ -142,8 +144,14 @@ export interface Session {
   status: SessionStatus;
   /** waiting on a question (trust / permission / confirmation prompt) — not just idle after finishing its turn */
   attention?: boolean;
+  /** Claude paused by the subscription's usage limit: when it resets, as its screen says ("2pm (Asia/Seoul)") */
+  limit?: string;
   /** Claude: tokens the conversation carries now (re-read on every turn) — from the transcript's last call */
   context?: number;
+  /** the model the conversation's last call used (Claude transcript / Codex rollout), e.g. "claude-opus-5-5" */
+  model?: string;
+  /** the model the manager picked for this session (passed at every start; '' / absent = the CLI's default) */
+  modelPref?: string;
   /** Claude: earlier conversations of this session (before a fresh start / restart), newest last */
   prevResumeIds?: string[];
   pid?: number;
@@ -276,6 +284,8 @@ export type ClientMessage =
   | { type: 'session.paste'; id: string; text: string }
   /** fresh start: the session writes a handoff note, then starts over as a new conversation that reads it */
   | { type: 'session.fresh'; id: string }
+  | { type: 'session.setModel'; id: string; model: string }
+  | { type: 'git.subjects'; folders: string[]; hashes: string[] }   // commit subjects of these hashes, looked up in the folders' repositories   // '' = back to the default; a running Claude switches now
   /** go back to the conversation before the last fresh start / restart (the current one is kept in prevResumeIds) */
   | { type: 'session.restorePrev'; id: string }
   /** the session the manager has selected in this window (null: none) — never cleared automatically under them */
@@ -288,6 +298,7 @@ export type ClientMessage =
   | { type: 'agents.status' }
   /** drag and drop in the tree: into a project / part (another part moves it there), before another session */
   | { type: 'session.move'; id: string; projectId: string; beforeId?: string }
+  | { type: 'project.move'; id: string; beforeId?: string }   // reorder a project among its siblings (a part among its project's parts)
   /** store an image (base64) for an order / message; answered with attachment.saved (same ref) */
   | { type: 'attachment.save'; ref: string; name: string; data: string }
   /**
@@ -354,6 +365,7 @@ export type ServerMessage =
   /** answer to chat.new: the new session (the asking window opens it) */
   | { type: 'chat.created'; id: string }
   | { type: 'fs.search.result'; ref: string; items: { path: string; root: string }[] }
+  | { type: 'git.subjects.result'; subjects: Record<string, string> }
   /** a team message was just typed into this session (the card replays it in its message box) */
   | { type: 'team.delivered'; sessionId: string; text: string }
   | { type: 'projects'; projects: Project[] }
@@ -397,10 +409,15 @@ export interface DesktopApi {
   /** find in this window's page (Chromium find-in-page: rendered Markdown, code, tables); next: continue the same search */
   find(text: string, forward: boolean, next: boolean): void;
   stopFind(): void;
+  /** find in this window's page (Chromium find-in-page: rendered Markdown, code, tables); next: continue the same search */
+  find(text: string, forward: boolean, next: boolean): void;
+  stopFind(): void;
   /** an image file as a data: URL (null when unreadable or over 25 MB) */
   fileDataUrl(path: string): Promise<string | null>;
   /** show a file in its own viewer window (an open window for the same file comes to the front) */
   openFileWindow(path: string): void;
+  /** open a file in ReadO (the user's editor); resolves to an error text when ReadO is not found */
+  openInReadO(path: string): Promise<string | null>;
   /** a web page's icon as a data: URL (null when it cannot be fetched) */
   webFavicon(url: string): Promise<string | null>;
   /** Agents › Connections: open a terminal window that installs an agent CLI or signs in to it (fixed commands) */

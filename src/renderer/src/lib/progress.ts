@@ -1,5 +1,5 @@
 import type { InboxItem, Session } from '@shared/protocol';
-import { type LogNode } from './threads';
+import { isAck, type LogNode } from './threads';
 
 /** replaced: the same session got this work again later in the order (its newer piece is the one that counts) */
 export type WorkState = 'done' | 'replaced' | 'working' | 'waiting' | 'stopped' | 'error' | 'removed';
@@ -25,7 +25,7 @@ export interface OrderProgress {
 
 function reported(n: LogNode): boolean {
   // the taker answered back up the chain: a report from the session that received this directive
-  return n.children.some((c) => c.item.kind === 'report' && c.item.fromId === n.item.sessionId);
+  return n.children.some((c) => c.item.kind === 'report' && c.item.fromId === n.item.sessionId && !isAck(c.item));
 }
 
 function last(n: LogNode): number {

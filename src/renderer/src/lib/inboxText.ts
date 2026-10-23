@@ -50,9 +50,10 @@ function firstLine(md: string): string {
 }
 
 const VERBS: Record<string, [string, InboxView['tone']]> = {
-  finished: ['Finished', 'report'],
-  replied: ['Replied', 'report'],
-  reported: ['Report', 'report'],
+  finished: ['finished', 'report'],
+  replied: ['report', 'report'],
+  'handed on': ['handed on', 'info'],
+  reported: ['report', 'report'],
   stopped: ['Stopped', 'warn'],
   failed: ['Failed', 'error']
 };
@@ -81,13 +82,13 @@ export function inboxView(it: InboxItem, title?: string): InboxView {
   };
 
   // reports: "X finished: …", "X replied: …", "X → Manager (you): …"
-  const rep = /^(.*?) (finished|replied|reported|stopped|failed): ([\s\S]*)$/.exec(text);
+  const rep = /^(.*?) (finished|replied|handed on|reported|stopped|failed): ([\s\S]*)$/.exec(text);
   if (it.kind === 'report' && rep) {
     const [label, tone] = VERBS[rep[2]!] ?? ['Report', 'report'];
     return view(label, tone, rep[3]!);
   }
   const up = /^(.*?) → Manager \(you\): ([\s\S]*)$/.exec(text);
-  if (it.kind === 'report' && up) return view('Report', 'report', up[2]!);
+  if (it.kind === 'report' && up) return view('report', 'report', up[2]!);
 
   // notices: "<title> — <what>"
   const dash = title && text.startsWith(`${title} — `) ? text.slice(title.length + 3) : /^.*? — ([\s\S]*)$/.exec(text)?.[1] ?? text;
@@ -97,6 +98,10 @@ export function inboxView(it: InboxItem, title?: string): InboxView {
   }
   if ((m = /^fresh start gave up: no handoff note after 15 minutes(?: \((.+)\))?$/s.exec(dash))) {
     return view('Fresh start failed', 'warn', `No handoff note came back within 15 minutes, so it kept its current conversation.${m[1] ? `\n\n${m[1]}` : ''}`);
+  }
+  if ((m = /^paused by Claude's usage limit \(resets (.+?)\)(?:;|\s+while)?\s*(.*)$/s.exec(dash))) {
+    const rest = m[2]!.trim();
+    return view('Usage limit', 'warn', `Claude's usage limit is reached; the session continues by itself when the limit resets (**${m[1]}**).${rest ? `\n\n${rest[0]!.toUpperCase()}${rest.slice(1)}` : ''}`);
   }
   if ((m = /^stuck on a prompt while working on (your order|a task from "(.+)"): answer it in its Terminal$/s.exec(dash))) {
     return view('Needs an answer', 'question', `It stopped on a question in its terminal while working on ${m[2] ? `a task from **${m[2]}**` : '**your order**'}. Open it and answer in the **Terminal** view.`);

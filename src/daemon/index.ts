@@ -19,7 +19,7 @@ import { CodexParser, findCodexRollout } from './codex';
 import { CARD_PORTRAIT } from '@shared/layout';
 import { detectAgents } from './agents';
 import { collectUsage } from './usage';
-import { gitChanged, listDir, readFileCapped, searchFiles, warmIndex } from './fsapi';
+import { gitChanged, listDir, readFileCapped, searchFiles, warmIndex, commitSubjects } from './fsapi';
 import { TranscriptTail, findTranscript } from './transcript';
 import { Team, REVIEWER_TITLE } from './team';
 import { Routines } from './routines';
@@ -226,6 +226,8 @@ async function main(): Promise<void> {
   const typedAt = new Map<string, number>();
   const typed = (id: string): void => void typedAt.set(id, Date.now());
   sessions.inUse = (id) => [...selected.values()].includes(id) || Date.now() - (typedAt.get(id) ?? 0) < 2 * 3600_000;
+  // typed in this daemon's life, else the manager's last message in the records (a restart keeps the protection)
+  sessions.typedAgo = (id) => Date.now() - (typedAt.get(id) ?? store.lastFromUserAt(id) ?? -Infinity);
 
   const sendTo = (ws: WebSocket, msg: ServerMessage) => {
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
@@ -432,6 +434,10 @@ async function main(): Promise<void> {
         if (missing) throw new Error(`Opened "${project.name}", but ${missing} of its folders do not exist on this PC — add them again or fix the paths.`);
         return;
       }
+      case 'project.move':
+        store.moveProject(msg.id, msg.beforeId);
+        broadcast({ type: 'projects', projects: store.listProjects() });
+        return;
       case 'session.move':
         team.moveSession(msg.id, msg.projectId, msg.beforeId);
         return;
@@ -485,6 +491,12 @@ async function main(): Promise<void> {
         return;
       case 'session.fresh':
         team.freshStart(msg.id, 'manual');
+        return;
+      case 'session.setModel':
+        sessions.setModel(msg.id, msg.model);
+        return;
+      case 'git.subjects':
+        sendTo(ws, { type: 'git.subjects.result', subjects: await commitSubjects(msg.folders, msg.hashes) });
         return;
       case 'session.restorePrev':
         sessions.restorePrevious(msg.id);

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '@/store';
 import { requestRead } from '@/client';
-import { extname, fileIcon, formatBytes } from '@/lib/format';
+import { extname, formatBytes } from '@/lib/format';
+import { FileIcon } from './FileIcon';
 import { CodeView } from './CodeView';
 import { MarkdownView } from './MarkdownView';
 import { JsonTree } from './JsonTree';
@@ -32,7 +33,7 @@ export function ViewerTabs(): JSX.Element {
       <div className="tabstrip">
         {tabs.map((t) => (
           <button key={t.id} className={`tab ${t.id === active.id ? 'active' : ''}`} onClick={() => setActive(t.id)} title={t.path}>
-            <span className="mono muted" style={{ fontSize: 10 }}>{fileIcon(t.name)}</span>
+            <FileIcon name={t.name} />
             <span className="ellipsis">{t.name}</span>
             <span
               className="x"

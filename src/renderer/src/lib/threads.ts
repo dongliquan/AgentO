@@ -39,6 +39,14 @@ export function pieceResult(it: InboxItem): 'finished' | 'replied' | 'stopped' |
   return (m?.[1] as 'finished' | 'replied' | 'stopped' | undefined) ?? null;
 }
 
+/**
+ * A coordinator's turn that ended right after handing the work on ("X handed on: …", daemon Team.complete): kept in the
+ * log, but not a result — it does not count as a report, is not announced, and the flow draws it faintly.
+ */
+export function isAck(it: InboxItem): boolean {
+  return it.kind === 'report' && !!it.fromId && it.fromId === it.sessionId && /^[^\n]*? handed on: /.test(it.text);
+}
+
 /** What the manager typed into a session directly (daemon Team.note), not an order from the Manager tab. */
 export function isDirect(it: InboxItem): boolean {
   return it.fromId === 'user' && it.text.startsWith('Manager (you) · Direct →');
@@ -67,7 +75,7 @@ export type OrderStatus = 'reported' | 'working' | 'waiting' | 'stopped' | 'erro
  * session that took it is doing now.
  */
 export function orderStatus(node: LogNode, sessions: Map<string, Session>): OrderStatus {
-  if (descendants(node).some((it) => it.kind === 'report' && withManager(it))) return 'reported';
+  if (descendants(node).some((it) => it.kind === 'report' && withManager(it) && !isAck(it))) return 'reported';
   const s = sessions.get(node.item.sessionId);
   if (!s) return 'removed';
   if (s.status === 'working' || s.status === 'starting') return 'working';

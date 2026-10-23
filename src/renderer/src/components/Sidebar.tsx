@@ -1,20 +1,14 @@
 import { useState } from 'react';
-import { useStore, type TreeFilter } from '@/store';
+import { useStore } from '@/store';
 import { send } from '@/client';
 import { AgentPicker } from './AgentPicker';
 import { newProject } from '@/commands';
 import { ProjectTree, SessionRow } from './ProjectTree';
 import { SidebarOrders } from './SidebarOrders';
+import { useReport } from './DailyReport';
 
-const FILTERS: { id: TreeFilter; label: string }[] = [
-  { id: 'all', label: 'Sessions + Files' },
-  { id: 'sessions', label: 'Sessions' }
-];
-
-/** Left sidebar: the project tree (Manager, projects ⊃ parts, folders, sessions), with a sessions-only filter. */
+/** Left sidebar: the project tree (Manager, projects ⊃ parts, sessions). Folders and files are in the right panel's Files tab. */
 export function Sidebar(): JSX.Element {
-  const filter = useStore((s) => s.treeFilter);
-  const setFilter = useStore((s) => s.setTreeFilter);
   const setRightTab = useStore((s) => s.setRightTab);
   const [chatAt, setChatAt] = useState<{ x: number; y: number } | null>(null);
   const teamHead = useStore((s) => {
@@ -29,6 +23,20 @@ export function Sidebar(): JSX.Element {
         <span className="manager-ico">♛</span>
         <span className="label">Welcome</span>
         <span className="role-tag manager">MANAGER</span>
+        <button
+          className="icon-btn manager-usage"
+          title="Report — what was done each day, and the to-do list for the next"
+          onClick={(e) => {
+            e.stopPropagation();
+            useReport.getState().show();
+          }}
+        >
+          {/* a checklist, drawn like the toolbar icons (16px, currentColor) */}
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+            <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" />
+            <path d="M5 6l1 1 2-2M5 10l1 1 2-2M9.5 6.5h2M9.5 10.5h2" stroke="currentColor" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
         <button
           className="icon-btn manager-usage"
           title="Token usage — by project, time, session, role and model"
@@ -68,13 +76,6 @@ export function Sidebar(): JSX.Element {
           💬
         </button>
         <button className="icon-btn" title="New Project" onClick={() => void newProject()}>+</button>
-      </div>
-      <div className="chips">
-        {FILTERS.map((f) => (
-          <button key={f.id} className={`chip ${filter === f.id ? 'active' : ''}`} onClick={() => setFilter(f.id)}>
-            {f.label}
-          </button>
-        ))}
       </div>
       <ProjectTree />
       {chatAt && (

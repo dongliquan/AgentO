@@ -24,9 +24,9 @@ import { TranscriptParser, findTranscript, readTranscriptLines } from './transcr
 import { log } from './log';
 import { arrangeTeam } from '@shared/layout';
 import { plainTerminalLines } from '@shared/plaintext';
-import { PROMPT_RE } from '@shared/prompts';
+import { LIMIT_RE, PROMPT_RE, limitResetText } from '@shared/prompts';
 import { findCodexRollout, readCodex } from './codex';
-import { AUTO_MIN_GAP_MS, AUTO_FRESH, AUTO_IDLE_MS, AUTO_MIN_CONTEXT, AUTO_MIN_CONTEXT_COORD, HANDOFF_CONTINUE, HANDOFF_REQUEST, conversationStart, handoffDir, handoffPath } from './freshstart';
+import { AUTO_MIN_GAP_MS, AUTO_FRESH, AUTO_IDLE_MS, AUTO_MIN_CONTEXT, AUTO_MIN_CONTEXT_COORD, HANDOFF_CONTINUE, HANDOFF_REQUEST, conversationStart, handoffDir, handoffPath, AUTO_OVERSIZE_FACTOR, AUTO_OVERSIZE_IDLE_MS, AUTO_MANAGER_QUIET_MS, HANDOFF_MARK } from './freshstart';
 
 export const MCP_SERVER_NAME = 'agento';
 const MAX_BODY = 1024 * 1024;
@@ -46,8 +46,8 @@ const envOr = (k: string, d: string): string => (process.env[k] !== undefined ? 
 const COORDINATOR_MODEL = envOr('AGENTO_COACH_MODEL', 'sonnet');
 const COORDINATOR_EFFORT = envOr('AGENTO_COACH_EFFORT', 'medium');
 const COORDINATOR_COMPACT_PCT = envOr('AGENTO_COACH_COMPACT_PCT', '60');
-const COORDINATOR_ARGS = (): string[] => [
-  ...(COORDINATOR_MODEL ? ['--model', COORDINATOR_MODEL] : []),
+const COORDINATOR_ARGS = (pick?: string): string[] => [
+  ...(pick || COORDINATOR_MODEL ? ['--model', pick || COORDINATOR_MODEL] : []),
   ...(COORDINATOR_EFFORT ? ['--effort', COORDINATOR_EFFORT] : []),
   '--disallowedTools', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit'
 ];
@@ -117,6 +117,8 @@ interface Pending {
   timer: NodeJS.Timeout | null;
   /** the manager was already told it is stuck on a prompt */
   blocked?: boolean;
+  /** it sent a directive to someone while on this order: a turn that ends then is a hand-off, not a result */
+  delegated?: boolean;
 }
 
 interface Queued {
@@ -200,6 +202,9 @@ function projectPath(id: string, projects: Project[]): string {
   return parent ? `${parent.name} › ${p.name}` : p.name;
 }
 
+/** Optional CLI dialogs AgentO closes with Esc (they would swallow team messages as keystrokes). */
+const OPTIONAL_DIALOGS = [/Teach\s*auto\s*mode\s*about\s*your\s*environment/i];
+
 /** The cross-check reviewer every new project gets: a Codex session (a second model) beside the Claude players. */
 export const REVIEWER_TITLE = 'Codex 검토';
 
@@ -240,6 +245,10 @@ ${scope}
 - When a session finishes what you sent, you get an "[AgentO] … finished" message with its last reply — no need to poll.
   Its last reply is normally enough — \`read_session\` (max_entries 3) only when it is unclear. Decide the next step,
   and \`report_up\` to the manager when an order is done or blocked.
+- To the manager, only what needs the manager: the result when an order is done, or a blocker / decision — one
+  message, essentials only (what changed, where, what to decide). No progress notes and no restating of the order:
+  the manager watches progress in AgentO. When your turn ends right after handing work on, answer in one line
+  ("→ <session>: <task>"), not a summary.
 - Questions you cannot answer yourself go to the manager with \`report_up\`.${project ? `
 - Review: if your project has a Codex session titled "${REVIEWER_TITLE}" (\`list_sessions\`), it is the cross-check reviewer —
   a second model. Claude players do the work; before you report a finished piece to the manager, \`send_to_session\` the
@@ -268,6 +277,8 @@ You are the **coach** of the project "${project.name}" (id ${project.id}).
 - When a player finishes what you sent, you get an "[AgentO] … finished" message with its last reply — no need to poll.
   Its last reply is normally enough (\`read_session\` only when unclear); assign the next task, and \`report_up\` when the
   order is done or blocked.
+- Upward, only what is needed: the result when the order is done, or a blocker / decision — one message, essentials
+  only. No progress notes. When your turn ends right after handing work on, answer in one line ("→ <session>: <task>").
 - Players may ask you questions; answer them with \`send_to_session\`.
 
 ${LEAN_CONTEXT}
@@ -283,9 +294,13 @@ const PLAYER_INSTRUCTIONS = `AgentO team tools. ${TEAM_INTRO}
 You are a **player**: do the work you are given in your project folder. When you are blocked or unsure, ask whoever
 gave you the work (your head coach, or your coach if your part has one) with report_up instead of stopping. When a
 teammate's work affects yours, coordinate with them (list_sessions, read_session, send_to_session to a teammate). Do
-not send a message just to acknowledge — whoever gave you the work is told automatically when you finish.
-End a finished task with a short report: what you did, the files you changed (paths), how it was checked, and what
-needs a decision — a few lines, not the whole story (it is read by someone managing several players).`;
+not send a message just to acknowledge — whoever gave you the work is told automatically when you finish, so do not
+\`report_up\` a finished task either: ending your answer is the report. \`report_up\` only when you are blocked or need
+a decision.
+End a finished task with a short report. Its first line names the feature in a few words, as
+"Feature: <what was added or changed>" (in the language you report in, e.g. "기능: 상품 상세 리뷰 정렬 추가") — the
+manager's Timeline lists features by this line. Then: what you did, the files you changed (paths), how it was checked,
+and what needs a decision — a few lines, not the whole story (it is read by someone managing several players).`;
 
 const PLAYING_COACH_NOTE = (project: string): string =>
   `[AgentO] You are now the playing coach of the project "${project}". Keep doing your own work, and also manage this ` +
@@ -376,8 +391,12 @@ export class Team {
       this.onFreshStatus(s);
     });
     sessions.keepAwake = (id) => this.fresh.has(id);
-    if (AUTO_FRESH) setInterval(() => this.autoFresh(), 10 * 60_000).unref?.();
-    sessions.on('data', (id) => this.autoTrust(id));
+    // every 2 minutes (an oversized conversation waits only a short pause; the others still need 25 idle minutes)
+    if (AUTO_FRESH) setInterval(() => this.autoFresh(), 2 * 60_000).unref?.();
+    sessions.on('data', (id) => {
+      this.autoTrust(id);
+      this.autoDismiss(id);
+    });
     // Waiting is the normal resting state inside team work; the user hears about it through reports instead.
     sessions.quietWaiting = (s) =>
       s.role !== 'player' ||
@@ -433,6 +452,38 @@ export class Team {
       } else this.sessions.input(id, '\r');
     }, 600);
     log.info('team: accepted folder trust for', s.title, s.cwd);
+  }
+
+  /** when each dialog was last dismissed in a session's process (it may come back: dismissed again after a minute) */
+  private dismissed = new Map<string, number>();
+
+  /**
+   * Close optional dialogs a CLI shows on its own (Claude Code's "Teach auto mode about your environment?"): left open
+   * they swallow every message typed in as keystrokes, and the session never gets them. Esc cancels them.
+   */
+  private autoDismiss(id: string): void {
+    const s = this.sessions.get(id);
+    if (!s || s.agent !== 'claude' || !s.pid) return;
+    const out = this.sessions.outputSinceInput(id);
+    // cheap check first: this runs on every output chunk
+    if (!/auto\s*mode/i.test(out)) return;
+    const screen = plainTerminal(out);
+    const dialog = OPTIONAL_DIALOGS.find((d) => d.test(screen));
+    if (!dialog) return;
+    const key = `${id}:${s.pid}:${dialog.source}`;
+    if (Date.now() - (this.dismissed.get(key) ?? 0) < 60_000) return;
+    this.dismissed.set(key, Date.now());
+    this.notBefore.set(id, Date.now() + TRUST_SETTLE_MS);
+    setTimeout(() => this.sessions.input(id, '\x1b'), 400);
+    log.info('team: closed an optional CLI dialog for', s.title, dialog.source);
+  }
+
+  /** When the session last took a message (its newest user turn in the transcript); undefined without a transcript. */
+  private lastTakenAt(s: StoredSession): number | undefined {
+    const entries = this.chat(s);
+    if (!entries) return undefined;
+    for (let i = entries.length - 1; i >= 0; i--) if (entries[i]!.kind === 'user') return entries[i]!.ts;
+    return undefined; // none in the part read (a huge transcript's tail): unknown, not "never took it"
   }
 
   /* ---------- lookups ---------- */
@@ -728,7 +779,7 @@ export class Team {
       const note = this.lastReply(cur, 200_000).trim();
       if (note.length < 200) return; // not the note yet (a short acknowledgement): wait for the real answer
       try {
-        fs.writeFileSync(f.file, `${note}\n`);
+        fs.writeFileSync(f.file, `${note}\n${this.lastExchange(cur)}`);
       } catch (e) {
         log.warn('team: could not save the handoff note', f.file, e);
         return;
@@ -746,18 +797,41 @@ export class Team {
     }, SETTLE_MS);
   }
 
+  /**
+   * The old conversation's last request and answer, word for word, for the end of the handoff note — the note is a
+   * summary; this keeps exactly what was being worked on when the fresh start came (no tokens to write it).
+   */
+  private lastExchange(s: StoredSession): string {
+    const entries = this.chat(s);
+    if (!entries) return '';
+    const mark = entries.map((e) => e.kind === 'user' && (e.text ?? '').includes(HANDOFF_MARK)).lastIndexOf(true);
+    const before = mark >= 0 ? entries.slice(0, mark) : entries;
+    const lastUser = before.map((e) => e.kind === 'user' && !!(e.text ?? '').trim()).lastIndexOf(true);
+    if (lastUser < 0) return '';
+    const ask = (before[lastUser]!.text ?? '').trim();
+    const said = before.slice(lastUser + 1).filter((e) => e.kind === 'assistant' && (e.text ?? '').trim()).map((e) => e.text!.trim()).join('\n\n');
+    const clip = (t: string, n: number): string => (t.length > n ? `${t.slice(0, n)}\n…(${t.length - n} more characters)` : t);
+    return `\n---\n\n## Last exchange before the fresh start (word for word)\n\n**Request:**\n\n${clip(ask, 4000)}\n\n**Your answer:**\n\n${clip(said || '(no answer yet)', 6000)}\n`;
+  }
+
   /** Idle Claude sessions whose conversation has grown past the size get a fresh start (checked every 10 minutes). */
   private autoFresh(): void {
     for (const s of this.all()) {
       if (s.agent !== 'claude' || !this.sessions.isLive(s.id) || s.status !== 'waiting') continue;
       if (this.fresh.has(s.id) || this.pending.has(s.id) || this.hasMail(s.id) || this.isClosed(s.projectId)) continue;
       const min = s.role === 'player' ? AUTO_MIN_CONTEXT : AUTO_MIN_CONTEXT_COORD;
-      if ((s.context ?? 0) < min || this.sessions.idleFor(s.id) < AUTO_IDLE_MS) continue;
-      // a session the manager has open (Ground card terminal, Session tab) is never cleared under them
-      if (this.sessions.isAttached(s.id) || this.sessions.inUse(s.id)) continue;
-      if (this.needsAttention(s)) continue;
+      const size = s.context ?? 0;
+      if (size < min) continue;
+      // oversized: every turn re-reads it — cleared after a short pause, even while the manager uses the session
+      const oversized = size >= min * AUTO_OVERSIZE_FACTOR;
+      if (this.sessions.idleFor(s.id) < (oversized ? AUTO_OVERSIZE_IDLE_MS : AUTO_IDLE_MS)) continue;
+      // otherwise a session the manager has open (Ground card terminal, Session tab) is not cleared under them; and one
+      // the manager typed into within the hour never is, whatever its size (the Large chat alert asks them instead)
+      if (!oversized && (this.sessions.isAttached(s.id) || this.sessions.inUse(s.id))) continue;
+      if (this.sessions.typedAgo(s.id) < AUTO_MANAGER_QUIET_MS) continue;
+      if (this.needsAttention(s) || this.limited(s)) continue;
       const began = conversationStart(s.cwd, s.resumeId);
-      if (began && Date.now() - began < AUTO_MIN_GAP_MS) continue;
+      if (!oversized && began && Date.now() - began < AUTO_MIN_GAP_MS) continue;
       try {
         this.freshStart(s.id, 'auto');
       } catch (e) {
@@ -874,7 +948,8 @@ export class Team {
         ...(s.role === 'player' ? ['-c', 'sandbox_mode=danger-full-access'] : []),
         // on Windows, first runs ask which sandbox to set up and wait there; without the user's own choice in
         // ~/.codex/config.toml, take the one that needs no administrator rights
-        ...(process.platform === 'win32' && !codexSandboxChosen() ? ['-c', 'windows.sandbox=unelevated'] : [])
+        ...(process.platform === 'win32' && !codexSandboxChosen() ? ['-c', 'windows.sandbox=unelevated'] : []),
+        ...(s.modelPref ? ['-c', `model=${s.modelPref}`] : [])
       ];
     }
     if (s.agent === 'gemini') {
@@ -912,7 +987,8 @@ export class Team {
     // fresh start: the handoff note is written here and read back by the new conversation
     extras.push('--add-dir', handoffDir());
     extras.push('--mcp-config', file, '--allowedTools', `mcp__${MCP_SERVER_NAME}`);
-    if (s.role !== 'player') extras.push(...COORDINATOR_ARGS());
+    if (s.role !== 'player') extras.push(...COORDINATOR_ARGS(s.modelPref));
+    else if (s.modelPref) extras.push('--model', s.modelPref);
     return extras;
   }
 
@@ -981,6 +1057,12 @@ export class Team {
   }
 
   /** A prompt printed since the last keystroke is still unanswered (the log keeps old prompts after redraws). */
+  /** The usage-limit notice on the screen: when it resets (Claude Code waits for that, then goes on by itself). */
+  private limited(t: StoredSession): string | undefined {
+    const screen = plainTerminal(this.sessions.outputSinceInput(t.id)).slice(-1500);
+    return LIMIT_RE.test(screen) ? (limitResetText(screen) ?? 'later') : undefined;
+  }
+
   private needsAttention(t: StoredSession): boolean {
     return PROMPT_RE.test(plainTerminal(this.sessions.outputSinceInput(t.id)).slice(-1500));
   }
@@ -1024,10 +1106,18 @@ export class Team {
       // the previous directive was just typed in and has not been picked up yet
       const p = this.pending.get(id);
       if (p && !p.started && Date.now() - p.at < PICKUP_GRACE_MS) continue;
-      if (this.needsAttention(t)) {
+      // paused by the usage limit: the messages wait; Claude Code goes on by itself when the limit resets
+      const reset = this.limited(t);
+      if (reset || this.needsAttention(t)) {
         if (!this.attention.has(id)) {
           this.attention.add(id);
-          this.store.addInbox(id, 'waiting', `${t.title} — answer its prompt so it can receive ${queue.length} team message(s)`);
+          this.store.addInbox(
+            id,
+            'waiting',
+            reset
+              ? `${t.title} — paused by Claude's usage limit (resets ${reset}); ${queue.length} team message(s) wait until it continues`
+              : `${t.title} — answer its prompt so it can receive ${queue.length} team message(s)`
+          );
           this.onInbox();
         }
         continue;
@@ -1087,13 +1177,33 @@ export class Team {
 
   /** The directed session finished: report its last reply to whoever sent the directive. */
   private complete(s: StoredSession, p: Pending): void {
-    // idle on a question (permission / confirmation prompt): not finished — tell the manager, keep waiting for the end
-    if (s.status === 'waiting' && this.needsAttention(s)) {
+    // idle on a question (permission / confirmation prompt), or paused by the usage limit: not finished — tell the
+    // manager once, keep waiting for the end
+    const reset = s.status === 'waiting' ? this.limited(s) : undefined;
+    if (s.status === 'waiting' && (reset || this.needsAttention(s))) {
       if (!p.blocked) {
         p.blocked = true;
         p.started = false;
         const who = p.from === 'user' ? 'your order' : `a task from "${this.sessions.get(p.from)?.title ?? 'a session'}"`;
-        this.store.addInbox(s.id, 'waiting', `${s.title} — stuck on a prompt while working on ${who}: answer it in its Terminal`);
+        this.store.addInbox(
+          s.id,
+          'waiting',
+          reset
+            ? `${s.title} — paused by Claude's usage limit (resets ${reset}) while working on ${who}; it continues by itself`
+            : `${s.title} — stuck on a prompt while working on ${who}: answer it in its Terminal`
+        );
+        this.onInbox();
+      }
+      return;
+    }
+    // the message never reached the conversation (typed into a dialog, or not submitted): the last reply is an old
+    // one — do not report it again as the answer; tell the manager once and keep waiting
+    const taken = this.lastTakenAt(s);
+    if (taken !== undefined && taken < p.at - 2000) {
+      if (!p.blocked) {
+        p.blocked = true;
+        p.started = false;
+        this.store.addInbox(s.id, 'waiting', `${s.title} — did not take the message (a dialog or prompt in its Terminal?): open it, close the dialog, and send again`);
         this.onInbox();
       }
       return;
@@ -1104,7 +1214,9 @@ export class Team {
     // a coach's turn usually ends after delegating, so it "replied"; a player's turn is the work itself
     const state = s.status !== 'waiting' ? `stopped (${s.status})` : s.role === 'player' ? 'finished' : 'replied';
     if (p.from === 'user') {
-      this.store.addInbox(s.id, 'report', `${s.title} ${state}: ${clip(reply.trim(), LOG_TEXT_MAX) || '(no reply text)'}`, false, s.id);
+      // a coordinator that just handed the work on has no result yet: recorded as "handed on" (shown faintly, no alert)
+      const shown = state === 'replied' && p.delegated ? 'handed on' : state;
+      this.store.addInbox(s.id, 'report', `${s.title} ${shown}: ${clip(reply.trim(), LOG_TEXT_MAX) || '(no reply text)'}`, false, s.id);
       this.onInbox();
       return;
     }
@@ -1170,6 +1282,10 @@ export class Team {
     if (!message.trim()) throw new ToolError('message is empty');
     this.checkRate(caller);
     const text = `[Message from ${this.label(caller.id)}]\n${message.trim()}`;
+    if (directive) {
+      const p = this.pending.get(caller.id);
+      if (p) p.delegated = true;
+    }
     this.enqueue(t.id, directive ? { text, from: caller.id } : ride ? { text, ride: true, report: true } : { text, report: true });
     this.record(t, directive ? 'directive' : 'report', caller, message);
     const queued = this.outbox.has(t.id);

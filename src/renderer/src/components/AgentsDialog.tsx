@@ -45,6 +45,7 @@ export function AgentsDialog(): JSX.Element | null {
   return (
     <div className="overlay center" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
       <div className="dialog agents-dialog">
+        <button className="icon-btn dialog-x" onClick={() => close()} title="Close (Esc)" aria-label="Close">×</button>
         <h3>Agent Connections</h3>
         <div className="muted field-hint">
           AgentO runs these CLIs with their own sign-in (your subscription). Install or sign in opens a terminal window;
