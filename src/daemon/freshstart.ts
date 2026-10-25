@@ -106,7 +106,8 @@ export function handoffPath(s: Pick<Session, 'id' | 'title'>): string {
 export const HANDOFF_REQUEST =
   `[AgentO] Fresh start: this conversation is getting long, so AgentO will clear it and start you over with a short ` +
   `handoff note instead (it saves tokens on every turn). Reply now with that note as your whole answer — AgentO saves ` +
-  `it to a file and gives it to the new conversation. Do not use any tools and do not continue the work.\n\n` +
+  `it to a file and gives it to the new conversation. Do not continue the work; the only tool to use now is ` +
+  `update_memory — first put the decisions, conventions and traps the whole project should keep into the project memory.\n\n` +
   `Markdown, in the language of this conversation, complete enough to carry on without the old conversation:\n` +
   `- goal and scope of the work\n- current state: what is done, what is in progress\n- decisions made and why\n` +
   `- files changed or created (full paths), branches / worktrees\n- how to check it (commands, URLs, test data)\n` +

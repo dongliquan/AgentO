@@ -114,8 +114,10 @@ export function ProjectTree(): JSX.Element {
             />
           )}
           {isPart && members.length > 0 && <span className={`status-dot ${AGG_DOT[agg.state]}`} title={agg.text} />}
-          <span className="label" style={{ fontWeight: 600 }} onDoubleClick={(e) => { e.stopPropagation(); void renameProject(p.id); }} title="Double-click to rename">{p.name}</span>
-          {total > 0 && <span className="muted" style={{ fontSize: 11 }} title={`${total} session(s)`}>{total}</span>}
+          <span className="label" style={{ fontWeight: 600 }} onDoubleClick={(e) => { e.stopPropagation(); void renameProject(p.id); }} title="Double-click to rename">
+            {p.name}
+            {!isPart && total > 0 && <span className="muted tree-count" title={`${total} session(s)`}> ({total})</span>}
+          </span>
           {!isPart && (
             <button
               className="icon-btn hover-act pc-pick"

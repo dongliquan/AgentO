@@ -494,6 +494,8 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .routine-head { display: flex; flex-direction: column; font-size: 12px; font-weight: 600; min-width: 0; }
 .routine-head .muted { font-weight: 400; font-size: 11px; }
 .tree-add-head { color: var(--muted); font-style: italic; }
+/* a project's session count right after its name — "Shop (16)"; parts show none */
+.tree-count { font-size: 11px; font-weight: 400; }
 .card.selected { box-shadow: 0 0 0 2px var(--accent), var(--shadow-sm); }
 .card.static { position: relative; width: 100%; height: 100%; }
 .card.fill { position: absolute; inset: 0; border-radius: 0; width: auto !important; height: auto !important; }
@@ -1296,7 +1298,8 @@ button.tree-pc:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, t
 .files-head .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* narrow panel: the count and the + stay on the one line, the name gives way */
 .files-head .muted { flex: none; font-size: 11px; font-weight: 400; white-space: nowrap; }
-.files-head .icon-btn, .files-head .pc-dot { flex: none; }
+.files-head .icon-btn, .files-head .pc-dot, .files-head .files-memory { flex: none; }
+.files-head .files-memory { height: 20px; padding: 0 7px; font-size: 11px; }
 .files-tree { padding-top: 4px; }
 /* project color picker (the project's color dot in the tree) */
 .pc-menu { width: 184px; z-index: 400; }

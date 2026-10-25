@@ -26,6 +26,7 @@ import { arrangeTeam } from '@shared/layout';
 import { plainTerminalLines } from '@shared/plaintext';
 import { LIMIT_RE, PROMPT_RE, limitResetText } from '@shared/prompts';
 import { findCodexRollout, readCodex } from './codex';
+import { MEMORY_MODES_HELP, MEMORY_SECTIONS, MEMORY_TOOL_DESCRIPTION, ensureMemory, memorySystemPrompt, updateMemory, type MemoryMode, type MemorySection } from './memory';
 import { AUTO_MIN_GAP_MS, AUTO_FRESH, AUTO_IDLE_MS, AUTO_MIN_CONTEXT, AUTO_MIN_CONTEXT_COORD, HANDOFF_CONTINUE, HANDOFF_REQUEST, conversationStart, handoffDir, handoffPath, AUTO_OVERSIZE_FACTOR, AUTO_OVERSIZE_IDLE_MS, AUTO_MANAGER_QUIET_MS, HANDOFF_MARK } from './freshstart';
 
 export const MCP_SERVER_NAME = 'agento';
@@ -249,7 +250,10 @@ ${scope}
   message, essentials only (what changed, where, what to decide). No progress notes and no restating of the order:
   the manager watches progress in AgentO. When your turn ends right after handing work on, answer in one line
   ("→ <session>: <task>"), not a summary.
-- Questions you cannot answer yourself go to the manager with \`report_up\`.${project ? `
+- Questions you cannot answer yourself go to the manager with \`report_up\`.
+- Project memory (\`update_memory\`): the short note every session of the project gets at start — keep it current.
+  When a piece finishes or a decision is made, put what the others need there (Decisions · Conventions · Map ·
+  Don't · Open), one line each; replace or remove lines that are outdated. It is what lets conversations start short.${project ? `
 - Review: if your project has a Codex session titled "${REVIEWER_TITLE}" (\`list_sessions\`), it is the cross-check reviewer —
   a second model. Claude players do the work; before you report a finished piece to the manager, \`send_to_session\` the
   reviewer what to check (goal, changed files or commits, how to verify). It reviews only and does not edit files.
@@ -279,6 +283,8 @@ You are the **coach** of the project "${project.name}" (id ${project.id}).
   order is done or blocked.
 - Upward, only what is needed: the result when the order is done, or a blocker / decision — one message, essentials
   only. No progress notes. When your turn ends right after handing work on, answer in one line ("→ <session>: <task>").
+- Project memory (\`update_memory\`): when a piece finishes or a decision is made, put what every session of the
+  project needs there (Decisions · Conventions · Map · Don't · Open), one line each; drop outdated lines.
 - Players may ask you questions; answer them with \`send_to_session\`.
 
 ${LEAN_CONTEXT}
@@ -297,6 +303,8 @@ teammate's work affects yours, coordinate with them (list_sessions, read_session
 not send a message just to acknowledge — whoever gave you the work is told automatically when you finish, so do not
 \`report_up\` a finished task either: ending your answer is the report. \`report_up\` only when you are blocked or need
 a decision.
+When you learn something every teammate needs — a convention, where something is, a trap — add one line to the
+project memory with \`update_memory\` (Conventions / Map / Don't); it is given to every session at start.
 End a finished task with a short report. Its first line names the feature in a few words, as
 "Feature: <what was added or changed>" (in the language you report in, e.g. "기능: 상품 상세 리뷰 정렬 추가") — the
 manager's Timeline lists features by this line. Then: what you did, the files you changed (paths), how it was checked,
@@ -530,6 +538,12 @@ export class Team {
 
   private project(id: string): Project | undefined {
     return this.store.listProjects().find((p) => p.id === id);
+  }
+
+  /** The top-level project a project id belongs to (a part's project; a project is its own; none for the team head). */
+  private rootProject(id: string): Project | undefined {
+    const p = this.project(id);
+    return p?.parentId ? this.project(p.parentId) : p;
   }
 
   /* ---------- folders, creation, launch ---------- */
@@ -987,6 +1001,13 @@ export class Team {
     // fresh start: the handoff note is written here and read back by the new conversation
     extras.push('--add-dir', handoffDir());
     extras.push('--mcp-config', file, '--allowedTools', `mcp__${MCP_SERVER_NAME}`);
+    // the project memory: what every session of the project should know, read on every call (kept short by its caps)
+    const root = this.rootProject(s.projectId);
+    if (root) {
+      ensureMemory(root.id, root.name);
+      const mem = memorySystemPrompt(root.id, root.name);
+      if (mem) extras.push('--append-system-prompt', mem);
+    }
     if (s.role !== 'player') extras.push(...COORDINATOR_ARGS(s.modelPref));
     else if (s.modelPref) extras.push('--model', s.modelPref);
     return extras;
@@ -1503,6 +1524,33 @@ export class Team {
         const old = t.title;
         this.sessions.update(t.id, { title });
         return `Renamed "${old}" to "${title}".`;
+      }
+    },
+    {
+      name: 'update_memory',
+      description: MEMORY_TOOL_DESCRIPTION,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          section: { type: 'string', enum: [...MEMORY_SECTIONS] },
+          text: { type: 'string', description: 'the line(s) to add / the new section (replace) / the text the lines to drop contain (remove)' },
+          mode: { type: 'string', enum: ['append', 'replace', 'remove'], description: MEMORY_MODES_HELP },
+          project_id: { type: 'string', description: 'team head coach only: which project' }
+        },
+        required: ['section', 'text']
+      },
+      roles: ['head', 'coach', 'player'],
+      run: (caller, args) => {
+        const root = caller.projectId ? this.rootProject(caller.projectId) : this.rootProject(str(args['project_id']));
+        if (!root) throw new ToolError(caller.projectId ? 'Your project was not found' : 'Say which project (project_id)');
+        const section = str(args['section']) as MemorySection;
+        if (!(MEMORY_SECTIONS as readonly string[]).includes(section)) throw new ToolError(`section must be one of ${MEMORY_SECTIONS.join(', ')}`);
+        const mode = (str(args['mode']) || 'append') as MemoryMode;
+        if (!['append', 'replace', 'remove'].includes(mode)) throw new ToolError('mode must be append, replace or remove');
+        const r = updateMemory(root.id, root.name, section, str(args['text']), mode);
+        if ('error' in r) throw new ToolError(r.error);
+        log.info(`memory ${root.name} ${section} ${mode} by ${caller.title}`);
+        return `${section}: ${r.lines} line${r.lines === 1 ? '' : 's'} (memory ${r.total}/60). New sessions of "${root.name}" get it at start; running ones on their next start or fresh start.`;
       }
     },
     {

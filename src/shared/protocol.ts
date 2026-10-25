@@ -44,6 +44,8 @@ export interface Project {
   closed?: boolean;
   /** a top-level project's color (parts use their project's): tags, tree, Ground frame, Orders tab */
   color?: string;
+  /** a top-level project's memory file (team/memory/<id>.md): the short shared note its sessions get at start */
+  memory?: string;
 }
 
 /** Project colors, handed out in order to new projects (readable on the light and the dark theme). */

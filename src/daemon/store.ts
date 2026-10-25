@@ -5,6 +5,7 @@ import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import { PROJECT_COLORS, type Folder, type InboxItem, type Project, type Routine, type Session, type SessionRole, type SessionStatus, type AgentKind } from '@shared/protocol';
 import { dbPath, ensureDir, dataDir } from './paths';
+import { ensureMemory, memoryPath } from './memory';
 
 interface ProjectRow {
   id: string;
@@ -318,7 +319,8 @@ export class Store {
       folders: byProject.get(p.id) ?? [],
       ...(p.parent_id ? { parentId: p.parent_id } : {}),
       ...(p.closed ? { closed: true } : {}),
-      ...(p.color ? { color: p.color } : {})
+      ...(p.color ? { color: p.color } : {}),
+      ...(p.parent_id ? {} : { memory: memoryPath(p.id) })
     }));
   }
 
@@ -364,6 +366,7 @@ export class Store {
     const color = parentId ? undefined : this.nextColor();
     const p: Project = { id: randomUUID(), name, createdAt: Date.now(), folders: [], ...(parentId ? { parentId } : {}), ...(color ? { color } : {}) };
     this.stmt('INSERT INTO projects (id, name, created_at, parent_id, color) VALUES (?, ?, ?, ?, ?)').run(p.id, p.name, p.createdAt, parentId ?? null, color ?? null);
+    if (!parentId) ensureMemory(p.id, p.name);
     return p;
   }
 

@@ -12,6 +12,7 @@ import { WebSocketServer, WebSocket, type RawData } from 'ws';
 import { DAEMON_PORT_DEFAULT, type ClientMessage, type ServerMessage, type Session } from '@shared/protocol';
 import type { DaemonInfoFile } from '@shared/extra';
 import { attachmentsDir, dataDir, ensureDir, daemonJsonPath, logsDir } from './paths';
+import { ensureMemory } from './memory';
 import { log } from './log';
 import { Store } from './store';
 import { SessionManager } from './sessions';
@@ -212,6 +213,8 @@ async function main(): Promise<void> {
   setTimeout(() => warmIndex(openRoots(store)), 15_000);
 
   const store = new Store();
+  // every open project has its memory file (the Files tab opens it; sessions get it at start)
+  for (const p of store.listProjects()) if (!p.parentId) ensureMemory(p.id, p.name);
   const sessions = new SessionManager(store);
   let agents = detectAgents();
 

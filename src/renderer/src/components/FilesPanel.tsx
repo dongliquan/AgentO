@@ -5,6 +5,7 @@ import { send } from '@/client';
 import { useReveal } from '@/lib/fileRefs';
 import { useTalkProject } from '@/lib/talkFilter';
 import { AGENT_LABELS, pcStyle, projectColor } from '@/lib/format';
+import { openFile } from '@/lib/openfile';
 import { AgentPicker } from './AgentPicker';
 import { FolderTree, leafFolders, useExpanded } from './FileTree';
 
@@ -86,6 +87,11 @@ export function FilesPanel(): JSX.Element {
         <span className="pc-dot" />
         <span className="label ellipsis">{project.name}</span>
         <span className="muted">{folders.length} folder{folders.length === 1 ? '' : 's'}</span>
+        {project.memory && (
+          <button className="btn sm ghost files-memory" title="Project memory — the short shared note every session of the project gets at start (decisions, conventions, map, traps, open questions). Sessions keep it with the update_memory tool." onClick={() => openFile(project.memory!, project.folders[0]?.path ?? '')}>
+            Memory
+          </button>
+        )}
         <button
           className="icon-btn"
           title="Add Folder to the project"
