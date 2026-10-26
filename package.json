@@ -15,7 +15,9 @@
     "postinstall": "electron-builder install-app-deps",
     "dist:win": "electron-vite build && electron-builder --win",
     "dist:mac": "electron-vite build && electron-builder --mac",
-    "daemon": "electron-vite build && node out/daemon/index.js"
+    "daemon": "electron-vite build && node out/daemon/index.js",
+    "smoke": "electron-vite build && node tests/smoke/daemon.cjs",
+    "smoke:ui": "node tests/smoke/ui.cjs"
   },
   "dependencies": {
     "better-sqlite3": "^11.7.0",
