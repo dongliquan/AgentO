@@ -1,10 +1,8 @@
-import { useStore } from '@/store';
 import { useToasts } from '@/lib/notify';
 
-/** Opens a file in its own viewer window; without the desktop bridge it falls back to a card on the Ground. */
-export function openFile(path: string, cwd: string): void {
-  if (window.desktop?.openFileWindow) window.desktop.openFileWindow(path);
-  else useStore.getState().openFileCard(path, cwd);
+/** Opens a file in its own viewer window (the same file's window comes to the front). */
+export function openFile(path: string, _cwd: string): void {
+  window.desktop?.openFileWindow?.(path);
 }
 
 /** Opens a file in ReadO (for a closer look: editing, search, git); says so when ReadO cannot be started. */

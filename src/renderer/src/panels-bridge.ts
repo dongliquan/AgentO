@@ -24,17 +24,10 @@ function initMain(): void {
   });
 
   window.panels.onRelay((msg) => {
-    const s = useStore.getState();
     switch (msg.kind) {
       case 'reveal':
         selectAndReveal(msg.sessionId);
         if (msg.focus) setTimeout(() => focusTerminal(msg.sessionId), 100);
-        break;
-      case 'openFileCard':
-        s.openFileCard(msg.path, msg.cwd);
-        break;
-      case 'openViewerTab':
-        s.openViewerTab(msg.path);
         break;
       case 'command':
         runCommand(msg.id);
@@ -54,8 +47,6 @@ function initPanels(): void {
   // File clicks open on the main window's board; panel toggles are meaningless here and must not
   // overwrite the main window's remembered layout (localStorage is shared).
   useStore.setState({
-    openFileCard: (path, cwd) => relay({ kind: 'openFileCard', path, cwd }),
-    openViewerTab: (path) => relay({ kind: 'openViewerTab', path }),
     toggleSidebar: () => {},
     toggleRight: () => {}
   });

@@ -141,9 +141,6 @@ export type PanelsRelay =
   | { kind: 'reveal'; sessionId: string; focus?: boolean }
   /** main → panels: the board selection changed */
   | { kind: 'select'; sessionId: string | null }
-  /** panels → main */
-  | { kind: 'openFileCard'; path: string; cwd: string }
-  | { kind: 'openViewerTab'; path: string }
   /** main → panels: show a file in the Files tab (a file link clicked in the main window's chat) */
   | { kind: 'revealFile'; path: string }
   /** run a palette/menu command id in the other window (panels → main; main → panels for view.orders) */

@@ -20,7 +20,6 @@ import { SplitView } from '@/components/SplitView';
 import { TabView } from '@/components/TabView';
 import { TimelineView } from '@/components/TimelineView';
 import { TodayView } from '@/components/TodayView';
-import { ViewerTabs } from '@/components/ViewerTabs';
 import { RightPanel, SecondPanel, useFollowSelection } from '@/components/RightPanel';
 import { StatusBar } from '@/components/StatusBar';
 import { Palette } from '@/components/Palette';
@@ -133,7 +132,6 @@ export function App(): JSX.Element {
   const rightOpen = useStore((s) => s.rightOpen);
   const detached = useStore((s) => s.panelsDetached);
   const viewMode = useStore((s) => s.viewMode);
-  const centerView = useStore((s) => s.centerView);
   const focusMode = useStore((s) => s.focusMode);
   const paletteOpen = useStore((s) => s.paletteOpen);
   const newSessionOpen = useStore((s) => s.newSessionOpen);
@@ -181,7 +179,6 @@ export function App(): JSX.Element {
 
   let center: JSX.Element;
   if (focusMode) center = <FocusView />;
-  else if (centerView === 'viewer') center = <ViewerTabs />;
   else if (viewMode === 'split') center = <SplitView />;
   else if (viewMode === 'tabs') center = <TabView />;
   else if (viewMode === 'timeline') center = <TimelineView />;

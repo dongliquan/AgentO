@@ -35,7 +35,6 @@ export function Palette(): JSX.Element {
   const openPalette = useStore((s) => s.openPalette);
   const sessions = useStore((s) => s.sessions);
   const projects = useStore((s) => s.projects);
-  const openFileCard = useStore((s) => s.openFileCard);
   const [q, setQ] = useState(mode === 'command' ? '>' : '');
   const [idx, setIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -61,7 +60,6 @@ export function Palette(): JSX.Element {
     return () => clearTimeout(t);
   }, [isCmd, query]);
   const files = !isCmd && query.length >= 2 && fileSearch?.ref === query ? fileSearch.items : [];
-  const openViewerTab = useStore((s) => s.openViewerTab);
 
   const items = useMemo<Item[]>(() => {
     if (isCmd) {
@@ -82,7 +80,7 @@ export function Palette(): JSX.Element {
       }
     }
     return out;
-  }, [isCmd, sessions, projects, openFileCard]);
+  }, [isCmd, sessions, projects]);
 
   const filtered = useMemo(() => {
     const changed = new Set(items.filter((it) => it.kind === 'File').map((it) => it.sub));
@@ -103,7 +101,7 @@ export function Palette(): JSX.Element {
       .sort((a, b) => b.score - a.score)
       .slice(0, 50)
       .map((x) => x.it);
-  }, [items, query, files, openViewerTab]);
+  }, [items, query, files]);
 
   useEffect(() => setIdx(0), [query, isCmd]);
 

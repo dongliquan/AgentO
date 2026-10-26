@@ -17,7 +17,6 @@ const STATUS_COLOR: Record<string, string> = {
 
 export function Minimap({ containerRef }: { containerRef: React.RefObject<HTMLDivElement> }): JSX.Element | null {
   const sessions = useStore((s) => s.sessions);
-  const fileCards = useStore((s) => s.fileCards);
   const zoom = useStore((s) => s.zoom);
   const panX = useStore((s) => s.panX);
   const panY = useStore((s) => s.panY);
@@ -26,8 +25,7 @@ export function Minimap({ containerRef }: { containerRef: React.RefObject<HTMLDi
   const projects = useStore((s) => s.projects);
 
   const items = [
-    ...[...sessions.values()].filter((s) => !closed.has(s.id)).map((s) => ({ x: s.x, y: s.y, w: s.w, h: s.h, color: STATUS_COLOR[s.status] ?? '#666' })),
-    ...[...fileCards.values()].map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h, color: '#4fa3ff' }))
+    ...[...sessions.values()].filter((s) => !closed.has(s.id)).map((s) => ({ x: s.x, y: s.y, w: s.w, h: s.h, color: STATUS_COLOR[s.status] ?? '#666' }))
   ];
   if (items.length === 0) return null;
   // one frame per project (parts included) around its cards, in the project's colour, so projects read apart

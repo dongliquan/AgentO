@@ -532,9 +532,6 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
   position: absolute; right: 0; bottom: 0; width: 14px; height: 14px; cursor: nwse-resize;
   background: linear-gradient(135deg, transparent 50%, var(--border) 50%, var(--border) 60%, transparent 60%, transparent 75%, var(--border) 75%);
 }
-.card.file .card-header { cursor: grab; }
-.card.file .path { font-size: 11px; color: var(--muted); padding: 3px 10px; border-bottom: 1px solid var(--border); background: var(--panel); }
-.card.file .card-body { background: var(--bg); overflow: auto; }
 .diff-note { padding: 4px 10px; font-size: 11px; color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, transparent); }
 .git-letter { font-family: var(--mono); font-size: 11px; font-weight: 700; }
 .git-letter.M { color: var(--warn); } .git-letter.A, .git-letter.\? { color: var(--ok); } .git-letter.D { color: var(--err); } .git-letter.R { color: var(--accent); }

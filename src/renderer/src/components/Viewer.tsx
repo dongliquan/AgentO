@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useStore } from '@/store';
 import { requestRead } from '@/client';
 import { extname, formatBytes } from '@/lib/format';
-import { FileIcon } from './FileIcon';
 import { CodeView } from './CodeView';
 import { MarkdownView } from './MarkdownView';
 import { JsonTree } from './JsonTree';
@@ -10,47 +9,6 @@ import { CsvTable } from './CsvTable';
 import { languageOf } from '@/lib/highlight';
 
 type Mode = 'render' | 'raw' | 'edit';
-
-export function ViewerTabs(): JSX.Element {
-  const tabs = useStore((s) => s.viewerTabs);
-  const activeId = useStore((s) => s.activeTabId);
-  const setActive = useStore((s) => s.setActiveTab);
-  const close = useStore((s) => s.closeViewerTab);
-  const setCenterView = useStore((s) => s.setCenterView);
-  const active = tabs.find((t) => t.id === activeId) ?? tabs[tabs.length - 1];
-
-  if (!active) {
-    return (
-      <div className="board-empty" style={{ position: 'relative', flex: 1 }}>
-        <div>No open files</div>
-        <button className="btn" onClick={() => setCenterView('sessions')}>Back to Sessions</button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="viewer">
-      <div className="tabstrip">
-        {tabs.map((t) => (
-          <button key={t.id} className={`tab ${t.id === active.id ? 'active' : ''}`} onClick={() => setActive(t.id)} title={t.path}>
-            <FileIcon name={t.name} />
-            <span className="ellipsis">{t.name}</span>
-            <span
-              className="x"
-              onClick={(e) => {
-                e.stopPropagation();
-                close(t.id);
-              }}
-            >
-              ×
-            </span>
-          </button>
-        ))}
-      </div>
-      <Viewer key={active.id} path={active.path} />
-    </div>
-  );
-}
 
 const IMAGE = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'avif']);
 /** opened by the system instead (no preview here) */

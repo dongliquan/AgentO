@@ -1,5 +1,5 @@
 import { useStore } from '@/store';
-import { Viewer } from './ViewerTabs';
+import { Viewer } from './Viewer';
 import { FindBar } from './FindBar';
 
 /** A viewer window's whole page: one file, rendered or raw, read through the daemon like the viewer tabs. */

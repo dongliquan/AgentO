@@ -36,17 +36,14 @@ function PopOutIcon({ open }: { open: boolean }): JSX.Element {
 export function Toolbar(): JSX.Element {
   const viewMode = useStore((s) => s.viewMode);
   const focusMode = useStore((s) => s.focusMode);
-  const centerView = useStore((s) => s.centerView);
-  const onTimeline = viewMode === 'timeline' && centerView === 'sessions';
-  const onToday = viewMode === 'today' && centerView === 'sessions';
+  const onTimeline = viewMode === 'timeline';
+  const onToday = viewMode === 'today';
   /** a record / overview page, not a session layout: the layout tools hide */
   const onPage = onTimeline || onToday;
   const setViewMode = useStore((s) => s.setViewMode);
-  const setCenterView = useStore((s) => s.setCenterView);
   const projects = useStore((s) => s.projects);
   const selectedId = useStore((s) => s.selectedId);
   const sessions = useStore((s) => s.sessions);
-  const viewerTabs = useStore((s) => s.viewerTabs);
   const sidebarOpen = useStore((s) => s.sidebarOpen);
   const rightOpen = useStore((s) => s.rightOpen);
   const toggleSidebar = useStore((s) => s.toggleSidebar);
@@ -71,15 +68,10 @@ export function Toolbar(): JSX.Element {
       )}
       <div className="segmented">
         {MODES.map((m) => (
-          <button key={m.id} className={viewMode === m.id && centerView === 'sessions' ? 'active' : ''} onClick={() => setViewMode(m.id)} title={kbd(`Ctrl+${MODES.indexOf(m) + 1}`)}>
+          <button key={m.id} className={viewMode === m.id ? 'active' : ''} onClick={() => setViewMode(m.id)} title={kbd(`Ctrl+${MODES.indexOf(m) + 1}`)}>
             {m.label}
           </button>
         ))}
-        {viewerTabs.length > 0 && (
-          <button className={centerView === 'viewer' ? 'active' : ''} onClick={() => setCenterView('viewer')}>
-            Viewer {viewerTabs.length}
-          </button>
-        )}
       </div>
       <span className="toolbar-sep" />
       <div className="segmented">

@@ -52,7 +52,7 @@ export function fitAll(): void {
   const st = useStore.getState();
   const el = document.querySelector<HTMLElement>('.board');
   if (!el) return;
-  const items: { x: number; y: number; w: number; h: number }[] = [...openSessions(st.sessions, st.projects), ...st.fileCards.values()];
+  const items: { x: number; y: number; w: number; h: number }[] = [...openSessions(st.sessions, st.projects)];
   if (items.length === 0) {
     st.setZoom(1, 40, 40);
     return;
@@ -92,7 +92,6 @@ export function selectAndReveal(sessionId: string): void {
     showSessionTab();
     return;
   }
-  st.setCenterView('sessions');
   if (st.viewMode === 'tabs') st.setActiveTabSession(sessionId);
   st.requestPanTo(sessionId);
 }

@@ -178,12 +178,8 @@ Right-click: copy path`}
 }
 
 function FileRow({ entry, depth, git, onClick, onDouble, showRelative, base }: { entry: FsEntry; depth: number; git?: FsEntry['gitStatus']; onClick: () => void; onDouble?: () => void; showRelative?: string; base?: string }): JSX.Element {
-  const cardPath = useStore((s) => {
-    const c = s.selectedFileCardId ? s.fileCards.get(s.selectedFileCardId) : undefined;
-    return c?.path;
-  });
   const revealedHere = useReveal((s) => !!s.path && s.path.toLowerCase() === entry.path.toLowerCase());
-  const selectedPath = revealedHere ? entry.path : cardPath;
+  const selectedPath = revealedHere ? entry.path : undefined;
   let label = entry.name;
   if (showRelative && entry.path.startsWith(showRelative)) label = entry.path.slice(showRelative.length).replace(/^[\\/]/, '') || basename(entry.path);
   return (

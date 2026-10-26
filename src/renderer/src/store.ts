@@ -16,24 +16,6 @@ export type RightTab = 'detail' | 'files' | 'inbox' | 'orders' | 'log' | 'web';
 /** projects: the left sidebar's tree · inbox: also opens the right panel's Inbox tab */
 export type ActivityView = 'projects' | 'inbox';
 
-export interface FileCard {
-  id: string;
-  path: string;
-  cwd: string;
-  /** view: rendered (Markdown, JSON tree, CSV table) · raw: the text · diff: git diff (not yet) */
-  mode: 'view' | 'raw' | 'diff';
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-
-export interface ViewerTab {
-  id: string;
-  path: string;
-  name: string;
-}
-
 export interface TimelineEntry {
   id: string;
   sessionId: string;
@@ -70,16 +52,11 @@ export interface AppState {
   lastError: string | null;
 
   selectedId: string | null;
-  selectedFileCardId: string | null;
   viewMode: ViewMode;
   zoom: number;
   panX: number;
   panY: number;
   panRequest: { sessionId: string; nonce: number } | null;
-  fileCards: Map<string, FileCard>;
-  viewerTabs: ViewerTab[];
-  activeTabId: string | null;
-  centerView: 'sessions' | 'viewer';
   timeline: TimelineEntry[];
   focusMode: boolean;
   sidebarOpen: boolean;
@@ -118,19 +95,11 @@ export interface AppState {
   setConnected(v: boolean): void;
   apply(msg: ServerMessage): void;
   select(id: string | null): void;
-  selectFileCard(id: string | null): void;
   setViewMode(m: ViewMode): void;
   setZoom(z: number, panX?: number, panY?: number): void;
   setPan(x: number, y: number): void;
   requestPanTo(sessionId: string): void;
   patchSessionLocal(id: string, patch: Partial<Session>): void;
-  openFileCard(path: string, cwd: string, at?: { x: number; y: number }): void;
-  updateFileCard(id: string, patch: Partial<FileCard>): void;
-  closeFileCard(id: string): void;
-  openViewerTab(path: string): void;
-  closeViewerTab(id: string): void;
-  setActiveTab(id: string | null): void;
-  setCenterView(v: 'sessions' | 'viewer'): void;
   setFocusMode(v: boolean): void;
   toggleSidebar(): void;
   toggleMinimap(): void;
@@ -213,16 +182,11 @@ export const useStore = create<AppState>((set, get) => ({
   lastError: null,
 
   selectedId: null,
-  selectedFileCardId: null,
   viewMode: 'board',
   zoom: 1,
   panX: 40,
   panY: 40,
   panRequest: null,
-  fileCards: new Map(),
-  viewerTabs: [],
-  activeTabId: null,
-  centerView: 'sessions',
   timeline: [],
   focusMode: false,
   sidebarOpen: readFlag('asm.sidebarOpen', true),
@@ -391,15 +355,13 @@ export const useStore = create<AppState>((set, get) => ({
   select: (id) => {
     const patch: Partial<AppState> = { selectedId: id };
     if (id) {
-      patch.selectedFileCardId = null;
       // the right panel keeps its tab: picking a session on the Ground or in the tree does not switch to Session
       if (get().viewMode === 'tabs') patch.activeTabSessionId = id;
     }
     set(patch);
   },
-  selectFileCard: (id) => set({ selectedFileCardId: id }),
   setViewMode: (m) => {
-    const patch: Partial<AppState> = { viewMode: m, centerView: 'sessions' };
+    const patch: Partial<AppState> = { viewMode: m };
     if (m === 'tabs' && !get().activeTabSessionId) {
       patch.activeTabSessionId = get().selectedId ?? get().sessions.keys().next().value ?? null;
     }
@@ -419,55 +381,6 @@ export const useStore = create<AppState>((set, get) => ({
     set({ sessions });
   },
 
-  openFileCard: (path, cwd, at) => {
-    // reuse existing card for same path
-    for (const c of get().fileCards.values()) {
-      if (c.path === path) {
-        set({ selectedFileCardId: c.id });
-        return;
-      }
-    }
-    const { zoom, panX, panY } = get();
-    const id = uid('fc');
-    const x = at?.x ?? Math.round((-panX + 120) / zoom + get().fileCards.size * 24);
-    const y = at?.y ?? Math.round((-panY + 120) / zoom + get().fileCards.size * 24);
-    const fileCards = new Map(get().fileCards);
-    // Markdown, JSON and CSV open rendered; the card is larger now that sessions are
-    const view = /\.(md|markdown|json|csv|tsv)$/i.test(path);
-    fileCards.set(id, { id, path, cwd, mode: view ? 'view' : 'raw', x, y, w: 760, h: 900 });
-    set({ fileCards, selectedFileCardId: id, centerView: 'sessions' });
-  },
-  updateFileCard: (id, patch) => {
-    const c = get().fileCards.get(id);
-    if (!c) return;
-    const fileCards = new Map(get().fileCards);
-    fileCards.set(id, { ...c, ...patch });
-    set({ fileCards });
-  },
-  closeFileCard: (id) => {
-    const fileCards = new Map(get().fileCards);
-    fileCards.delete(id);
-    set({ fileCards, ...(get().selectedFileCardId === id ? { selectedFileCardId: null } : {}) });
-  },
-
-  openViewerTab: (path) => {
-    const existing = get().viewerTabs.find((t) => t.path === path);
-    if (existing) {
-      set({ activeTabId: existing.id, centerView: 'viewer' });
-      return;
-    }
-    const name = path.split(/[\\/]/).pop() || path;
-    const tab: ViewerTab = { id: uid('vt'), path, name };
-    set({ viewerTabs: [...get().viewerTabs, tab], activeTabId: tab.id, centerView: 'viewer' });
-  },
-  closeViewerTab: (id) => {
-    const tabs = get().viewerTabs.filter((t) => t.id !== id);
-    let active = get().activeTabId;
-    if (active === id) active = tabs.length ? tabs[tabs.length - 1]!.id : null;
-    set({ viewerTabs: tabs, activeTabId: active, ...(tabs.length === 0 ? { centerView: 'sessions' as const } : {}) });
-  },
-  setActiveTab: (id) => set({ activeTabId: id, ...(id ? { centerView: 'viewer' as const } : {}) }),
-  setCenterView: (v) => set({ centerView: v }),
   setFocusMode: (v) => set({ focusMode: v }),
   toggleSidebar: () => set({ sidebarOpen: writeFlag('asm.sidebarOpen', !get().sidebarOpen) }),
   toggleMinimap: () => set({ minimapOpen: writeFlag('asm.minimapOpen', !get().minimapOpen) }),

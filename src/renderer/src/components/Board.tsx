@@ -3,7 +3,6 @@ import type React from 'react';
 import { useStore, ZOOM_MAX, ZOOM_MIN } from '@/store';
 import { fitAll, newSessionFor, zoomBy } from '@/commands';
 import { SessionCard } from './SessionCard';
-import { FileCard } from './FileCard';
 import { Minimap } from './Minimap';
 import { GroundLinks } from './GroundLinks';
 import { GroundGroups, useGroupLayout } from './GroundGroups';
@@ -146,14 +145,11 @@ function snap(v: number): number {
 export function Board(): JSX.Element {
   const ref = useRef<HTMLDivElement>(null);
   const sessions = useStore((s) => s.sessions);
-  const fileCards = useStore((s) => s.fileCards);
   const zoom = useStore((s) => s.zoom);
   const panX = useStore((s) => s.panX);
   const panY = useStore((s) => s.panY);
   const selectedId = useStore((s) => s.selectedId);
-  const selectedFileCardId = useStore((s) => s.selectedFileCardId);
   const select = useStore((s) => s.select);
-  const selectFileCard = useStore((s) => s.selectFileCard);
   const panRequest = useStore((s) => s.panRequest);
   const minimapOpen = useStore((s) => s.minimapOpen);
   const [space, setSpace] = useState(false);
@@ -178,9 +174,9 @@ export function Board(): JSX.Element {
         scheduleView({ zoom: nz, x: mx - (mx - st.x) * k, y: my - (my - st.y) * k });
         return;
       }
-      // the selected card scrolls its own content (chat, terminal); terminals and file bodies always do
+      // the selected card scrolls its own content (chat, terminal); terminals always do
       const t = e.target as HTMLElement;
-      if (t.closest('.card.selected .card-body') || t.closest('.term-wrap') || t.closest('.card.file .card-body')) return;
+      if (t.closest('.card.selected .card-body') || t.closest('.term-wrap')) return;
       e.preventDefault();
       const dx = e.shiftKey && e.deltaX === 0 ? e.deltaY : e.deltaX;
       const dy = e.shiftKey && e.deltaX === 0 ? 0 : e.deltaY;
@@ -283,7 +279,6 @@ export function Board(): JSX.Element {
         // moving the Ground keeps the selection; a plain click on empty space clears it
         if (!moved && isBg && !middle && !space) {
           select(null);
-          selectFileCard(null);
         }
         setPanning(false);
         window.removeEventListener('pointermove', move);
@@ -298,7 +293,6 @@ export function Board(): JSX.Element {
   const groups = useGroupLayout();
   const gridSize = GRID * zoom;
   const list = [...sessions.values()];
-  const cards = [...fileCards.values()];
 
   return (
     <div
@@ -314,11 +308,8 @@ export function Board(): JSX.Element {
         {list.filter((s) => !groups.hidden.has(s.id)).map((s) => (
           <SessionCard key={s.id} session={s} layout="board" zoom={zoom} selected={selectedId === s.id} />
         ))}
-        {cards.map((c) => (
-          <FileCard key={c.id} card={c} selected={selectedFileCardId === c.id} />
-        ))}
       </div>
-      {list.length === 0 && cards.length === 0 && (
+      {list.length === 0 && (
         <div className="board-empty">
           <div style={{ fontSize: 15 }}>No sessions yet</div>
           <div style={{ fontSize: 12 }}>Start an agent session with + on a folder at left, or the button below.</div>

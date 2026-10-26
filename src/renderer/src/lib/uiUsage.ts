@@ -48,7 +48,7 @@ export function resetUsage(): void {
 export function initUiUsage(): void {
   useStore.subscribe((next, prev) => {
     if (next.rightTab !== prev.rightTab) countUse(`tab ${next.rightTab}`);
-    if (next.viewMode !== prev.viewMode || (next.centerView !== prev.centerView && next.centerView === 'sessions')) countUse(`view ${next.viewMode}`);
+    if (next.viewMode !== prev.viewMode) countUse(`view ${next.viewMode}`);
     if (next.focusMode && !prev.focusMode) countUse('focus mode');
   });
 }
