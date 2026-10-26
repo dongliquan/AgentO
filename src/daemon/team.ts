@@ -1164,6 +1164,17 @@ export class Team {
       this.attention.delete(id);
       this.outbox.delete(id);
       const text = queue.map((q) => q.text).join('\n\n');
+      // what this delivery means for the pending work — set before typing: a headless session turns "working" the
+      // moment the message is sent, and that transition must find the pending entry (else it never completes)
+      const before = this.pending.get(id);
+      const directive = [...queue].reverse().find((q) => q.from !== undefined);
+      if (directive?.from) this.trackDirective(id, directive.from, directive.task);
+      // a head coach / coach got its players' results: what it makes of them goes up to whoever it works for (the
+      // manager for a head coach) even if it forgets report_up — otherwise the outcome stays in its own conversation
+      else if (t.role !== 'player' && queue.some((q) => q.report) && !this.pending.has(id)) {
+        const up = this.director.get(id) ?? (t.role === 'head' ? 'user' : this.headOf(this.rootOf(t.projectId))?.id);
+        if (up) this.trackDirective(id, up);
+      }
       try {
         this.sessions.paste(id, text);
         // it still shows "waiting" for a moment: messages queued right after go together in the next paste
@@ -1172,15 +1183,9 @@ export class Team {
       } catch (e) {
         log.warn('team: delivery failed', id, e);
         this.outbox.set(id, queue);
+        if (before) this.pending.set(id, before);
+        else this.pending.delete(id);
         continue;
-      }
-      const directive = [...queue].reverse().find((q) => q.from !== undefined);
-      if (directive?.from) this.trackDirective(id, directive.from, directive.task);
-      // a head coach / coach got its players' results: what it makes of them goes up to whoever it works for (the
-      // manager for a head coach) even if it forgets report_up — otherwise the outcome stays in its own conversation
-      else if (t.role !== 'player' && queue.some((q) => q.report) && !this.pending.has(id)) {
-        const up = this.director.get(id) ?? (t.role === 'head' ? 'user' : this.headOf(this.rootOf(t.projectId))?.id);
-        if (up) this.trackDirective(id, up);
       }
     }
   }
@@ -1190,7 +1195,9 @@ export class Team {
     if (prev?.timer) clearTimeout(prev.timer);
     // a sender still waiting keeps waiting: the result goes to everyone who asked
     const also = prev ? [...new Set([...(prev.also ?? []), prev.from])].filter((x) => x !== from) : [];
-    this.pending.set(targetId, { from, ...(also.length ? { also } : {}), at: Date.now(), started: false, timer: null, ...(task ? { task } : {}) });
+    // already running (a first prompt sent at creation): the work has started
+    const st = this.sessions.get(targetId)?.status;
+    this.pending.set(targetId, { from, ...(also.length ? { also } : {}), at: Date.now(), started: st === 'working' || st === 'starting', timer: null, ...(task ? { task } : {}) });
     this.director.set(targetId, from);
   }
 
