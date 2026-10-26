@@ -117,7 +117,7 @@ hr { border: 0; margin: 2.2em 0 }   /* 선 없이 여백만 — 챕터 구분은
 **관련 코드**: `src/daemon/memory.ts` · `src/daemon/team.ts` · `src/daemon/store.ts` · `src/shared/protocol.ts` · `src/renderer/src/components/FilesPanel.tsx`
 **읽는 사람**: AgentO 를 이어서 개발하는 사람. 근거 데이터는 2026-10-23 `usage.report`(7일 102M 토큰: 선수 86% · 코치 14%)
 
-<div class="warn">C(프로젝트 메모리)만 구현됐다. B·A 는 설계이며 코드는 아직 없다. 데몬 변경은 데몬 재시작 뒤 적용된다.</div>
+<div class="warn">C(프로젝트 메모리)와 B(일 식별자)는 구현됐다(2026-10-26). A 는 설계이며 코드는 아직 없다. 데몬 변경은 데몬 재시작 뒤 적용된다.</div>
 
 <a id="toc"></a>
 
@@ -168,7 +168,7 @@ hr { border: 0; margin: 2.2em 0 }   /* 선 없이 여백만 — 챕터 구분은
 <div class="lay">
  <div class="cd" style="border-top-color:#1a7f4b"><b><span class="tg" style="background:#1a7f4b1a;color:#1a7f4b">1</span> 프로젝트 메모리</b><span class="k">memory.ts · update_memory</span><span class="s">선수 재독 토큰의 근본 대책. 구조 변경 없음. 완료(2026-10-26)</span></div>
  <div class="ar">→</div>
- <div class="cd" style="border-top-color:#1a4d8f"><b><span class="tg" style="background:#1a4d8f1a;color:#1a4d8f">2</span> 일 식별자</b><span class="k">#T123 · inbox.task_id</span><span class="s">Flow·진행률·Timeline·태그를 정규식에서 사실로</span></div>
+ <div class="cd" style="border-top-color:#1a4d8f"><b><span class="tg" style="background:#1a4d8f1a;color:#1a4d8f">2</span> 일 식별자</b><span class="k">#T123 · inbox.task_id</span><span class="s">Flow·진행률·Timeline·태그를 정규식에서 사실로. 완료(2026-10-26)</span></div>
  <div class="ar">→</div>
  <div class="cd" style="border-top-color:#7c3aed"><b><span class="tg" style="background:#7c3aed1a;color:#7c3aed">3</span> 이벤트 채널</b><span class="k">claude -p stream-json</span><span class="s">화면 긁기 제거. 세션별 TUI/headless 공존</span></div>
  <div class="ar">→</div>
@@ -388,7 +388,17 @@ PC 부담으로 보류. 요약·분류는 규칙 기반(태그·askingTail) 유�
 <details>
 <summary class="apx"><span class="num">A</span> 부록 <span class="hctl"><a href="#toc">↑ 목차로</a></span></summary>
 
-## A.1 변경 파일 (C 단계, 2026-10-26)
+## A.1 변경 파일 (B 단계, 2026-10-26)
+
+| 파일 | 변경 |
+|---|---|
+| `src/daemon/store.ts` | `inbox.task_id` 컬럼(마이그레이션), `addInbox(…, taskId)`, `nextTaskId(projectId)`(kv `tasks` 카운터) |
+| `src/daemon/team.ts` | `newTask`/`taskOf`, order·note·send(directive)·create_session 에 번호, `Queued.task`→`Pending.task`(저장 포함), 완료 보고·record 에 번호, 헤더 `— #T12` |
+| `src/shared/protocol.ts` | `InboxItem.taskId?` |
+| `src/renderer/src/lib/threads.ts` | 번호 있는 보고는 같은 번호의 지시 아래로(없으면 종전 규칙) |
+| `MsgTag.tsx` · OrderFlow · TeamFeedItem · MyTalk · `styles.css` | 태그 옆 `#T12` |
+
+## A.2 변경 파일 (C 단계, 2026-10-26)
 
 | 파일 | 변경 |
 |---|---|

@@ -71,6 +71,7 @@ interface InboxRow {
   created_at: number;
   read: number;
   from_id: string | null;
+  task_id: string | null;
 }
 
 /** Session plus the custom command/args used to create it (needed for restart). */
@@ -219,7 +220,8 @@ function rowToInbox(r: InboxRow): InboxItem {
     text: r.text,
     createdAt: r.created_at,
     read: r.read === 1,
-    ...(r.from_id ? { fromId: r.from_id } : {})
+    ...(r.from_id ? { fromId: r.from_id } : {}),
+    ...(r.task_id ? { taskId: r.task_id } : {})
   };
 }
 
@@ -251,6 +253,15 @@ export class Store {
 
   /** Columns added after the first release. */
   /** Small JSON values that must survive a restart (the team's queues). */
+  /** The next task id of a project ("#T12"): one counter per project, kept in kv. */
+  nextTaskId(projectId: string): string {
+    const counts = this.getKv<Record<string, number>>('tasks') ?? {};
+    const n = (counts[projectId] ?? 0) + 1;
+    counts[projectId] = n;
+    this.setKv('tasks', counts);
+    return `#T${n}`;
+  }
+
   getKv<T>(key: string): T | undefined {
     const r = this.stmt('SELECT value FROM kv WHERE key = ?').get(key) as { value: string } | undefined;
     if (!r) return undefined;
@@ -273,6 +284,7 @@ export class Store {
     if (!cols.has('model_pref')) this.db.exec('ALTER TABLE sessions ADD COLUMN model_pref TEXT');
     const inboxCols = new Set((this.db.prepare('PRAGMA table_info(inbox)').all() as { name: string }[]).map((c) => c.name));
     if (!inboxCols.has('from_id')) this.db.exec('ALTER TABLE inbox ADD COLUMN from_id TEXT');
+    if (!inboxCols.has('task_id')) this.db.exec('ALTER TABLE inbox ADD COLUMN task_id TEXT');
     const projectCols = new Set((this.db.prepare('PRAGMA table_info(projects)').all() as { name: string }[]).map((c) => c.name));
     if (!projectCols.has('parent_id')) this.db.exec('ALTER TABLE projects ADD COLUMN parent_id TEXT');
     if (!projectCols.has('closed')) this.db.exec('ALTER TABLE projects ADD COLUMN closed INTEGER');
@@ -548,10 +560,10 @@ export class Store {
   }
 
   /** createdAt: keep the original time (records from an opened project file) */
-  addInbox(sessionId: string, kind: InboxItem['kind'], text: string, read = false, fromId?: string, createdAt = Date.now()): InboxItem {
-    const item: InboxItem = { id: randomUUID(), sessionId, kind, text, createdAt, read, ...(fromId ? { fromId } : {}) };
-    this.stmt('INSERT INTO inbox (id, session_id, kind, text, created_at, read, from_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(item.id, item.sessionId, item.kind, item.text, item.createdAt, read ? 1 : 0, fromId ?? null);
+  addInbox(sessionId: string, kind: InboxItem['kind'], text: string, read = false, fromId?: string, createdAt = Date.now(), taskId?: string): InboxItem {
+    const item: InboxItem = { id: randomUUID(), sessionId, kind, text, createdAt, read, ...(fromId ? { fromId } : {}), ...(taskId ? { taskId } : {}) };
+    this.stmt('INSERT INTO inbox (id, session_id, kind, text, created_at, read, from_id, task_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(item.id, item.sessionId, item.kind, item.text, item.createdAt, read ? 1 : 0, fromId ?? null, taskId ?? null);
     // keep the table bounded (checked every 50 inserts: a sorted delete on each insert is wasted work)
     if (++this.inboxInserts % 50 === 0) {
       // notifications: the latest 2000; team traffic (the order threads): the latest 20000

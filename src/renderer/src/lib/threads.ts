@@ -14,13 +14,24 @@ export function buildThreads(inbox: InboxItem[]): LogNode[] {
   const records = inbox.filter((i) => (i.kind === 'directive' || i.kind === 'report') && i.fromId).sort((a, b) => a.createdAt - b.createdAt);
   /** the latest directive each session received — what it is working on */
   const current = new Map<string, LogNode>();
+  /** directives by task id (the daemon numbers each piece of work): a report with an id hangs under its own directive */
+  const byTask = new Map<string, LogNode[]>();
   const roots: LogNode[] = [];
   for (const item of records) {
     const node: LogNode = { item, children: [] };
-    const parent = item.fromId && item.fromId !== 'user' ? current.get(item.fromId) : undefined;
+    let parent: LogNode | undefined;
+    if (item.kind === 'report' && item.taskId) {
+      const same = byTask.get(item.taskId) ?? [];
+      // the directive this session received for that task, else the task's latest directive
+      parent = [...same].reverse().find((d) => d.item.sessionId === item.fromId) ?? same[same.length - 1];
+    }
+    if (!parent && item.fromId && item.fromId !== 'user') parent = current.get(item.fromId);
     if (parent) parent.children.push(node);
     else roots.push(node);
-    if (item.kind === 'directive') current.set(item.sessionId, node);
+    if (item.kind === 'directive') {
+      current.set(item.sessionId, node);
+      if (item.taskId) byTask.set(item.taskId, [...(byTask.get(item.taskId) ?? []), node]);
+    }
   }
   return roots;
 }

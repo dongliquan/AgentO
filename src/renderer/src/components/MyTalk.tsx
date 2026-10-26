@@ -158,7 +158,7 @@ export function MyTalk(): JSX.Element {
                 return (
                   <div key={a.id} className="me-msg reply" onClick={() => !selecting() && from && selectAndReveal(from.id)}>
                     <div className="me-meta">
-                      <MsgTag kind={msgKind(a)} />
+                      <MsgTag kind={msgKind(a)} taskId={a.taskId} />
                       <span className="ellipsis">{from?.title ?? '(removed session)'}</span>
                       <span className="time" title={formatDateTime(a.createdAt)}>{relativeTime(a.createdAt, now)}</span>
                     </div>

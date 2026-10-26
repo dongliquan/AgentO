@@ -1117,6 +1117,9 @@ button.tree-pc:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, t
 .msg-tag.k-handed-on { --tag: var(--muted); font-weight: 600; font-style: italic; }
 .msg-tag.k-note { --tag: var(--muted); }
 .flow-label .msg-tag { margin-right: 4px; vertical-align: 1px; }
+/* the task id ("#T12") after a tag: small, mono, muted */
+.task-id { flex: none; margin-left: 3px; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.flow-label .task-id { margin-right: 4px; }
 .flow-legend .msg-tag + .msg-tag { margin-left: 2px; }
 .flow-step.k-ask .flow-line { stroke: var(--warn); }
 .flow-step.k-finished .flow-line { stroke: var(--muted); }

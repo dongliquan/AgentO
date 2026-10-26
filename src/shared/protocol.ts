@@ -195,6 +195,8 @@ export interface InboxItem {
   read: boolean;
   /** directive/report: who sent it — a session id, or 'user' (the Ground draws links between sessions from this) */
   fromId?: string;
+  /** the piece of work this record belongs to ("#T12", given by the daemon when the directive was sent) */
+  taskId?: string;
 }
 
 /* ---------- chat transcript (Claude Code JSONL, normalized) ---------- */

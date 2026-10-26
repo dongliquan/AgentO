@@ -120,6 +120,8 @@ interface Pending {
   blocked?: boolean;
   /** it sent a directive to someone while on this order: a turn that ends then is a hand-off, not a result */
   delegated?: boolean;
+  /** the piece of work ("#T12") this directive is */
+  task?: string;
 }
 
 interface Queued {
@@ -134,6 +136,8 @@ interface Queued {
   at?: number;
   /** a report / answer (not a directive): to a head coach or coach it waits REPORT_BATCH_MS so close ones arrive together */
   report?: boolean;
+  /** a directive's task id (becomes the pending work's id when delivered) */
+  task?: string;
 }
 
 class ToolError extends Error {}
@@ -192,6 +196,7 @@ const TEAM_INTRO = `This is an AgentO team, organised like a football club:
 - each part has an optional **coach** that manages and questions the part's players (a player may be the "playing
   coach" of its part);
 - **players** are the sessions inside a part and do the actual work. All coding is done by Claude players.
+Every order and task you receive carries an id like #T12 in its header: AgentO tracks the work by it, so quote it when you report about that task.
 
 Messages from other sessions arrive as text starting with "[Message from …]", "[Order from …]" or "[AgentO] …".`;
 
@@ -329,7 +334,7 @@ export class Team {
   private persist(): void {
     const state = {
       outbox: [...this.outbox],
-      pending: [...this.pending].map(([id, p]) => [id, { from: p.from, also: p.also, at: p.at, blocked: p.blocked }]),
+      pending: [...this.pending].map(([id, p]) => [id, { from: p.from, also: p.also, at: p.at, blocked: p.blocked, delegated: p.delegated, task: p.task }]),
       director: [...this.director]
     };
     const json = JSON.stringify(state);
@@ -344,7 +349,7 @@ export class Team {
 
   /** After a restart: the queues come back (a pending result waits for the session's next finished turn). */
   private restore(): void {
-    type Saved = { outbox: [string, Queued[]][]; pending: [string, { from: string; also?: string[]; at: number; blocked?: boolean }][]; director: [string, string][] };
+    type Saved = { outbox: [string, Queued[]][]; pending: [string, { from: string; also?: string[]; at: number; blocked?: boolean; delegated?: boolean; task?: string }][]; director: [string, string][] };
     const st = this.store.getKv<Saved>('team');
     if (!st) return;
     for (const [id, q] of st.outbox ?? []) if (this.sessions.get(id) && q.length) this.outbox.set(id, q);
@@ -538,6 +543,16 @@ export class Team {
 
   private project(id: string): Project | undefined {
     return this.store.listProjects().find((p) => p.id === id);
+  }
+
+  /** A new task id for work sent to this session: numbered per (top-level) project, "#T<n>"; the team head's work: "#T<n>" of a shared counter. */
+  private newTask(target: StoredSession): string {
+    return this.store.nextTaskId(this.rootProject(target.projectId)?.id ?? 'team');
+  }
+
+  /** The task a session is on right now (its pending directive), for the messages it sends about it. */
+  private taskOf(sessionId: string): string | undefined {
+    return this.pending.get(sessionId)?.task;
   }
 
   /** The top-level project a project id belongs to (a part's project; a project is its own; none for the team head). */
@@ -738,14 +753,15 @@ export class Team {
   note(id: string, text: string): void {
     const s = this.sessions.get(id);
     if (!s || !text.trim()) return;
-    this.record(s, 'directive', { id: 'user', title: DIRECT }, text);
+    const task = this.newTask(s);
+    this.record(s, 'directive', { id: 'user', title: DIRECT }, text, true, task);
     if (this.pending.has(id)) return;
     // stopped: message() queues it and wakes the session; it is tracked when delivered
     if (!this.sessions.isLive(id)) {
       this.directNext.add(id);
       return;
     }
-    this.trackDirective(id, 'user');
+    this.trackDirective(id, 'user', task);
     // the composer types before it reports the note: the turn may already be running
     const p = this.pending.get(id);
     if (p && (s.status === 'working' || s.status === 'starting')) p.started = true;
@@ -1070,9 +1086,9 @@ export class Team {
   }
 
   /** Team traffic record; `from` is a session or the user ('user'). */
-  private record(target: StoredSession, kind: 'directive' | 'report', from: { id: string; title: string }, message: string, read = true): string {
+  private record(target: StoredSession, kind: 'directive' | 'report', from: { id: string; title: string }, message: string, read = true, task?: string): string {
     const text = `${from.title} → ${target.title}: ${clip(message.trim(), LOG_TEXT_MAX)}`;
-    const item = this.store.addInbox(target.id, kind, text, read, from.id);
+    const item = this.store.addInbox(target.id, kind, text, read, from.id, Date.now(), task);
     this.onInbox();
     return item.id;
   }
@@ -1157,7 +1173,7 @@ export class Team {
         continue;
       }
       const directive = [...queue].reverse().find((q) => q.from !== undefined);
-      if (directive?.from) this.trackDirective(id, directive.from);
+      if (directive?.from) this.trackDirective(id, directive.from, directive.task);
       // a head coach / coach got its players' results: what it makes of them goes up to whoever it works for (the
       // manager for a head coach) even if it forgets report_up — otherwise the outcome stays in its own conversation
       else if (t.role !== 'player' && queue.some((q) => q.report) && !this.pending.has(id)) {
@@ -1167,12 +1183,12 @@ export class Team {
     }
   }
 
-  private trackDirective(targetId: string, from: string): void {
+  private trackDirective(targetId: string, from: string, task?: string): void {
     const prev = this.pending.get(targetId);
     if (prev?.timer) clearTimeout(prev.timer);
     // a sender still waiting keeps waiting: the result goes to everyone who asked
     const also = prev ? [...new Set([...(prev.also ?? []), prev.from])].filter((x) => x !== from) : [];
-    this.pending.set(targetId, { from, ...(also.length ? { also } : {}), at: Date.now(), started: false, timer: null });
+    this.pending.set(targetId, { from, ...(also.length ? { also } : {}), at: Date.now(), started: false, timer: null, ...(task ? { task } : {}) });
     this.director.set(targetId, from);
   }
 
@@ -1237,20 +1253,20 @@ export class Team {
     if (p.from === 'user') {
       // a coordinator that just handed the work on has no result yet: recorded as "handed on" (shown faintly, no alert)
       const shown = state === 'replied' && p.delegated ? 'handed on' : state;
-      this.store.addInbox(s.id, 'report', `${s.title} ${shown}: ${clip(reply.trim(), LOG_TEXT_MAX) || '(no reply text)'}`, false, s.id);
+      this.store.addInbox(s.id, 'report', `${s.title} ${shown}: ${clip(reply.trim(), LOG_TEXT_MAX) || '(no reply text)'}`, false, s.id, Date.now(), p.task);
       this.onInbox();
       return;
     }
     const sender = this.sessions.get(p.from);
     if (!sender) return;
     this.enqueue(sender.id, {
-      text: `[AgentO] "${s.title}" (${ROLE_NAME[s.role]}, session ${s.id.slice(0, 8)}) ${state} the task you sent. Its last reply:\n${reply || '(no reply text)'}`,
+      text: `[AgentO] "${s.title}" (${ROLE_NAME[s.role]}, session ${s.id.slice(0, 8)}) ${state} the task you sent${p.task ? ` (${p.task})` : ''}. Its last reply:\n${reply || '(no reply text)'}`,
       report: true,
       // a head coach / coach whose turn ended after handing the work on: its real result comes later with report_up —
       // this note rides along with that instead of costing the sender a turn now
       ...(state === 'replied' ? { ride: true } : {})
     });
-    this.record(sender, 'report', s, `${state}: ${reply}`);
+    this.record(sender, 'report', s, `${state}: ${reply}`, true, p.task);
   }
 
   /** Last assistant turn (Claude transcript) or the end of the terminal. */
@@ -1302,13 +1318,14 @@ export class Team {
   private send(caller: StoredSession, t: StoredSession, message: string, directive: boolean, ride = false): string {
     if (!message.trim()) throw new ToolError('message is empty');
     this.checkRate(caller);
-    const text = `[Message from ${this.label(caller.id)}]\n${message.trim()}`;
+    const task = directive ? this.newTask(t) : this.taskOf(caller.id);
+    const text = `[Message from ${this.label(caller.id)}${task ? ` — ${task}` : ''}]\n${message.trim()}`;
     if (directive) {
       const p = this.pending.get(caller.id);
       if (p) p.delegated = true;
     }
-    this.enqueue(t.id, directive ? { text, from: caller.id } : ride ? { text, ride: true, report: true } : { text, report: true });
-    this.record(t, directive ? 'directive' : 'report', caller, message);
+    this.enqueue(t.id, directive ? { text, from: caller.id, task } : ride ? { text, ride: true, report: true } : { text, report: true });
+    this.record(t, directive ? 'directive' : 'report', caller, message, true, task);
     const queued = this.outbox.has(t.id);
     return (
       `${queued ? 'Queued for' : 'Delivered to'} "${t.title}"${queued ? ' (it is busy or stopped; delivered when it is idle)' : ''}.` +
@@ -1344,7 +1361,8 @@ export class Team {
     }
     const projectName = (id: string): string => this.store.listProjects().find((p) => p.id === id)?.name ?? id;
     for (const r of recipients) {
-      let text = `[Order from ${USER}${via ? ` — ${via}` : ''}]\n${message.trim()}`;
+      const tid = this.newTask(r);
+      let text = `[Order from ${USER}${via ? ` — ${via}` : ''} — ${tid}]\n${message.trim()}`;
       if (target.kind === 'projects') {
         // the same order went to the other projects: each works on its own side; the manager joins the reports
         const others = [...new Set(target.projectIds)].filter((id) => id !== r.projectId && !closed(id)).map(projectName);
@@ -1353,8 +1371,8 @@ export class Team {
       if (r.role === 'player' && target.kind !== 'session') {
         text += '\n\n(You are leading this order for your project: share the work with your teammates — list_sessions, send_to_session.)';
       }
-      this.enqueue(r.id, { text, from: 'user' });
-      const id = this.record(r, 'directive', { id: 'user', title: via ? `Manager (you) · ${via}` : 'Manager (you)' }, message);
+      this.enqueue(r.id, { text, from: 'user', task: tid });
+      const id = this.record(r, 'directive', { id: 'user', title: via ? `Manager (you) · ${via}` : 'Manager (you)' }, message, true, tid);
       if (task) this.store.markTaskOrder(id);
     }
     this.lastRecipients = recipients.map((r) => r.id);
@@ -1697,7 +1715,7 @@ export class Team {
         const stored = this.sessions.get(s.id);
         if (prompt && stored) {
           this.record(stored, 'directive', caller, prompt);
-          this.trackDirective(stored.id, caller.id);
+          this.trackDirective(stored.id, caller.id, this.newTask(stored));
         }
         return JSON.stringify({ created: this.describe(stored ?? (s as StoredSession), this.store.listProjects()) }, null, 2);
       }

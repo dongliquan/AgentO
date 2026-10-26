@@ -186,7 +186,7 @@ export function OrderFlowDialog(): JSX.Element | null {
                   title={`${formatDateTime(s.item.createdAt)}\n${gist(s.item)}`}
                   onClick={() => setPicked(s.item.id)}
                 >
-                  <MsgTag kind={s.tag} />
+                  <MsgTag kind={s.tag} taskId={s.item.taskId} />
                   {gist(s.item).replace(/^\(report\)\s*/, '').replace(/^(?:finished|replied|stopped|handed on)(?: \([^)]*\))?:\s*/, '') || '(empty)'}
                 </button>
               );
@@ -197,7 +197,7 @@ export function OrderFlowDialog(): JSX.Element | null {
           <div className="flow-detail">
             <div className="flow-detail-head">
               <span className={`team-chip ${sel.from === 'user' ? 'manager' : roleClass(sessions.get(sel.from))}`}>{label(sel.from)}</span>
-              <MsgTag kind={sel.tag} />
+              <MsgTag kind={sel.tag} taskId={sel.item.taskId} />
               <span className="muted">{sel.kind === 'report' ? 'reported to' : 'sent to'}</span>
               <span className={`team-chip ${sel.to === 'user' ? 'manager' : roleClass(sessions.get(sel.to))}`}>{label(sel.to)}</span>
               {outcome(sel.item) && <span className={`flow-outcome ${outcome(sel.item)!.split(' ')[0]}`}>{outcome(sel.item)}</span>}

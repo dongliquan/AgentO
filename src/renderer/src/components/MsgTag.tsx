@@ -12,10 +12,13 @@ const TITLE: Record<MsgKind, string> = {
 };
 
 /** One word in front of a team message saying what it is (order · task · ask · report · finished · handed on). */
-export function MsgTag({ kind, className = '' }: { kind: MsgKind; className?: string }): JSX.Element {
+export function MsgTag({ kind, taskId, className = '' }: { kind: MsgKind; taskId?: string; className?: string }): JSX.Element {
   return (
-    <span className={`msg-tag k-${kindSlug(kind)} ${className}`} title={TITLE[kind]}>
-      {kind}
-    </span>
+    <>
+      <span className={`msg-tag k-${kindSlug(kind)} ${className}`} title={TITLE[kind]}>
+        {kind}
+      </span>
+      {taskId && <span className="task-id" title="The piece of work (numbered by AgentO when it was sent)">{taskId}</span>}
+    </>
   );
 }

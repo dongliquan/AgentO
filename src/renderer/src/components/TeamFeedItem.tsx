@@ -54,7 +54,7 @@ ${body}`;
   return (
     <div className={`feed-item ${it.kind} ${it.read ? '' : 'unread'}`}>
       <div className="feed-head">
-        <MsgTag kind={msgKind(it)} />
+        <MsgTag kind={msgKind(it)} taskId={it.taskId} />
         <Chip user={fromUser} session={fromSession} />
         <span className="feed-arrow">→</span>
         {toUser ? <Chip user /> : <Chip session={target} />}
