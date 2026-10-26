@@ -122,6 +122,16 @@ async function main() {
   const welcome = await c.waitFor((m) => m.type === 'welcome');
   check('daemon starts and greets', !!welcome, `pid ${info.pid}, port ${info.port}`);
 
+  // a second daemon on the same data folder must step aside (two would fight over the session holders)
+  {
+    const env = { ...cleanEnv(), ELECTRON_RUN_AS_NODE: '1', AGENTO_DATA_DIR: dataDir, ASM_PORT: '47900', ASM_VERSION: 'smoke' };
+    const second = spawn(electron, [DAEMON], { env, stdio: 'ignore', windowsHide: true });
+    const exited = await new Promise((res) => { const t = setTimeout(() => res(false), 8000); second.on('exit', () => { clearTimeout(t); res(true); }); });
+    const still = JSON.parse(fs.readFileSync(path.join(dataDir, 'daemon.json'), 'utf8'));
+    if (!exited) try { process.kill(second.pid); } catch { /* gone */ }
+    check('a second daemon steps aside', exited && still.pid === info.pid, exited ? `daemon.json still pid ${still.pid}` : 'second daemon kept running');
+  }
+
   // ---------- project, folder, memory ----------
   c.send({ type: 'project.create', name: 'Smoke' });
   const p1 = await c.waitFor((m) => m.type === 'projects' && m.projects.some((p) => p.name === 'Smoke'));

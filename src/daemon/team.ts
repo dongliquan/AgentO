@@ -69,6 +69,9 @@ const TOOL_TIMEOUT_S = MAX_WAIT_S + 60;
 const TOKEN_ENV = 'AGENTO_MCP_TOKEN';
 /** A directive counts as "not picked up yet" for this long if the session never starts working. */
 const PICKUP_GRACE_MS = 20_000;
+/** the crash-loop guard: at most WAKE_MAX wakes of one session within WAKE_WINDOW_MS */
+const WAKE_MAX = 3;
+const WAKE_WINDOW_MS = 3 * 60_000;
 /** No delivery for this long after a session starts, or after its folder-trust prompt was answered. */
 const START_SETTLE_MS = 5_000;
 const TRUST_SETTLE_MS = 8_000;
@@ -322,6 +325,10 @@ const PLAYING_COACH_NOTE = (project: string): string =>
   `done or blocked.`;
 
 export class Team {
+  /** when each session was woken for queued messages lately (the crash-loop guard) */
+  private wakes = new Map<string, number[]>();
+  /** sessions the guard stopped waking (cleared when the session runs again) */
+  private wakeStopped = new Set<string>();
   /** sessions that were sent a directive, keyed by target */
   private pending = new Map<string, Pending>();
   /** stopped sessions the user just typed into (note() before message()): their queued message is tracked like an order */
@@ -1130,6 +1137,18 @@ export class Team {
       if (!this.sessions.isLive(id)) {
         if (queue.every((q) => q.wake === false)) continue; // only notes: they ride along with its next work
         if (!this.resuming.has(id) && t.status !== 'starting') {
+          // a session that keeps dying right after it starts is not woken again and again (an error storm): tell the
+          // manager once and leave its messages queued until it is started by hand
+          const recent = (this.wakes.get(id) ?? []).filter((at) => Date.now() - at < WAKE_WINDOW_MS);
+          if (recent.length >= WAKE_MAX) {
+            if (!this.wakeStopped.has(id)) {
+              this.wakeStopped.add(id);
+              this.store.addInbox(id, 'error', `${t.title} — stopped waking it: it failed to start ${recent.length} times in ${Math.round(WAKE_WINDOW_MS / 60_000)} min; ${queue.length} message(s) wait. Start it from its card.`);
+              this.onInbox();
+            }
+            continue;
+          }
+          this.wakes.set(id, [...recent, Date.now()]);
           this.resuming.add(id);
           try {
             this.sessions.resume(id);
@@ -1202,6 +1221,8 @@ export class Team {
   }
 
   private onStatus(s: Session): void {
+    // it runs again (started by hand, or a wake that took): the crash-loop guard lets go
+    if (s.status === 'waiting' && this.wakeStopped.delete(s.id)) this.wakes.delete(s.id);
     // a (re)started CLI draws its UI first; give it a moment before typing into it
     if (s.status === 'starting') this.notBefore.set(s.id, Math.max(this.notBefore.get(s.id) ?? 0, Date.now() + START_SETTLE_MS));
     const p = this.pending.get(s.id);

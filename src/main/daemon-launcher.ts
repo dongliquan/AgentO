@@ -100,6 +100,16 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export async function ensureDaemon(timeoutMs = 10_000): Promise<DaemonInfoFile> {
   const existing = readDaemonInfo();
   if (existing && (await probeDaemon(existing.port, existing.token))) return existing;
+  // alive but slow to answer (busy for a moment): wait for it — a second daemon would fight it over the sessions
+  if (existing && pidAlive(existing.pid)) {
+    const until = Date.now() + 20_000;
+    while (Date.now() < until) {
+      await sleep(500);
+      const now = readDaemonInfo();
+      if (now && (await probeDaemon(now.port, now.token, 1500))) return now;
+      if (!now || !pidAlive(now.pid)) break;
+    }
+  }
 
   spawnDaemon();
   const deadline = Date.now() + timeoutMs;
@@ -108,8 +118,11 @@ export async function ensureDaemon(timeoutMs = 10_000): Promise<DaemonInfoFile> 
     await sleep(250);
     const info = readDaemonInfo();
     if (!info) continue;
-    // ignore a stale file from the previous daemon (same pid as before and not answering)
-    if (existing && info.pid === existing.pid && info.token === existing.token) continue;
+    // the previous file: fine if that daemon answers after all (the new one exits on the lock), else wait for the new one
+    if (existing && info.pid === existing.pid && info.token === existing.token) {
+      if (await probeDaemon(info.port, info.token, 800)) return info;
+      continue;
+    }
     lastSeen = info;
     if (await probeDaemon(info.port, info.token, 800)) return info;
   }
@@ -118,6 +131,15 @@ export async function ensureDaemon(timeoutMs = 10_000): Promise<DaemonInfoFile> 
       ? `The daemon is not responding (port ${lastSeen.port}). Log: ${daemonLogPath()}`
       : `Failed to start the daemon. Log: ${daemonLogPath()}`
   );
+}
+
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === 'EPERM';
+  }
 }
 
 /** Sends daemon.shutdown and waits for the socket to close (best effort). */

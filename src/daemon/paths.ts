@@ -35,6 +35,12 @@ export function holdersDir(): string {
   return ensureDir(path.join(dataDir(), 'holders'));
 }
 
+/** The daemon's single-instance lock: a pipe only one daemon of this data folder can listen on (freed when it dies). */
+export function daemonLockPipe(): string {
+  const tag = dataDir().toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(-60);
+  return process.platform === 'win32' ? `\\\\.\\pipe\\agento-daemon-${tag}` : path.join(dataDir(), 'daemon.lock.sock');
+}
+
 /** The local pipe a session holder listens on. */
 export function holderPipe(id: string, nonce: string): string {
   return process.platform === 'win32' ? `\\\\.\\pipe\\agento-${id}-${nonce}` : path.join(holdersDir(), `${id}-${nonce}.sock`);

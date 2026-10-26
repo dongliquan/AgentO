@@ -3,6 +3,7 @@
  * Standalone Node process (no electron imports). Owns every PTY; UI clients attach via WebSocket.
  */
 import fs from 'node:fs';
+import net from 'node:net';
 import os from 'node:os';
 import http from 'node:http';
 import path from 'node:path';
@@ -11,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket, type RawData } from 'ws';
 import { DAEMON_PORT_DEFAULT, type ClientMessage, type ServerMessage, type Session } from '@shared/protocol';
 import type { DaemonInfoFile } from '@shared/extra';
-import { attachmentsDir, dataDir, ensureDir, daemonJsonPath, logsDir } from './paths';
+import { attachmentsDir, dataDir, ensureDir, daemonJsonPath, daemonLockPipe, logsDir } from './paths';
 import { ensureMemory } from './memory';
 import { log } from './log';
 import { Store } from './store';
@@ -95,6 +96,32 @@ const VERSION = readVersion();
 
 /* ---------- single instance ---------- */
 
+/** Listen on the lock pipe; false when another daemon holds it. The server stays open for the process's life. */
+let lockServer: import('node:net').Server | null = null;
+function takeDaemonLock(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const pipe = daemonLockPipe();
+    const srv = net.createServer((c) => c.end());
+    srv.once('error', (e: NodeJS.ErrnoException) => {
+      if (e.code === 'EADDRINUSE' && process.platform !== 'win32') {
+        // a socket file left by a crashed daemon: in use only if something answers on it
+        const probe = net.connect(pipe);
+        probe.once('connect', () => { probe.destroy(); resolve(false); });
+        probe.once('error', () => {
+          try { fs.unlinkSync(pipe); } catch { /* gone */ }
+          srv.listen(pipe, () => { lockServer = srv; resolve(true); });
+        });
+        return;
+      }
+      resolve(false);
+    });
+    srv.listen(pipe, () => {
+      lockServer = srv;
+      resolve(true);
+    });
+  });
+}
+
 function pidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -115,44 +142,6 @@ function readDaemonJson(): DaemonInfoFile | undefined {
     /* none */
   }
   return undefined;
-}
-
-/** Sends hello to an existing daemon; resolves true if it answers with welcome. */
-function probeDaemon(port: number, token: string, timeoutMs = 2000): Promise<boolean> {
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = (ok: boolean) => {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      try {
-        ws.close();
-      } catch {
-        /* ignore */
-      }
-      resolve(ok);
-    };
-    const timer = setTimeout(() => finish(false), timeoutMs);
-    let ws: WebSocket;
-    try {
-      ws = new WebSocket(`ws://127.0.0.1:${port}`);
-    } catch {
-      clearTimeout(timer);
-      resolve(false);
-      return;
-    }
-    ws.on('open', () => ws.send(JSON.stringify({ type: 'hello', token, client: 'cli' } satisfies ClientMessage)));
-    ws.on('message', (data: RawData) => {
-      try {
-        const msg = JSON.parse(data.toString()) as ServerMessage;
-        finish(msg.type === 'welcome');
-      } catch {
-        finish(false);
-      }
-    });
-    ws.on('error', () => finish(false));
-    ws.on('close', () => finish(false));
-  });
 }
 
 /* ---------- server ---------- */
@@ -193,14 +182,15 @@ async function main(): Promise<void> {
   // macOS: launched from Finder/Dock the PATH is launchd's minimal one; take the login shell's so the agent CLIs resolve.
   if (process.platform === 'darwin') log.info(`PATH from login shell: ${fixPathFromLoginShell()}`);
 
+  // one daemon per data folder: two would fight over the session holders (each takeover drops the other's pipe)
+  if (!(await takeDaemonLock())) {
+    log.info('another daemon holds the lock; exiting');
+    log.close();
+    process.exit(0);
+  }
   const existing = readDaemonJson();
   if (existing && existing.pid !== process.pid && pidAlive(existing.pid)) {
-    if (await probeDaemon(existing.port, existing.token)) {
-      log.info(`another daemon is alive (pid ${existing.pid}, port ${existing.port}); exiting`);
-      log.close();
-      process.exit(0);
-    }
-    log.warn(`stale daemon.json (pid ${existing.pid} alive but port ${existing.port} not answering); replacing`);
+    log.warn(`daemon.json names pid ${existing.pid}, which is alive but not the lock holder; replacing`);
   }
 
   const startPort = Number(process.env['ASM_PORT']) || DAEMON_PORT_DEFAULT;
@@ -386,6 +376,7 @@ async function main(): Promise<void> {
       wss.close();
       server.close();
       store.close();
+      lockServer?.close();
     } catch (e) {
       log.error('shutdown error', e);
     }
