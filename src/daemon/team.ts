@@ -125,6 +125,10 @@ interface Pending {
   delegated?: boolean;
   /** the piece of work ("#T12") this directive is */
   task?: string;
+  /** the text typed for it (resent once if the session did not take it) */
+  text?: string;
+  /** it was resent already */
+  resent?: boolean;
 }
 
 interface Queued {
@@ -341,7 +345,7 @@ export class Team {
   private persist(): void {
     const state = {
       outbox: [...this.outbox],
-      pending: [...this.pending].map(([id, p]) => [id, { from: p.from, also: p.also, at: p.at, blocked: p.blocked, delegated: p.delegated, task: p.task }]),
+      pending: [...this.pending].map(([id, p]) => [id, { from: p.from, also: p.also, at: p.at, blocked: p.blocked, delegated: p.delegated, task: p.task, text: p.text, resent: p.resent }]),
       director: [...this.director]
     };
     const json = JSON.stringify(state);
@@ -356,7 +360,7 @@ export class Team {
 
   /** After a restart: the queues come back (a pending result waits for the session's next finished turn). */
   private restore(): void {
-    type Saved = { outbox: [string, Queued[]][]; pending: [string, { from: string; also?: string[]; at: number; blocked?: boolean; delegated?: boolean; task?: string }][]; director: [string, string][] };
+    type Saved = { outbox: [string, Queued[]][]; pending: [string, { from: string; also?: string[]; at: number; blocked?: boolean; delegated?: boolean; task?: string; text?: string; resent?: boolean }][]; director: [string, string][] };
     const st = this.store.getKv<Saved>('team');
     if (!st) return;
     for (const [id, q] of st.outbox ?? []) if (this.sessions.get(id) && q.length) this.outbox.set(id, q);
@@ -1194,6 +1198,8 @@ export class Team {
         const up = this.director.get(id) ?? (t.role === 'head' ? 'user' : this.headOf(this.rootOf(t.projectId))?.id);
         if (up) this.trackDirective(id, up);
       }
+      const pend = this.pending.get(id);
+      if (pend && directive?.from) pend.text = text;
       try {
         this.sessions.paste(id, text);
         // it still shows "waiting" for a moment: messages queued right after go together in the next paste
@@ -1267,6 +1273,15 @@ export class Team {
     // one — do not report it again as the answer; tell the manager once and keep waiting
     const taken = this.lastTakenAt(s);
     if (taken !== undefined && taken < p.at - 2000) {
+      // once: type it again (the session was restarting, or a dialog swallowed it) — the work stays the same task
+      if (!p.resent && p.text && s.status === 'waiting') {
+        p.resent = true;
+        p.started = false;
+        p.at = Date.now();
+        log.info('team: the message was not taken, resending once', s.id, p.task ?? '');
+        this.enqueue(s.id, { text: p.text });
+        return;
+      }
       if (!p.blocked) {
         p.blocked = true;
         p.started = false;
