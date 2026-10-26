@@ -10,3 +10,4 @@ dist
 .env.*
 out-test*
 dist-ui/
+dist-b/

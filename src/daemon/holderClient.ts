@@ -13,6 +13,8 @@ import { log } from './log';
  */
 export interface HolderSpec {
   id: string;
+  /** set by start(): this holder instance */
+  nonce?: string;
   kind: 'pty' | 'stream';
   file: string;
   args: string[];
@@ -24,6 +26,7 @@ export interface HolderSpec {
 
 export interface HolderInfo {
   id: string;
+  nonce?: string;
   pid: number;
   childPid?: number;
   pipe: string;
@@ -32,6 +35,7 @@ export interface HolderInfo {
 }
 
 export interface HolderExit {
+  nonce?: string;
   code: number | null;
   signal: string | number | null;
   at: number;
@@ -118,8 +122,9 @@ export class HolderClient extends EventEmitter {
 
   /** Start a holder for a new process and connect to it. */
   async start(spec: HolderSpec): Promise<void> {
+    const nonce = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     const specFile = path.join(holdersDir(), `${spec.id}.spec.json`);
-    fs.writeFileSync(specFile, JSON.stringify(spec));
+    fs.writeFileSync(specFile, JSON.stringify({ ...spec, nonce }));
     HolderClient.clearExit(spec.id);
     const env: NodeJS.ProcessEnv = { ...process.env, ELECTRON_RUN_AS_NODE: '1' };
     const child = spawn(process.execPath, [HolderClient.scriptPath(), specFile], { detached: true, stdio: 'ignore', env, windowsHide: true });
@@ -131,7 +136,8 @@ export class HolderClient extends EventEmitter {
       if (fs.existsSync(infoFile)) {
         try {
           const info = JSON.parse(fs.readFileSync(infoFile, 'utf8')) as HolderInfo;
-          if (info.startedAt && Date.now() - info.startedAt < 60_000) {
+          // ours — not the previous holder of this session, which may still be closing
+          if (info.nonce === nonce) {
             await this.connect(info.pipe);
             return;
           }
@@ -140,7 +146,7 @@ export class HolderClient extends EventEmitter {
         }
       }
       const ex = HolderClient.listExits().get(spec.id);
-      if (ex) {
+      if (ex && ex.nonce === nonce) {
         // it ended before we could connect (e.g. the command was not found)
         this.exited = true;
         this.emit('exit', ex.code, ex.signal);

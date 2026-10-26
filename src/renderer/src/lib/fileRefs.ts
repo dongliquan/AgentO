@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { useStore } from '@/store';
 import { useDock } from '@/lib/dock';
+import { IS_PANELS, relay } from '@/lib/role';
 import { send } from '@/client';
 import { normPath } from './format';
 
@@ -57,9 +58,15 @@ export const useReveal = create<{ path: string | null; nonce: number; reveal: (p
   path: null,
   nonce: 0,
   reveal: (path) => {
+    const st = useStore.getState();
+    // the panels are in their own window: the Files tab is there
+    if (!IS_PANELS && st.panelsDetached) {
+      relay({ kind: 'revealFile', path });
+      return;
+    }
     const dock = useDock.getState();
     if (dock.docked.includes('files')) dock.setShown('files');
-    else useStore.getState().setRightTab('files');
+    else st.setRightTab('files');
     set({ path, nonce: Date.now() });
   }
 }));

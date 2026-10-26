@@ -21,6 +21,8 @@ import { holdersDir, holderPipe } from './paths';
 
 interface Spec {
   id: string;
+  /** this holder instance (a restarted session gets a new one while the old holder is still closing) */
+  nonce: string;
   kind: 'pty' | 'stream';
   file: string;
   args: string[];
@@ -41,7 +43,7 @@ const spec = JSON.parse(fs.readFileSync(specFile, 'utf8')) as Spec;
 const startedAt = Date.now();
 const infoFile = path.join(holdersDir(), `${spec.id}.json`);
 const exitFile = path.join(holdersDir(), `${spec.id}.exit.json`);
-const pipe = holderPipe(spec.id);
+const pipe = holderPipe(spec.id, spec.nonce);
 
 let client: net.Socket | null = null;
 const backlog: string[] = [];
@@ -62,7 +64,16 @@ function emit(msg: Record<string, unknown>): void {
 }
 
 function writeInfo(): void {
-  fs.writeFileSync(infoFile, JSON.stringify({ id: spec.id, pid: process.pid, childPid, pipe, kind: spec.kind, startedAt }));
+  fs.writeFileSync(infoFile, JSON.stringify({ id: spec.id, nonce: spec.nonce, pid: process.pid, childPid, pipe, kind: spec.kind, startedAt }));
+}
+
+/** the info file still names this holder (a newer holder of the same session may have replaced it) */
+function infoIsMine(): boolean {
+  try {
+    return (JSON.parse(fs.readFileSync(infoFile, 'utf8')) as { nonce?: string }).nonce === spec.nonce;
+  } catch {
+    return false;
+  }
 }
 
 function finish(code: number | null, signal: string | number | null | undefined): void {
@@ -70,15 +81,18 @@ function finish(code: number | null, signal: string | number | null | undefined)
   finishing = true;
   alive = false;
   emit({ t: 'exit', code, signal: signal ?? null });
-  try {
-    fs.writeFileSync(exitFile, JSON.stringify({ id: spec.id, code, signal: signal ?? null, at: Date.now() }));
-  } catch {
-    /* best effort */
+  // the end is recorded only while this holder is the session's current one (a restart already started another)
+  if (infoIsMine()) {
+    try {
+      fs.writeFileSync(exitFile, JSON.stringify({ id: spec.id, nonce: spec.nonce, code, signal: signal ?? null, at: Date.now() }));
+    } catch {
+      /* best effort */
+    }
   }
   // give a connected daemon a moment to read the exit, then go
   setTimeout(() => {
     try {
-      fs.unlinkSync(infoFile);
+      if (infoIsMine()) fs.unlinkSync(infoFile);
     } catch {
       /* gone */
     }

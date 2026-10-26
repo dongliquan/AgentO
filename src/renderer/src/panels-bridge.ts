@@ -5,6 +5,15 @@
 import { useStore } from '@/store';
 import { focusTerminal, runCommand, selectAndReveal } from '@/commands';
 import { IS_PANELS, relay } from '@/lib/role';
+import { useDock } from '@/lib/dock';
+import { useReveal } from '@/lib/fileRefs';
+
+/** Panels window: the Session tab comes forward (in the second panel when it was docked there). */
+export function showSessionTab(): void {
+  const dock = useDock.getState();
+  if (dock.docked.includes('detail')) dock.setShown('detail');
+  else useStore.getState().setRightTab('detail');
+}
 
 function initMain(): void {
   const st = useStore.getState();
@@ -56,10 +65,18 @@ function initPanels(): void {
       runCommand(msg.id);
       return;
     }
+    if (msg.kind === 'revealFile') {
+      useReveal.getState().reveal(msg.path);
+      return;
+    }
     if (msg.kind !== 'select') return;
     const s = useStore.getState();
     if (msg.sessionId === s.selectedId) return;
-    if (msg.sessionId === null || s.sessions.has(msg.sessionId)) s.select(msg.sessionId);
+    if (msg.sessionId === null || s.sessions.has(msg.sessionId)) {
+      s.select(msg.sessionId);
+      // picked on the main window's Ground: its conversation here
+      if (msg.sessionId) showSessionTab();
+    }
   });
 }
 

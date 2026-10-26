@@ -1,4 +1,7 @@
 import type { AgentKind, Session } from '@shared/protocol';
+import { useToasts } from '@/lib/notify';
+import { readUsage, resetUsage } from '@/lib/uiUsage';
+import { showSessionTab } from '@/panels-bridge';
 import { useNewProject } from '@/components/NewProjectDialog';
 import { useStore, ZOOM_MAX, ZOOM_MIN } from '@/store';
 import { send } from '@/client';
@@ -85,6 +88,8 @@ export function selectAndReveal(sessionId: string): void {
   st.select(sessionId);
   if (IS_PANELS) {
     relay({ kind: 'reveal', sessionId });
+    // the panels window: the session tree and the Session tab are its view of a session
+    showSessionTab();
     return;
   }
   st.setCenterView('sessions');
@@ -279,6 +284,8 @@ export const COMMANDS: CommandDef[] = [
   { id: 'view.tabs', label: 'View: Tabs', shortcut: kbd('Ctrl+3'), run: () => useStore.getState().setViewMode('tabs') },
   { id: 'view.timeline', label: 'View: Timeline', shortcut: kbd('Ctrl+4'), run: () => useStore.getState().setViewMode('timeline') },
   { id: 'view.today', label: 'View: Today', shortcut: kbd('Ctrl+5'), run: () => useStore.getState().setViewMode('today') },
+  { id: 'help.ui-usage', label: 'Help: UI Usage (views and tabs opened, this PC only)', run: showUiUsage },
+  { id: 'help.ui-usage-reset', label: 'Help: Reset UI Usage Counts', run: () => { resetUsage(); useToasts.getState().push({ title: 'UI usage counts reset', body: 'Counting again from now.' }); } },
   { id: 'view.zoom-in', label: 'Zoom In', shortcut: kbd('Ctrl+='), run: () => zoomBy(ZOOM_STEP) },
   { id: 'view.zoom-out', label: 'Zoom Out', shortcut: kbd('Ctrl+-'), run: () => zoomBy(1 / ZOOM_STEP) },
   { id: 'view.zoom-reset', label: 'Reset Zoom', shortcut: kbd('Ctrl+0'), run: () => useStore.getState().setZoom(1) },
@@ -351,4 +358,15 @@ export function runCommand(id: string): boolean {
   }
   c.run();
   return true;
+}
+
+/** The views and tabs opened since counting began (both windows), most used first. */
+function showUiUsage(): void {
+  const u = readUsage();
+  const days = Math.max(1, Math.round((Date.now() - u.since) / 86_400_000));
+  const rows = Object.entries(u.counts).sort((a, b) => b[1] - a[1]);
+  useToasts.getState().push({
+    title: `UI usage — ${days} day${days === 1 ? '' : 's'} (this PC only)`,
+    body: rows.length ? rows.map(([k, n]) => `${n}× ${k}`).join('\n') : 'Nothing counted yet.'
+  });
 }

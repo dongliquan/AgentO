@@ -144,5 +144,7 @@ export type PanelsRelay =
   /** panels → main */
   | { kind: 'openFileCard'; path: string; cwd: string }
   | { kind: 'openViewerTab'; path: string }
+  /** main → panels: show a file in the Files tab (a file link clicked in the main window's chat) */
+  | { kind: 'revealFile'; path: string }
   /** run a palette/menu command id in the other window (panels → main; main → panels for view.orders) */
   | { kind: 'command'; id: string };

@@ -36,6 +36,6 @@ export function holdersDir(): string {
 }
 
 /** The local pipe a session holder listens on. */
-export function holderPipe(id: string): string {
-  return process.platform === 'win32' ? `\\\\.\\pipe\\agento-${id}` : path.join(holdersDir(), `${id}.sock`);
+export function holderPipe(id: string, nonce: string): string {
+  return process.platform === 'win32' ? `\\\\.\\pipe\\agento-${id}-${nonce}` : path.join(holdersDir(), `${id}-${nonce}.sock`);
 }

@@ -146,6 +146,21 @@ async function main() {
   const echoed = await c.waitFor((m) => m.type === 'session.data' && m.id === sid && m.data.includes('smoke-pty-ok'), 10000);
   check('terminal input and output', !!echoed);
 
+  // ---------- restart (as a fresh start does): the new holder must come up while the old one is still closing ----------
+  const mark = c.msgs.length;
+  c.send({ type: 'session.restart', id: sid });
+  const back = await until(() => {
+    const ups = c.msgs.slice(mark).filter((m) => m.type === 'session.upsert' && m.session.id === sid).map((m) => m.session.status);
+    return ups.includes('error') ? 'error' : ups.lastIndexOf('starting') >= 0 && /working|waiting/.test(ups[ups.length - 1] ?? '') ? ups[ups.length - 1] : null;
+  }, 15000);
+  await sleep(2500); // past the old holder's closing delay
+  const errAfter = c.msgs.slice(mark).some((m) => m.type === 'session.upsert' && m.session.id === sid && m.session.status === 'error');
+  check('session restart comes back (no error)', !!back && back !== 'error' && !errAfter, String(back));
+  c.send({ type: 'session.attach', id: sid });
+  await sleep(800);
+  c.send({ type: 'session.input', id: sid, data: 'echo smoke-after-session-restart\r' });
+  check('restarted session takes input', !!(await c.waitFor((m) => m.type === 'session.data' && m.id === sid && m.data.includes('smoke-after-session-restart'), 10000)));
+
   // ---------- an order gets a task id ----------
   c.send({ type: 'team.order', target: { kind: 'session', sessionId: sid }, text: 'echo smoke-order' });
   const rec = await c.waitFor((m) => m.type === 'inbox.delta' && m.upsert.some((i) => i.sessionId === sid && i.kind === 'directive'), 10000);
