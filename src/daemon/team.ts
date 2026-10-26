@@ -1600,8 +1600,9 @@ export class Team {
       run: (caller, args) => {
         const projects = this.store.listProjects();
         const pid = str(args['project_id']);
+        // a project id covers its parts too (a head coach asking about its project sees the parts' players)
         const list = this.all()
-          .filter((s) => this.inScope(caller, s) && (!pid || s.projectId === pid))
+          .filter((s) => this.inScope(caller, s) && (!pid || s.projectId === pid || this.rootOf(s.projectId) === pid))
           .map((s) => this.describe(s, projects));
         return list.length ? JSON.stringify(list, null, 2) : 'No sessions in scope.';
       }
@@ -1733,8 +1734,9 @@ export class Team {
         });
         const stored = this.sessions.get(s.id);
         if (prompt && stored) {
-          this.record(stored, 'directive', caller, prompt);
-          this.trackDirective(stored.id, caller.id, this.newTask(stored));
+          const task = this.newTask(stored);
+          this.record(stored, 'directive', caller, prompt, true, task);
+          this.trackDirective(stored.id, caller.id, task);
         }
         return JSON.stringify({ created: this.describe(stored ?? (s as StoredSession), this.store.listProjects()) }, null, 2);
       }
