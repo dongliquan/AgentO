@@ -49,6 +49,7 @@ interface SessionRow {
   resume_id: string | null;
   prev_resume_ids: string | null;
   model_pref: string | null;
+  mode: string | null;
   created_at: number;
   updated_at: number;
   exit_code: number | null;
@@ -180,6 +181,7 @@ function rowToSession(r: SessionRow): StoredSession {
   }
   if (r.exit_code != null) s.exitCode = r.exit_code;
   if (r.model_pref) s.modelPref = r.model_pref;
+  if (r.mode === 'headless' || r.mode === 'tui') s.mode = r.mode;
   if (r.command != null) s.command = r.command;
   if (r.args != null) {
     try {
@@ -282,6 +284,7 @@ export class Store {
     if (!cols.has('role')) this.db.exec("ALTER TABLE sessions ADD COLUMN role TEXT NOT NULL DEFAULT 'player'");
     if (!cols.has('prev_resume_ids')) this.db.exec('ALTER TABLE sessions ADD COLUMN prev_resume_ids TEXT');
     if (!cols.has('model_pref')) this.db.exec('ALTER TABLE sessions ADD COLUMN model_pref TEXT');
+    if (!cols.has('mode')) this.db.exec('ALTER TABLE sessions ADD COLUMN mode TEXT');
     const inboxCols = new Set((this.db.prepare('PRAGMA table_info(inbox)').all() as { name: string }[]).map((c) => c.name));
     if (!inboxCols.has('from_id')) this.db.exec('ALTER TABLE inbox ADD COLUMN from_id TEXT');
     if (!inboxCols.has('task_id')) this.db.exec('ALTER TABLE inbox ADD COLUMN task_id TEXT');
@@ -486,16 +489,16 @@ export class Store {
   upsertSession(s: StoredSession): void {
     this.stmt(
         `INSERT INTO sessions (id, project_id, folder_id, cwd, agent, title, color, status, pid, resume_id,
-           created_at, updated_at, exit_code, x, y, w, h, cols, rows, command, args, role, sort_order, prev_resume_ids, model_pref)
+           created_at, updated_at, exit_code, x, y, w, h, cols, rows, command, args, role, sort_order, prev_resume_ids, model_pref, mode)
          VALUES (@id, @project_id, @folder_id, @cwd, @agent, @title, @color, @status, @pid, @resume_id,
-           @created_at, @updated_at, @exit_code, @x, @y, @w, @h, @cols, @rows, @command, @args, @role, @sort_order, @prev_resume_ids, @model_pref)
+           @created_at, @updated_at, @exit_code, @x, @y, @w, @h, @cols, @rows, @command, @args, @role, @sort_order, @prev_resume_ids, @model_pref, @mode)
          ON CONFLICT(id) DO UPDATE SET
            project_id=excluded.project_id, folder_id=excluded.folder_id, cwd=excluded.cwd, agent=excluded.agent,
            title=excluded.title, color=excluded.color, status=excluded.status, pid=excluded.pid,
            resume_id=excluded.resume_id, updated_at=excluded.updated_at, exit_code=excluded.exit_code,
            x=excluded.x, y=excluded.y, w=excluded.w, h=excluded.h, cols=excluded.cols, rows=excluded.rows,
            command=excluded.command, args=excluded.args, role=excluded.role, sort_order=excluded.sort_order,
-           prev_resume_ids=excluded.prev_resume_ids, model_pref=excluded.model_pref`
+           prev_resume_ids=excluded.prev_resume_ids, model_pref=excluded.model_pref, mode=excluded.mode`
       )
       .run({
         id: s.id,
@@ -510,6 +513,7 @@ export class Store {
         resume_id: s.resumeId ?? null,
         prev_resume_ids: s.prevResumeIds?.length ? JSON.stringify(s.prevResumeIds.slice(-10)) : null,
         model_pref: s.modelPref ?? null,
+        mode: s.mode ?? null,
         created_at: s.createdAt,
         updated_at: s.updatedAt,
         exit_code: s.exitCode ?? null,

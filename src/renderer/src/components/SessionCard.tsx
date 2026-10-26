@@ -195,7 +195,7 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
         {hasChat && (
           <div className="segmented sm" onPointerDown={(e) => e.stopPropagation()}>
             <button className={view === 'chat' ? 'active' : ''} onClick={() => setView('chat')}>Chat</button>
-            <button className={view === 'terminal' ? 'active' : ''} onClick={() => setView('terminal')}>Terminal</button>
+            <button className={view === 'terminal' ? 'active' : ''} onClick={() => setView('terminal')} title={s.mode === 'headless' ? 'Activity log (headless: no screen)' : 'The terminal screen'}>{s.mode === 'headless' ? 'Log' : 'Terminal'}</button>
           </div>
         )}
         <ContextSize session={s} />
@@ -305,6 +305,11 @@ function CardMenu({ session: s, x, y, onClose }: { session: Session; x: number; 
       {live && item('Hibernate', () => send({ type: 'session.hibernate', id: s.id }))}
       {s.status === 'hibernated' && item('Resume', () => send({ type: 'session.resume', id: s.id }))}
       {item('Restart', () => send({ type: 'session.restart', id: s.id }))}
+      {s.agent === 'claude' &&
+        item(
+          s.mode === 'headless' ? 'Run in a Terminal (screen; same conversation)' : 'Run Headless (chat only, JSON in / out; same conversation)',
+          () => send({ type: 'session.setMode', id: s.id, mode: s.mode === 'headless' ? 'tui' : 'headless' })
+        )}
       {s.agent === 'claude' && s.resumeId && item('Fresh Start (handoff note → new conversation)', () => freshStart(s))}
       {s.agent === 'claude' && !!s.prevResumeIds?.length && item('Restore Earlier Conversation', () => restoreEarlier(s))}
       {live && item('Force Kill', () => send({ type: 'session.kill', id: s.id }), 'danger')}

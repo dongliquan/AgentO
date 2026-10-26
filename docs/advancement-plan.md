@@ -117,7 +117,7 @@ hr { border: 0; margin: 2.2em 0 }   /* 선 없이 여백만 — 챕터 구분은
 **관련 코드**: `src/daemon/memory.ts` · `src/daemon/team.ts` · `src/daemon/store.ts` · `src/shared/protocol.ts` · `src/renderer/src/components/FilesPanel.tsx`
 **읽는 사람**: AgentO 를 이어서 개발하는 사람. 근거 데이터는 2026-10-23 `usage.report`(7일 102M 토큰: 선수 86% · 코치 14%)
 
-<div class="warn">C(프로젝트 메모리)와 B(일 식별자)는 구현됐다(2026-10-26). A 는 설계이며 코드는 아직 없다. 데몬 변경은 데몬 재시작 뒤 적용된다.</div>
+<div class="warn">C(프로젝트 메모리)·B(일 식별자)·A(이벤트 채널, headless 세션)가 구현됐다(2026-10-26). 데몬 변경은 데몬 재시작 뒤 적용된다. 세부는 CLAUDE.md 의 같은 날짜 항목.</div>
 
 <a id="toc"></a>
 
@@ -170,7 +170,7 @@ hr { border: 0; margin: 2.2em 0 }   /* 선 없이 여백만 — 챕터 구분은
  <div class="ar">→</div>
  <div class="cd" style="border-top-color:#1a4d8f"><b><span class="tg" style="background:#1a4d8f1a;color:#1a4d8f">2</span> 일 식별자</b><span class="k">#T123 · inbox.task_id</span><span class="s">Flow·진행률·Timeline·태그를 정규식에서 사실로. 완료(2026-10-26)</span></div>
  <div class="ar">→</div>
- <div class="cd" style="border-top-color:#7c3aed"><b><span class="tg" style="background:#7c3aed1a;color:#7c3aed">3</span> 이벤트 채널</b><span class="k">claude -p stream-json</span><span class="s">화면 긁기 제거. 세션별 TUI/headless 공존</span></div>
+ <div class="cd" style="border-top-color:#7c3aed"><b><span class="tg" style="background:#7c3aed1a;color:#7c3aed">3</span> 이벤트 채널</b><span class="k">claude -p stream-json</span><span class="s">화면 긁기 제거. 세션별 TUI/headless 공존. 완료(2026-10-26)</span></div>
  <div class="ar">→</div>
  <div class="cd" style="border-top-color:#8a6d1a"><b><span class="tg" style="background:#8a6d1a1a;color:#8a6d1a">4</span> E·F·G</b><span class="k">PTY 홀더 · 스모크 · Today 홈</span><span class="s">개발 속도와 화면 정리. A 와 병행 또는 그 뒤</span></div>
 </div>

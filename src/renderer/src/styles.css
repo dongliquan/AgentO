@@ -1567,6 +1567,11 @@ button.tl-all { color: var(--accent); border-color: var(--border); }
 .deleg-chip.working { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .gl-flow.held { animation: none; opacity: 0.7; }
 /* the usage-limit card: a wait, not a question */
+.chat-choice-list.perm { display: flex; gap: 8px; }
+.chat-choice-list.perm .chat-choice-opt { flex: 1 1 0; justify-content: center; }
+.chat-choice-foot.muted { font-size: 11px; }
+.check { display: flex; align-items: flex-start; gap: 6px; font-size: 12px; line-height: 1.4; cursor: pointer; }
+.check input { margin-top: 2px; }
 .chat-choice-card.limit { border-left-color: var(--warn); }
 .chat-choice-card.limit .chat-choice-kind { color: var(--warn); }
 .status-dot.limit { background: var(--warn); opacity: 0.8; }

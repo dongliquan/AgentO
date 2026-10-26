@@ -258,7 +258,7 @@ export function ChatView({
         )}
       </div>
       </ScopeCtx.Provider>
-      {choice && <WaitingBar session={s} tail={tail ?? ''} onShowTerminal={onShowTerminal} />}
+      {s.permission ? <PermissionCard session={s} onShowTerminal={onShowTerminal} /> : choice && <WaitingBar session={s} tail={tail ?? ''} onShowTerminal={onShowTerminal} />}
       {/* the old-answer note: in the Session tab / Focus view, not on every Ground card (cards pass a limit) */}
       <Composer session={s} quick={quick} lastAt={working || limit !== undefined ? undefined : lastAnswerAt(all)} />
     </div>
@@ -759,6 +759,48 @@ function WaitingBar({ session: s, tail, onShowTerminal }: { session: Session; ta
       <div className="chat-choice-foot">
         <button className="btn sm ghost" onClick={() => key('\x1b')} title="Cancel (Esc)">Esc · cancel</button>
       </div>
+    </div>
+  );
+}
+
+/** What a tool call asks to do, in one line: the command, the file, the pattern … */
+function permissionGist(input: Record<string, unknown>): string {
+  const s = (v: unknown): string => (typeof v === 'string' ? v : v === undefined ? '' : JSON.stringify(v));
+  const one = s(input['command'] ?? input['file_path'] ?? input['path'] ?? input['pattern'] ?? input['url'] ?? input['query'] ?? input['description'] ?? '');
+  return one.trim();
+}
+
+/**
+ * Headless Claude asks whether it may use a tool (Bash, Edit, WebFetch …): the question arrives as an event, not a
+ * screen — Allow / Deny answer it. The session waits until the manager decides.
+ */
+function PermissionCard({ session: s, onShowTerminal }: { session: Session; onShowTerminal: () => void }): JSX.Element | null {
+  const p = s.permission;
+  if (!p) return null;
+  const answer = (allow: boolean): void => send({ type: 'session.permission', id: s.id, requestId: p.id, allow });
+  const gist = permissionGist(p.input);
+  const rest = Object.entries(p.input).filter(([k, v]) => v !== undefined && !['command', 'file_path', 'path', 'pattern', 'url', 'query', 'description'].includes(k) || (typeof v === 'string' ? v : JSON.stringify(v)) !== gist);
+  return (
+    <div className="chat-choice-card permission">
+      <div className="chat-choice-head">
+        <span className="chat-choice-kind">🔒 Permission · {p.tool}</span>
+        <span className="spacer" />
+        <button className="btn sm ghost" onClick={onShowTerminal}>Log</button>
+      </div>
+      <div className="chat-choice-q">{s.agent === 'claude' ? 'Claude' : 'The session'} wants to use <b>{p.tool}</b>{gist ? ':' : '.'}</div>
+      {gist && <pre className="chat-choice-ctx">{gist}</pre>}
+      {rest.length > 0 && gist === '' && <pre className="chat-choice-ctx">{JSON.stringify(p.input, null, 1).slice(0, 1200)}</pre>}
+      <div className="chat-choice-list perm">
+        <button className="chat-choice-opt" onClick={() => answer(true)} title="Allow this call">
+          <span className="n">✓</span>
+          <span className="label">Allow</span>
+        </button>
+        <button className="chat-choice-opt" onClick={() => answer(false)} title="Deny this call (Claude is told the manager did not allow it)">
+          <span className="n">✗</span>
+          <span className="label">Deny</span>
+        </button>
+      </div>
+      <div className="chat-choice-foot muted">Folders marked trusted (auto-trust) are not asked.</div>
     </div>
   );
 }

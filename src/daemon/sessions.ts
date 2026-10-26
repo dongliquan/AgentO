@@ -6,7 +6,8 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import * as pty from 'node-pty';
-import type { AgentKind, InboxItem, Session, SessionRole, SessionStatus } from '@shared/protocol';
+import type { AgentKind, InboxItem, PermissionRequest, Session, SessionMode, SessionRole, SessionStatus } from '@shared/protocol';
+import { HEADLESS_ARGS, StreamProc, assistantText, toolResultText, toolSummary, toolUses, type StreamJson } from './stream';
 import { Store, type StoredSession } from './store';
 import { defaultShell, findClaudeResumeId, getAgentDef, resolveCommand } from './agents';
 import { findTranscript } from './transcript';
@@ -26,6 +27,13 @@ const MIN_WORKING_FOR_INBOX_MS = 3000;
 const AUTO_HIBERNATE_MIN = Math.max(1, Number(process.env['ASM_HIBERNATE_MIN'] || 30) || 30);
 
 const OSC_TITLE_RE = /\x1b\](?:0|2);([^\x07\x1b]*)(?:\x07|\x1b\\)/g;
+/** new team sessions (players, coaches) run headless unless switched off; the manager's own sessions stay in a terminal */
+const HEADLESS_DEFAULT = process.env['AGENTO_HEADLESS'] !== '0';
+
+/** a headless session's tool call waiting for the manager */
+interface PendingPermission extends PermissionRequest {
+  resolve: (r: { behavior: 'allow' | 'deny'; updatedInput?: Record<string, unknown>; message?: string }) => void;
+}
 
 export interface CreateSessionOpts {
   projectId: string;
@@ -42,10 +50,19 @@ export interface CreateSessionOpts {
   prompt?: string;
   /** Ground position of the card (default: the first free slot) */
   at?: { x: number; y: number };
+  /** Claude: terminal or headless (default: headless for team roles, terminal otherwise) */
+  mode?: SessionMode;
 }
 
 interface Live {
-  proc: pty.IPty;
+  /** the terminal process (tui) … */
+  proc?: pty.IPty;
+  /** … or the headless one (JSON in / out) */
+  stream?: StreamProc;
+  /** headless: a permission question Claude is waiting on */
+  permission?: PendingPermission;
+  /** headless: the usage-limit notice from the last result / rate-limit event */
+  limitText?: string;
   startedAt: number;
   quietTimer: NodeJS.Timeout | null;
   workingSince: number;
@@ -167,7 +184,8 @@ export class SessionManager extends EventEmitter {
     // Extra fields (command/args) are harmless for the renderer, but keep the wire shape tidy.
     const { command: _c, args: _a, ...rest } = s;
     const sc = this.screenState(s);
-    return { ...rest, attention: sc.value, ...(sc.limit ? { limit: sc.limit } : {}) };
+    const perm = this.live.get(s.id)?.permission;
+    return { ...rest, attention: sc.value, ...(sc.limit ? { limit: sc.limit } : {}), ...(perm ? { permission: { id: perm.id, tool: perm.tool, input: perm.input, at: perm.at } } : {}) };
   }
 
   /** What the screen shows since the last input: a question waiting for the user, and / or the usage-limit notice. */
@@ -175,6 +193,8 @@ export class SessionManager extends EventEmitter {
     if (s.status !== 'waiting') return { value: false };
     const live = this.live.get(s.id);
     if (!live) return { value: false };
+    // headless: no screen — a question is a pending permission request, the limit comes from the events
+    if (live.stream) return { value: !!live.permission, ...(live.limitText ? { limit: live.limitText } : {}) };
     // saves (card moves, reorders) repeat this: render the screen again only when it printed something new
     if (live.asked && live.asked.text === live.sinceInput) return live.asked;
     const screen = plainTerminalLines(live.sinceInput.slice(-20_000)).join('\n').slice(-1500);
@@ -339,6 +359,10 @@ export class SessionManager extends EventEmitter {
 
   private spawn(s: StoredSession, mode: 'fresh' | 'resume', prompt?: string): void {
     if (this.live.has(s.id)) throw new Error('Session is already running');
+    if (s.agent === 'claude' && s.mode === 'headless' && !s.command) {
+      this.spawnStream(s, mode, prompt);
+      return;
+    }
     let launch: { file: string; args: string[] };
     try {
       launch = this.resolveLaunch(s, mode, prompt);
@@ -398,6 +422,153 @@ export class SessionManager extends EventEmitter {
     proc.onExit(({ exitCode, signal }) => this.onExit(s.id, exitCode, signal));
   }
 
+  /** Headless Claude: JSON in and out; the first message (a fresh start's prompt) goes in once the CLI is ready. */
+  private spawnStream(s: StoredSession, mode: 'fresh' | 'resume', prompt?: string): void {
+    let launch: { file: string; args: string[] };
+    try {
+      // no positional prompt: in stream mode the first message goes in on stdin
+      launch = this.resolveLaunch(s, mode);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      s.status = 'error';
+      s.pid = undefined;
+      s.exitCode = 127;
+      this.save(s);
+      this.appendOutput(s, `\r\n\x1b[31m[agento] ${msg}\x1b[0m\r\n`);
+      throw e;
+    }
+    const args = [...launch.args, ...HEADLESS_ARGS];
+    const cwd = fs.existsSync(s.cwd) ? s.cwd : process.cwd();
+    const env = this.buildEnv(s);
+    // a permission question waits for the manager: the MCP call must not time out meanwhile
+    env['MCP_TOOL_TIMEOUT'] = String(6 * 60 * 60 * 1000);
+    const logStream = fs.createWriteStream(this.logPath(s.id), { flags: 'a' });
+    logStream.on('error', (err) => log.warn('log stream error', s.id, err));
+    const live: Live = { startedAt: Date.now(), quietTimer: null, workingSince: Date.now(), intent: 'none', titleTail: '', logStream, sinceInput: '' };
+    let stream: StreamProc;
+    try {
+      stream = new StreamProc(launch.file, args, { cwd, env }, {
+        event: (j) => this.onStreamEvent(s.id, j),
+        stderr: (text) => this.appendOutput(s, `\x1b[2m${text.replace(/\r?\n/g, '\r\n')}\x1b[0m`),
+        exit: (code) => this.onExit(s.id, code ?? 0)
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      s.status = 'error';
+      s.pid = undefined;
+      s.exitCode = 127;
+      this.save(s);
+      this.appendOutput(s, `\r\n\x1b[31m[agento] spawn failed: ${msg}\x1b[0m\r\n`);
+      throw e;
+    }
+    live.stream = stream;
+    this.live.set(s.id, live);
+    s.pid = stream.pid;
+    s.exitCode = undefined;
+    s.status = 'starting';
+    this.save(s);
+    this.appendOutput(s, `\r\n\x1b[2m[${new Date().toISOString()}] ${mode === 'resume' ? 'resume' : 'start'} (headless): ${launch.file} ${args.join(' ')}\x1b[0m\r\n`);
+    log.info('spawned', s.id, s.agent, 'headless', launch.file, args, 'pid', stream.pid);
+    // the CLI reports "init" only when its first turn starts: a first message goes in now; without one it is simply ready
+    if (prompt) {
+      stream.sendUser(prompt);
+      live.workingSince = Date.now();
+      this.setStatus(s, 'working');
+    } else setTimeout(() => {
+      const cur = this.sessions.get(s.id);
+      if (cur && this.live.get(s.id) === live && cur.status === 'starting') this.setStatus(cur, 'waiting');
+    }, 1500);
+  }
+
+  /** One JSON event from a headless session: the activity log line it makes and the status it means. */
+  private onStreamEvent(id: string, j: StreamJson): void {
+    const s = this.sessions.get(id);
+    const live = this.live.get(id);
+    if (!s || !live?.stream) return;
+    const type = String(j['type'] ?? '');
+    const line = (text: string): void => this.appendOutput(s, `${text.replace(/\r?\n/g, '\r\n')}\r\n`);
+    if (type === 'system') {
+      // init (the first turn started), hook_started / hook_response and other notes
+      if (j['subtype'] === 'init') {
+        const sid = typeof j['session_id'] === 'string' ? (j['session_id'] as string) : undefined;
+        if (sid && !s.resumeId) s.resumeId = sid;
+        line(`\x1b[2m[agento] session ${sid?.slice(0, 8) ?? '?'} · model ${String(j['model'] ?? '?')} · permission mode ${String(j['permissionMode'] ?? '?')}\x1b[0m`);
+        if (s.status === 'starting') {
+          live.workingSince = Date.now();
+          this.setStatus(s, 'working');
+        }
+      }
+      return;
+    }
+    if (type === 'assistant') {
+      if (s.status !== 'working') {
+        live.workingSince = Date.now();
+        this.setStatus(s, 'working');
+      }
+      const text = assistantText(j['message']);
+      if (text) line(`\x1b[1m●\x1b[0m ${text.length > 2000 ? `${text.slice(0, 1999)}…` : text}`);
+      for (const t of toolUses(j['message'])) line(`\x1b[36m⚙ ${toolSummary(t.name, t.input)}\x1b[0m`);
+      return;
+    }
+    if (type === 'user') {
+      const text = toolResultText(j['message']);
+      if (text) line(`\x1b[2m  ⎿ ${text.replace(/\s+/g, ' ').slice(0, 300)}\x1b[0m`);
+      return;
+    }
+    if (type === 'result') {
+      const usage = (j['usage'] ?? {}) as Record<string, number>;
+      const ctx = (usage['input_tokens'] ?? 0) + (usage['cache_read_input_tokens'] ?? 0) + (usage['cache_creation_input_tokens'] ?? 0);
+      const err = j['is_error'] === true || j['subtype'] !== 'success';
+      const result = typeof j['result'] === 'string' ? (j['result'] as string) : '';
+      if (err && /usage limit|rate limit/i.test(result)) live.limitText = limitResetText(result) ?? 'later';
+      else if (!err) live.limitText = undefined;
+      line(`\x1b[2m${err ? '✗' : '✓'} turn ${err ? `ended with ${String(j['subtype'] ?? 'error')}` : 'done'} · ${usage['output_tokens'] ?? 0} out · context ${Math.round(ctx / 1000)}K${err && result ? ` · ${result.slice(0, 200)}` : ''}\x1b[0m`);
+      this.setStatus(s, 'waiting');
+      return;
+    }
+    if (type === 'rate_limit_event') {
+      const info = (j['rate_limit_info'] ?? {}) as Record<string, unknown>;
+      if (info['status'] && info['status'] !== 'allowed') {
+        const at = typeof info['resetsAt'] === 'number' ? new Date((info['resetsAt'] as number) * 1000).toLocaleTimeString() : undefined;
+        live.limitText = at ?? 'later';
+        line(`\x1b[33m[agento] usage limit: ${String(info['status'])}${at ? ` · resets ${at}` : ''}\x1b[0m`);
+      }
+      return;
+    }
+    // stream_event (partial chunks) and anything new: not logged
+  }
+
+  /** Headless: Claude asks whether it may use a tool. Shown to the manager (attention); resolved by answerPermission. */
+  requestPermission(id: string, tool: string, input: Record<string, unknown>): Promise<{ behavior: 'allow' | 'deny'; updatedInput?: Record<string, unknown>; message?: string }> {
+    const s = this.sessions.get(id);
+    const live = this.live.get(id);
+    if (!s || !live) return Promise.resolve({ behavior: 'deny', message: 'The session is not running in AgentO.' });
+    // one at a time: a second question while one waits is denied (Claude asks again later)
+    if (live.permission) return Promise.resolve({ behavior: 'deny', message: 'Another permission question is still waiting for the manager; ask again after it.' });
+    return new Promise((resolve) => {
+      live.permission = { id: randomUUID(), tool, input, at: Date.now(), resolve };
+      this.appendOutput(s, `\x1b[33m? permission: ${toolSummary(tool, input)}\x1b[0m\r\n`);
+      // the question itself is the end of activity until it is answered
+      if (live.quietTimer) clearTimeout(live.quietTimer);
+      this.setStatus(s, 'waiting');
+      this.save(s);
+    });
+  }
+
+  answerPermission(id: string, requestId: string, allow: boolean, message?: string): void {
+    const s = this.sessions.get(id);
+    const live = this.live.get(id);
+    if (!s || !live?.permission || live.permission.id !== requestId) return;
+    const p = live.permission;
+    live.permission = undefined;
+    this.appendOutput(s, `\x1b[2m[agento] ${allow ? 'allowed' : 'denied'}: ${toolSummary(p.tool, p.input)}\x1b[0m\r\n`);
+    p.resolve(allow ? { behavior: 'allow', updatedInput: p.input } : { behavior: 'deny', message: message || 'The manager did not allow this.' });
+    if (allow) {
+      live.workingSince = Date.now();
+      this.setStatus(s, 'working');
+    } else this.save(s);
+  }
+
   private onData(id: string, data: string): void {
     const s = this.sessions.get(id);
     const live = this.live.get(id);
@@ -445,6 +616,7 @@ export class SessionManager extends EventEmitter {
     if (!s) return;
     if (live) {
       if (live.quietTimer) clearTimeout(live.quietTimer);
+      live.permission?.resolve({ behavior: 'deny', message: 'The session ended.' });
       live.logStream?.end();
       this.live.delete(id);
     }
@@ -566,6 +738,8 @@ export class SessionManager extends EventEmitter {
     };
     if (opts.command) s.command = opts.command;
     if (opts.args) s.args = opts.args;
+    // Claude: team roles run headless by default (JSON in / out, no screen); the manager's own sessions in a terminal
+    if (opts.agent === 'claude' && !opts.command) s.mode = opts.mode ?? (opts.role && HEADLESS_DEFAULT ? 'headless' : 'tui');
     this.buffers.set(s.id, '');
     this.save(s);
     try {
@@ -618,7 +792,42 @@ export class SessionManager extends EventEmitter {
     const live = this.live.get(id);
     if (!live) return;
     live.sinceInput = '';
-    live.proc.write(data);
+    if (live.stream) {
+      // no keyboard: Esc interrupts the turn, other keys mean nothing here
+      if (data.includes('\x1b')) live.stream.interrupt();
+      return;
+    }
+    live.proc?.write(data);
+  }
+
+  /** Claude: terminal ⇄ headless. A running session is restarted in the new mode and resumes its conversation. */
+  setMode(id: string, mode: SessionMode): void {
+    const s = this.sessions.get(id);
+    if (!s) throw new Error('Session not found');
+    if (s.agent !== 'claude') throw new Error('Only Claude sessions can run headless');
+    if ((s.mode ?? 'tui') === mode) return;
+    s.mode = mode;
+    this.save(s);
+    const live = this.live.get(id);
+    if (!live) return;
+    if (!s.resumeId) {
+      if (live.stream) return; // it reports its id on init; nothing to resume yet
+      const found = findClaudeResumeId(s.cwd, live.startedAt);
+      if (found) s.resumeId = found;
+    }
+    if (!s.resumeId) throw new Error('Cannot switch yet: the conversation id is not known');
+    live.intent = 'hibernate';
+    this.killProc(live);
+    let tries = 0;
+    const again = (): void => {
+      if (!this.sessions.has(id)) return;
+      if (this.live.has(id)) {
+        if (++tries < 50) setTimeout(again, 200);
+        return;
+      }
+      this.safeSpawn(s, 'resume');
+    };
+    setTimeout(again, 300);
   }
 
   /** Output since the last input (empty when not running). */
@@ -662,7 +871,18 @@ export class SessionManager extends EventEmitter {
     const transcript = s?.resumeId ? (s.agent === 'claude' ? findTranscript(s.cwd, s.resumeId) : s.agent === 'codex' ? findCodexRollout(s.resumeId) : undefined) : undefined;
     const from = transcript ? fileSize(transcript) : 0;
     live.sinceInput = '';
-    live.proc.write(`\x1b[200~${text.replace(/\r\n?/g, '\n')}\x1b[201~`);
+    if (live.stream) {
+      // headless: the message is the next turn, no screen to confirm against
+      if (live.permission) {
+        // a question is open: the answer must come first — the message is kept for after it (the CLI queues stdin anyway)
+        log.info('session: message to a headless session with a permission question open', id);
+      }
+      live.stream.sendUser(text.replace(/\r\n?/g, '\n'));
+      live.workingSince = Date.now();
+      this.setStatus(s!, 'working');
+      return;
+    }
+    live.proc?.write(`\x1b[200~${text.replace(/\r\n?/g, '\n')}\x1b[201~`);
     if (submit) {
       // Codex folds fast input into one paste and takes an Enter inside that burst as a newline: wait until the paste
       // has landed (longer for longer text) before submitting
@@ -670,7 +890,7 @@ export class SessionManager extends EventEmitter {
       const first = probeOf(text);
       setTimeout(() => {
         if (this.live.get(id) !== live) return;
-        live.proc.write('\r');
+        live.proc?.write('\r');
         this.confirmSubmit(id, live, { first, transcript, from }, 0);
       }, delay);
     }
@@ -689,7 +909,7 @@ export class SessionManager extends EventEmitter {
       // busy: it took the message (or is still taking in the paste) — look again later, press nothing now
       if (this.sessions.get(id)?.status === 'waiting') {
         log.warn('session: the message was not submitted, pressing Enter again', id);
-        live.proc.write('\r');
+        live.proc?.write('\r');
       }
       this.confirmSubmit(id, live, sent, tries + 1);
     }, WAITS[tries]);
@@ -723,7 +943,7 @@ export class SessionManager extends EventEmitter {
     s.cols = cols;
     s.rows = rows;
     try {
-      this.live.get(id)?.proc.resize(cols, rows);
+      this.live.get(id)?.proc?.resize(cols, rows);
     } catch (e) {
       log.warn('resize failed', id, e);
     }
@@ -731,13 +951,16 @@ export class SessionManager extends EventEmitter {
   }
 
   stop(id: string): void {
-    this.live.get(id)?.proc.write('\x03');
+    const live = this.live.get(id);
+    if (live?.stream) live.stream.interrupt();
+    else live?.proc?.write('\x03');
   }
 
   private killProc(live: Live): void {
     try {
-      if (process.platform === 'win32') live.proc.kill();
-      else live.proc.kill('SIGKILL');
+      if (live.stream) live.stream.kill();
+      else if (process.platform === 'win32') live.proc?.kill();
+      else live.proc?.kill('SIGKILL');
     } catch (e) {
       log.warn('kill failed', e);
     }

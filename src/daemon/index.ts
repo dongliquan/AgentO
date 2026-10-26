@@ -473,7 +473,7 @@ async function main(): Promise<void> {
           const y = Math.min(...all.map((s) => s.y)) - h - CHAT_GAP * 4;
           for (let x = x0; ; x += w + CHAT_GAP) if (free(x, y)) return { x, y };
         };
-        const session = sessions.create({ projectId, folderId: folder.id, cwd: dir, agent: msg.agent, role: 'player', title: `${name} chat ${n}`, at: chatSlot() });
+        const session = sessions.create({ projectId, folderId: folder.id, cwd: dir, agent: msg.agent, role: 'player', title: `${name} chat ${n}`, at: chatSlot(), mode: 'tui' });
         clients.get(ws)?.add(session.id);
         sendTo(ws, { type: 'chat.created', id: session.id });
         return;
@@ -497,6 +497,12 @@ async function main(): Promise<void> {
         return;
       case 'session.setModel':
         sessions.setModel(msg.id, msg.model);
+        return;
+      case 'session.setMode':
+        sessions.setMode(msg.id, msg.mode);
+        return;
+      case 'session.permission':
+        sessions.answerPermission(msg.id, msg.requestId, msg.allow, msg.message);
         return;
       case 'git.subjects':
         sendTo(ws, { type: 'git.subjects.result', subjects: await commitSubjects(msg.folders, msg.hashes) });
@@ -595,6 +601,7 @@ async function main(): Promise<void> {
         if (msg.args !== undefined) opts.args = msg.args;
         if (msg.cols !== undefined) opts.cols = msg.cols;
         if (msg.rows !== undefined) opts.rows = msg.rows;
+        if (msg.mode !== undefined) opts.mode = msg.mode;
         const session = sessions.create(opts);
         // a project with a head coach is laid out as a team: the new card joins its part's rows
         const own = store.listProjects().find((p) => p.id === msg.projectId);

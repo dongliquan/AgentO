@@ -170,6 +170,23 @@ export interface Session {
   rows: number;
   /** its place among its part's sessions (tree order, Ground order); unset = by creation time */
   order?: number;
+  /**
+   * Claude: how the CLI runs — tui: in a terminal (the card shows its screen); headless: `claude -p` with JSON in and
+   * out (no screen; the card shows the conversation, questions arrive as events). Absent = tui.
+   */
+  mode?: SessionMode;
+  /** headless: a tool call waiting for the manager's permission (answered with session.permission) */
+  permission?: PermissionRequest;
+}
+
+export type SessionMode = 'tui' | 'headless';
+
+export interface PermissionRequest {
+  id: string;
+  /** the tool Claude wants to use (Bash, Edit, WebFetch …) */
+  tool: string;
+  input: Record<string, unknown>;
+  at: number;
 }
 
 export interface UsageInfo {
@@ -289,6 +306,10 @@ export type ClientMessage =
   /** fresh start: the session writes a handoff note, then starts over as a new conversation that reads it */
   | { type: 'session.fresh'; id: string }
   | { type: 'session.setModel'; id: string; model: string }
+  /** Claude: run in a terminal or headless; a running session is restarted in the new mode (same conversation) */
+  | { type: 'session.setMode'; id: string; mode: SessionMode }
+  /** headless: answer a pending permission request */
+  | { type: 'session.permission'; id: string; requestId: string; allow: boolean; message?: string }
   | { type: 'git.subjects'; folders: string[]; hashes: string[] }   // commit subjects of these hashes, looked up in the folders' repositories   // '' = back to the default; a running Claude switches now
   /** go back to the conversation before the last fresh start / restart (the current one is kept in prevResumeIds) */
   | { type: 'session.restorePrev'; id: string }
@@ -315,7 +336,7 @@ export type ClientMessage =
   | { type: 'claude.sessions.import'; projectId: string; folderId: string; ids: string[]; titles?: Record<string, string> }
   | { type: 'folder.add'; projectId: string; path: string; autoTrust?: boolean }
   | { type: 'folder.remove'; id: string }
-  | { type: 'session.create'; projectId: string; folderId: string; agent: AgentKind; title?: string; command?: string; args?: string[]; cols?: number; rows?: number }
+  | { type: 'session.create'; projectId: string; folderId: string; agent: AgentKind; title?: string; command?: string; args?: string[]; cols?: number; rows?: number; mode?: SessionMode }
   | { type: 'head.create'; projectId?: string }      // one head coach per top-level project
   | { type: 'coach.create'; projectId: string; agent?: 'claude' | 'codex' | 'gemini' } // one coach per project; default claude
   /** player ⇄ playing coach; quiet: a stopped session is not woken for the note (it rides along with its next work) */

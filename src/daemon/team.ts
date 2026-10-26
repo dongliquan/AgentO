@@ -1017,6 +1017,8 @@ export class Team {
     // fresh start: the handoff note is written here and read back by the new conversation
     extras.push('--add-dir', handoffDir());
     extras.push('--mcp-config', file, '--allowedTools', `mcp__${MCP_SERVER_NAME}`);
+    // headless: permission questions come to AgentO through the MCP server (answered by the manager or a trusted folder)
+    if (s.mode === 'headless') extras.push('--permission-prompt-tool', `mcp__${MCP_SERVER_NAME}__permission`, '--permission-mode', 'acceptEdits');
     // the project memory: what every session of the project should know, read on every call (kept short by its caps)
     const root = this.rootProject(s.projectId);
     if (root) {
@@ -1542,6 +1544,23 @@ export class Team {
         const old = t.title;
         this.sessions.update(t.id, { title });
         return `Renamed "${old}" to "${title}".`;
+      }
+    },
+    {
+      // Claude Code's permission prompt (headless sessions, --permission-prompt-tool): allow in a trusted folder, else ask the manager
+      name: 'permission',
+      description: 'Internal: Claude Code asks whether a tool may be used (headless sessions). Not for sessions to call.',
+      inputSchema: { type: 'object', properties: { tool_name: { type: 'string' }, input: { type: 'object' }, tool_use_id: { type: 'string' } }, required: ['tool_name', 'input'] },
+      roles: ['head', 'coach', 'player'],
+      run: async (caller, args) => {
+        const tool = str(args['tool_name']);
+        const input = (typeof args['input'] === 'object' && args['input'] !== null ? args['input'] : {}) as Record<string, unknown>;
+        // the manager marked the folder as trusted (autoTrust): the session may do its work without asking
+        const folder = this.store.listProjects().flatMap((p) => p.folders).find((f) => f.id === caller.folderId);
+        const teamFolder = !caller.folderId && caller.cwd.toLowerCase().startsWith(this.teamDir().toLowerCase());
+        if (folder?.autoTrust || teamFolder) return JSON.stringify({ behavior: 'allow', updatedInput: input });
+        const r = await this.sessions.requestPermission(caller.id, tool, input);
+        return JSON.stringify(r);
       }
     },
     {

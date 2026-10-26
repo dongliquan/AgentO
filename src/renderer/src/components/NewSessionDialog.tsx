@@ -25,6 +25,7 @@ export function NewSessionDialog(): JSX.Element {
   const [folderId, setFolderId] = useState(preset.folderId ?? project?.folders[0]?.id ?? '');
   const [agent, setAgent] = useState<AgentKind>((preset.agent as AgentKind) ?? 'claude');
   const [title, setTitle] = useState('');
+  const [headless, setHeadless] = useState(false);
   const [adding, setAdding] = useState(false);
 
   // keep folder valid when project changes / folders arrive
@@ -65,7 +66,8 @@ export function NewSessionDialog(): JSX.Element {
       agent,
       title: title.trim() || `${AGENT_LABELS[agent]} · ${folder?.name ?? ''}`.trim(),
       cols: 100,
-      rows: 30
+      rows: 30,
+      ...(agent === 'claude' ? { mode: headless ? 'headless' : 'tui' } : {})
     });
     close();
   };
@@ -112,6 +114,15 @@ export function NewSessionDialog(): JSX.Element {
             ))}
           </div>
         </div>
+        {agent === 'claude' && (
+          <div className="field">
+            <label>Run</label>
+            <label className="check">
+              <input type="checkbox" checked={headless} onChange={(e) => setHeadless(e.target.checked)} />
+              Headless — chat only, no terminal screen (questions arrive as Allow / Deny cards). Team sessions run this way.
+            </label>
+          </div>
+        )}
         <div className="field">
           <label>Title (optional)</label>
           <input autoFocus value={title} placeholder={`${AGENT_LABELS[agent]} · ${folder?.name ?? ''}`} onChange={(e) => setTitle(e.target.value)} />
