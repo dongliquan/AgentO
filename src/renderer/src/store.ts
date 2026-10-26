@@ -10,7 +10,7 @@ import { applyChatSnapshot, applyChatUpsert, dropChat } from '@/lib/chat';
 
 export const ZOOM_MIN = 0.2;
 export const ZOOM_MAX = 2.5;
-export type ViewMode = 'board' | 'split' | 'tabs' | 'timeline';
+export type ViewMode = 'board' | 'split' | 'tabs' | 'timeline' | 'today';
 /** orders: the Manager tab (conversation + order box) */
 export type RightTab = 'detail' | 'files' | 'inbox' | 'orders' | 'log' | 'web';
 /** projects: the left sidebar's tree · inbox: also opens the right panel's Inbox tab */

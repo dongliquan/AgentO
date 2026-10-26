@@ -21,7 +21,7 @@ export const useReport = create<{ open: boolean; show: () => void; hide: () => v
 
 /* ---------- the manager's to-do list, by day (kept in this browser) ---------- */
 
-interface Todo {
+export interface Todo {
   id: string;
   text: string;
   /** the day it is planned for (Date.toDateString) */
@@ -43,7 +43,7 @@ let todos: Todo[] = (() => {
   }
 })();
 const subs = new Set<() => void>();
-function saveTodos(next: Todo[]): void {
+export function saveTodos(next: Todo[]): void {
   todos = next;
   try {
     localStorage.setItem(KEY, JSON.stringify(next.slice(-1000)));
@@ -52,7 +52,10 @@ function saveTodos(next: Todo[]): void {
   }
   subs.forEach((f) => f());
 }
-const useTodos = (): Todo[] =>
+/** A new to-do planned for a day (Date.toDateString). */
+export const newTodo = (text: string, day: string): Todo => ({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, text, day });
+
+export const useTodos = (): Todo[] =>
   useSyncExternalStore(
     (f) => {
       subs.add(f);

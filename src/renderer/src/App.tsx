@@ -19,6 +19,7 @@ import { Board } from '@/components/Board';
 import { SplitView } from '@/components/SplitView';
 import { TabView } from '@/components/TabView';
 import { TimelineView } from '@/components/TimelineView';
+import { TodayView } from '@/components/TodayView';
 import { ViewerTabs } from '@/components/ViewerTabs';
 import { RightPanel, SecondPanel, useFollowSelection } from '@/components/RightPanel';
 import { StatusBar } from '@/components/StatusBar';
@@ -111,6 +112,9 @@ function handleKey(e: KeyboardEvent): void {
   } else if (k === '4') {
     e.preventDefault();
     runCommand('view.timeline');
+  } else if (k === '5') {
+    e.preventDefault();
+    runCommand('view.today');
   } else if (k === '=' || k === '+') {
     e.preventDefault();
     zoomBy(1.2);
@@ -181,6 +185,7 @@ export function App(): JSX.Element {
   else if (viewMode === 'split') center = <SplitView />;
   else if (viewMode === 'tabs') center = <TabView />;
   else if (viewMode === 'timeline') center = <TimelineView />;
+  else if (viewMode === 'today') center = <TodayView />;
   else center = <Board />;
 
   return (

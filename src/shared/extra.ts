@@ -76,6 +76,7 @@ export const MENU_COMMANDS = [
   'view.focus-mode',
   'view.minimap',
   'view.timeline',
+  'view.today',
   'view.fullscreen',
   'view.theme.light',
   'view.theme.dark',

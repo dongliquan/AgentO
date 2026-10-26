@@ -66,6 +66,11 @@ async function main() {
   await click('button', 'Timeline');
   await sleep(500);
   check('view Timeline', await ev(`!!document.querySelector('.timeline, .tl-view, [class*=timeline]')`));
+  await click('.segmented button', 'Today');
+  await sleep(500);
+  const today = await ev(`({ cards: [...document.querySelectorAll('.today-card h3')].map(h => h.textContent.replace(/\d+$/, '').trim()), tools: !!document.querySelector('.toolbar .btn.ghost[title^="Auto Arrange"]') })`);
+  check('view Today has its four cards', ['Needs you', 'Working now', 'Done today', 'To do'].every((c) => today.cards?.some((x) => x.startsWith(c))), (today.cards || []).join(' · '));
+  check('layout tools hide on Today', !today.tools);
 
   // right panel
   if (!start.panel) await ev(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', ctrlKey: true, altKey: true, bubbles: true }))`);

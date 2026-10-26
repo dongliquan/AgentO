@@ -278,6 +278,7 @@ export const COMMANDS: CommandDef[] = [
   { id: 'view.split', label: 'View: Split', shortcut: kbd('Ctrl+2'), run: () => useStore.getState().setViewMode('split') },
   { id: 'view.tabs', label: 'View: Tabs', shortcut: kbd('Ctrl+3'), run: () => useStore.getState().setViewMode('tabs') },
   { id: 'view.timeline', label: 'View: Timeline', shortcut: kbd('Ctrl+4'), run: () => useStore.getState().setViewMode('timeline') },
+  { id: 'view.today', label: 'View: Today', shortcut: kbd('Ctrl+5'), run: () => useStore.getState().setViewMode('today') },
   { id: 'view.zoom-in', label: 'Zoom In', shortcut: kbd('Ctrl+='), run: () => zoomBy(ZOOM_STEP) },
   { id: 'view.zoom-out', label: 'Zoom Out', shortcut: kbd('Ctrl+-'), run: () => zoomBy(1 / ZOOM_STEP) },
   { id: 'view.zoom-reset', label: 'Reset Zoom', shortcut: kbd('Ctrl+0'), run: () => useStore.getState().setZoom(1) },

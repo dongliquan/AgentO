@@ -1687,7 +1687,7 @@ export class Team {
           this.checkRate(caller);
           // it reported explicitly: no automatic copy of its last reply when the turn ends
           if (this.pending.get(caller.id)?.from === 'user') this.pending.delete(caller.id);
-          this.store.addInbox(caller.id, 'report', `${caller.title} → Manager (you): ${clip(message, LOG_TEXT_MAX)}`, false, caller.id);
+          this.store.addInbox(caller.id, 'report', `${caller.title} → Manager (you): ${clip(message, LOG_TEXT_MAX)}`, false, caller.id, Date.now(), this.taskOf(caller.id));
           this.onInbox();
           return 'Sent to the manager (the user). Their answer, if any, arrives as an "[Order from …]" message.';
         }

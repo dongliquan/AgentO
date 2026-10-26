@@ -1388,6 +1388,37 @@ button.tree-pc:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, t
 .timeline-graphs { flex: 1; min-width: 0; overflow: auto; padding: 10px 14px 40px; }
 .timeline-detail { position: relative; flex: 0 0 380px; min-width: 0; overflow: auto; border-left: 1px solid var(--border); background: var(--panel); padding: 12px 14px; }
 .timeline-hint { font-size: 12.5px; padding: 20px 4px; }
+/* Today (components/TodayView.tsx): the manager's home — four cards */
+.today { flex: 1; min-height: 0; overflow: auto; padding: 16px 20px 24px; background: var(--bg); }
+.today-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.today-head h2 { margin: 0; font-size: 20px; }
+.today-head .grow { flex: 1; }
+.today-sum { font-size: 12.5px; color: var(--muted); }
+.today-sum b { color: var(--text); font-size: 14px; }
+.today-sum b.warn { color: var(--warn); }
+.today-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px; align-items: start; }
+.today-card { border: 1px solid var(--border); border-radius: 10px; background: var(--panel); padding: 10px 12px 12px; min-width: 0; }
+.today-card h3 { margin: 0 0 8px; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.today-card h3 .count { font-size: 11px; font-weight: 700; color: var(--muted); background: var(--panel2); border-radius: 9px; padding: 0 7px; line-height: 17px; }
+.today-card.needs { border-left: 3px solid var(--warn); }
+.today-empty { font-size: 12px; padding: 6px 2px; }
+.today-row { display: flex; align-items: center; gap: 7px; width: 100%; min-width: 0; padding: 5px 6px; border-radius: 6px; font-size: 12.5px; text-align: left; background: none; border: 0; color: var(--text); cursor: pointer; }
+.today-row:hover { background: var(--panel2); }
+.today-title { flex: 0 1 auto; font-weight: 600; max-width: 45%; }
+.today-text { flex: 1 1 0; min-width: 0; font-size: 12px; }
+.today-time { flex: none; font-size: 11px; }
+.today-proj { flex: none; font-size: 10.5px; font-weight: 700; color: var(--pc); background: color-mix(in srgb, var(--pc) 12%, transparent); border-radius: 3px; padding: 0 5px; line-height: 16px; }
+.today-kind { flex: none; font-size: 10px; font-weight: 700; border-radius: 3px; padding: 0 5px; line-height: 16px; color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.today-kind.k-context { color: var(--muted); background: var(--panel2); }
+.today-group { margin-top: 4px; }
+.today-group + .today-group { margin-top: 10px; }
+.today-group-name { font-size: 11px; font-weight: 700; color: var(--pc); border-bottom: 2px solid var(--pc); padding: 0 2px 2px; margin-bottom: 2px; }
+.today-check { flex: none; color: var(--ok); font-weight: 700; }
+.today-todo { display: flex; align-items: center; gap: 8px; padding: 4px 4px; font-size: 12.5px; cursor: pointer; }
+.today-todo.checked span { text-decoration: line-through; color: var(--muted); }
+.today-carried { flex: none; font-size: 10.5px; }
+.today-add { display: flex; gap: 6px; margin-top: 8px; }
+.today-add input { flex: 1; min-width: 0; height: 28px; padding: 0 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-size: 12.5px; }
 .tl-project { margin-bottom: 22px; }
 .tl-head { display: flex; align-items: center; gap: 8px; padding: 4px 6px 8px; font-size: 13px; border-bottom: 2px solid var(--pc); margin-bottom: 4px; }
 .tl-head .pc-dot { width: 10px; height: 10px; }

@@ -94,6 +94,7 @@ export function buildMenu(actions: MenuActions): Menu {
       item('Split View', 'view.split', 'CmdOrCtrl+2'),
       item('Tab View', 'view.tabs', 'CmdOrCtrl+3'),
       item('Timeline', 'view.timeline', 'CmdOrCtrl+4'),
+      item('Today', 'view.today', 'CmdOrCtrl+5'),
       sep,
       item('Zoom In', 'view.zoom-in', 'CmdOrCtrl+='),
       item('Zoom Out', 'view.zoom-out', 'CmdOrCtrl+-'),

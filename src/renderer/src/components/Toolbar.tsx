@@ -38,6 +38,9 @@ export function Toolbar(): JSX.Element {
   const focusMode = useStore((s) => s.focusMode);
   const centerView = useStore((s) => s.centerView);
   const onTimeline = viewMode === 'timeline' && centerView === 'sessions';
+  const onToday = viewMode === 'today' && centerView === 'sessions';
+  /** a record / overview page, not a session layout: the layout tools hide */
+  const onPage = onTimeline || onToday;
   const setViewMode = useStore((s) => s.setViewMode);
   const setCenterView = useStore((s) => s.setCenterView);
   const projects = useStore((s) => s.projects);
@@ -80,12 +83,19 @@ export function Toolbar(): JSX.Element {
       </div>
       <span className="toolbar-sep" />
       <div className="segmented">
+        <button className={onToday ? 'active' : ''} onClick={() => setViewMode('today')} title={kbd('Today — what needs you, who is working, what got done, your to-dos (Ctrl+5)')}>
+          Today
+        </button>
         <button className={onTimeline ? 'active' : ''} onClick={() => setViewMode('timeline')} title={kbd('Timeline — the features each project finished, by day (Ctrl+4)')}>
           Timeline
         </button>
       </div>
       <div className="breadcrumb">
-        {onTimeline ? (
+        {onToday ? (
+          <>
+            <b>Today</b> · needs you, working, done, to do
+          </>
+        ) : onTimeline ? (
           <>
             <b>Timeline</b> · finished features by project and day
           </>
@@ -101,7 +111,7 @@ export function Toolbar(): JSX.Element {
       <div className="spacer" />
       {/* Auto Arrange moves the cards (and keeps them there); Fit All only moves the view; Focus opens one session full size
           — session layout tools, not for the Timeline */}
-      {!onTimeline && (
+      {!onPage && (
       <>
       <button className="btn ghost" onClick={autoArrange} disabled={viewMode !== 'board'} title="Auto Arrange — move every card into the team layout (Head Coach in the middle, projects around it) and keep it">Auto Arrange</button>
       <button className="btn ghost" onClick={fitAll} disabled={viewMode !== 'board'} title="Fit All — zoom and pan so every card is in view (the cards do not move)">Fit All</button>
