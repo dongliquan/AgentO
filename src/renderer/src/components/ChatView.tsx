@@ -29,7 +29,6 @@ function entryText(e: ChatEntry): string {
 }
 
 type Source = 'me' | 'team';
-type ChatFilter = 'all' | Source;
 
 /** Each entry's turn: started by the user's own message ('me') or by a team message the daemon typed in ('team'). */
 function sources(entries: ChatEntry[]): Map<string, Source> {
@@ -42,16 +41,6 @@ function sources(entries: ChatEntry[]): Map<string, Source> {
   return out;
 }
 
-const filterKey = (id: string): string => `asm.chatFilter.${id}`;
-function loadFilter(id: string): ChatFilter {
-  try {
-    const v = localStorage.getItem(filterKey(id));
-    if (v === 'me' || v === 'team') return v;
-  } catch {
-    /* default */
-  }
-  return 'all';
-}
 
 type Segment = { kind: 'entry'; entry: ChatEntry } | { kind: 'team'; key: string; entries: ChatEntry[] };
 const CHAT_PAGE_SIZE = 300;
@@ -110,18 +99,6 @@ export function ChatView({
   const all = chat?.entries ?? [];
   const searching = query.trim() !== '';
   const [extra, setExtra] = useState(0);
-  // All · Me · Team: the user's own turns vs the team traffic the daemon typed in (per session)
-  const [filter, setFilterState] = useState<ChatFilter>(() => loadFilter(s.id));
-  useEffect(() => setFilterState(loadFilter(s.id)), [s.id]);
-  const setFilter = (f: ChatFilter): void => {
-    setFilterState(f);
-    stick.current = true;
-    try {
-      localStorage.setItem(filterKey(s.id), f);
-    } catch {
-      /* not kept */
-    }
-  };
   const src = useMemo(() => sources(all), [all]);
   // the Head Coach's chat labels each message with its project, a Coach's with its part (other chats do not watch the
   // sessions: every status change replaces that map)
@@ -135,10 +112,8 @@ export function ChatView({
     () =>
       searching
         ? all.filter((e) => matches(query, entryText(e)))
-        : filter === 'all' || !hasTeam
-          ? all
-          : all.filter((e) => src.get(e.id) === filter),
-    [all, query, searching, filter, src, hasTeam]
+        : all,
+    [all, query, searching]
   );
   const pageSize = limit ?? CHAT_PAGE_SIZE;
   const cap = !searching ? pageSize + extra : Infinity;
@@ -146,8 +121,8 @@ export function ChatView({
   const entries = hidden ? found.slice(hidden) : found;
   useEffect(() => onMatches?.(searching ? found.length : undefined), [found.length, searching, onMatches]);
   useHighlight(scroller, query, [entries]);
-  // in All, team runs fold to one row - except the last one (what the session is on now)
-  const segs = useMemo(() => (filter === 'all' && !searching && hasTeam ? segments(entries, src) : null), [entries, src, filter, searching, hasTeam]);
+  // team runs fold to one row - except the last one (what the session is on now)
+  const segs = useMemo(() => (!searching && hasTeam ? segments(entries, src) : null), [entries, src, searching, hasTeam]);
   const working = s.status === 'working' || s.status === 'starting';
   // the answer ends with a question and options: quick-reply buttons instead of typing (not while it works or asks the TUI)
   const quick = useMemo(() => (working ? null : quickReplyOf(all)), [all, working]);
@@ -167,22 +142,6 @@ export function ChatView({
 
   return (
     <div className="chat" data-cwd={s.cwd} onPointerDown={(e) => e.stopPropagation()} onWheel={(e) => { if (!e.ctrlKey) e.stopPropagation(); }}>
-      {hasTeam && !searching && (
-        <div className="chat-filter" role="tablist" aria-label="Show messages">
-          {(['all', 'me', 'team'] as const).map((f) => (
-            <button
-              key={f}
-              role="tab"
-              aria-selected={filter === f}
-              className={filter === f ? 'active' : ''}
-              title={f === 'all' ? 'Everything (team traffic folded)' : f === 'me' ? 'Only what you typed, with the answers' : 'Only the team traffic: orders, reports, notices'}
-              onClick={() => setFilter(f)}
-            >
-              {f === 'all' ? 'All' : f === 'me' ? 'Me' : 'Team'}
-            </button>
-          ))}
-        </div>
-      )}
       <ScopeCtx.Provider value={scoper}>
       <div
         className="chat-scroll"
@@ -215,9 +174,6 @@ export function ChatView({
           }}>
             Show earlier ({hidden})
           </button>
-        )}
-        {chat?.available && filter === 'me' && hasTeam && !searching && entries.length === 0 && (
-          <div className="chat-empty">Nothing typed by you in this conversation yet.</div>
         )}
         {segs
           ? segs.map((g, i) =>
