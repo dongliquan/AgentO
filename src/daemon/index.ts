@@ -284,6 +284,23 @@ async function main(): Promise<void> {
    */
   let sentInbox = new Map<string, boolean>(store.listInbox().map((i) => [i.id, i.read]));
   let inboxTimer: NodeJS.Timeout | null = null;
+  /** A project with its parts, sessions, records, routines and team folders — never the project's folders on disk. */
+  function deleteProject(projectId: string): void {
+    const ids = new Set([projectId, ...store.listProjects().filter((p) => p.parentId === projectId).map((p) => p.id)]);
+    const gone = sessions.list().filter((s) => ids.has(s.projectId)).map((s) => s.id);
+    for (const id of gone) sessions.remove(id);
+    store.purgeRecords(gone);
+    for (const r of store.listRoutines()) {
+      const t = r.target;
+      const aimed = t.kind === 'project' ? [t.projectId] : t.kind === 'projects' ? t.projectIds : t.kind === 'session' ? [t.sessionId] : [];
+      if (aimed.length && aimed.every((x) => ids.has(x) || gone.includes(x))) store.deleteRoutine(r.id);
+    }
+    team.forgetProject([...ids], gone);
+    store.deleteProject(projectId);
+    broadcast({ type: 'projects', projects: store.listProjects() });
+    broadcast({ type: 'routines', routines: store.listRoutines() });
+    pushInbox();
+  }
   function pushInbox(): void {
     if (inboxTimer) return;
     inboxTimer = setTimeout(() => {
@@ -557,21 +574,7 @@ async function main(): Promise<void> {
         return;
       }
       case 'project.delete': {
-        const ids = new Set([msg.id, ...store.listProjects().filter((p) => p.parentId === msg.id).map((p) => p.id)]);
-        const gone = sessions.list().filter((s) => ids.has(s.projectId)).map((s) => s.id);
-        for (const id of gone) sessions.remove(id);
-        // what AgentO kept for it: records, routines, team folders, queues (never the project's folders on disk)
-        store.purgeRecords(gone);
-        for (const r of store.listRoutines()) {
-          const t = r.target;
-          const aimed = t.kind === 'project' ? [t.projectId] : t.kind === 'projects' ? t.projectIds : t.kind === 'session' ? [t.sessionId] : [];
-          if (aimed.length && aimed.every((x) => ids.has(x) || gone.includes(x))) store.deleteRoutine(r.id);
-        }
-        team.forgetProject([...ids], gone);
-        store.deleteProject(msg.id);
-        broadcast({ type: 'projects', projects: store.listProjects() });
-        broadcast({ type: 'routines', routines: store.listRoutines() });
-        pushInbox();
+        deleteProject(msg.id);
         return;
       }
       case 'folder.add': {
@@ -642,7 +645,7 @@ async function main(): Promise<void> {
         team.setRole(msg.id, msg.role, msg.quiet === true);
         return;
       case 'team.order': {
-        // the secret demo orders (/demo shop, /demo stop) set up / pause the built-in demo team
+        // the secret demo orders (/demo shop, /demo stop, /demo reset) set up / pause / remove the built-in demo team
         const demo = parseDemoCommand(msg.text);
         if (demo) {
           runDemo(demo, {
@@ -654,7 +657,8 @@ async function main(): Promise<void> {
             notify: (text, sessionId) => {
               store.addInbox(sessionId, 'report', text, false, sessionId);
               pushInbox();
-            }
+            },
+            deleteProject
           });
           return;
         }
