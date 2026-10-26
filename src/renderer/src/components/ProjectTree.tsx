@@ -118,20 +118,6 @@ export function ProjectTree(): JSX.Element {
             {p.name}
             {!isPart && total > 0 && <span className="muted tree-count" title={`${total} session(s)`}> ({total})</span>}
           </span>
-          {!isPart && (
-            <button
-              className="icon-btn hover-act pc-pick"
-              title="Project color"
-              aria-label="Project color"
-              style={pcStyle(projectColor(p.id, projects))}
-              onClick={(e) => {
-                e.stopPropagation();
-                useColorMenu.getState().show({ x: e.clientX, y: e.clientY, projectId: p.id });
-              }}
-            >
-              <span className="pc-pick-dot" />
-            </button>
-          )}
           <button
             className="icon-btn hover-act"
             title={`Rename ${isPart ? 'part' : 'project'} (or double-click the name)`}

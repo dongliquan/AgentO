@@ -373,7 +373,9 @@ async function main(): Promise<void> {
       for (const id of [...chats.keys()]) dropChat(id);
       sessions.dispose();
       routines.dispose();
+      // a plain shutdown / restart keeps the sessions: their holders carry the processes to the next daemon
       if (killSessions) sessions.killAll();
+      else sessions.detachAll();
       for (const ws of clients.keys()) {
         try {
           ws.close(1001, 'daemon shutdown');

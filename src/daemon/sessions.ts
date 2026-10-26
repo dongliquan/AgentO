@@ -5,9 +5,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
-import * as pty from 'node-pty';
 import type { AgentKind, InboxItem, PermissionRequest, Session, SessionMode, SessionRole, SessionStatus } from '@shared/protocol';
-import { HEADLESS_ARGS, StreamProc, assistantText, toolResultText, toolSummary, toolUses, type StreamJson } from './stream';
+import { HEADLESS_ARGS, assistantText, toolResultText, toolSummary, toolUses, type StreamJson } from './stream';
+import { HolderClient, type HolderInfo } from './holderClient';
 import { Store, type StoredSession } from './store';
 import { defaultShell, findClaudeResumeId, getAgentDef, resolveCommand } from './agents';
 import { findTranscript } from './transcript';
@@ -55,10 +55,9 @@ export interface CreateSessionOpts {
 }
 
 interface Live {
-  /** the terminal process (tui) … */
-  proc?: pty.IPty;
-  /** … or the headless one (JSON in / out) */
-  stream?: StreamProc;
+  /** the holder process that owns the CLI (holder.ts): a terminal (pty) or a headless Claude (stream) */
+  holder: HolderClient;
+  kind: 'pty' | 'stream';
   /** headless: a permission question Claude is waiting on */
   permission?: PendingPermission;
   /** headless: the usage-limit notice from the last result / rate-limit event */
@@ -110,14 +109,22 @@ export class SessionManager extends EventEmitter {
 
   constructor(private store: Store) {
     super();
+    // sessions whose holder is still running keep going; the others ended while the daemon was down
+    const holders = HolderClient.listHolders();
+    const exits = HolderClient.listExits();
     for (const s of store.listSessions()) {
-      // Daemon restarted: nothing is running anymore. Mark previously-running sessions.
-      if (s.status === 'starting' || s.status === 'working' || s.status === 'waiting') {
-        s.status = s.resumeId ? 'hibernated' : 'error';
+      const h = holders.get(s.id);
+      if (h) {
+        this.reattach(s, h);
+      } else if (s.status === 'starting' || s.status === 'working' || s.status === 'waiting') {
+        const ex = exits.get(s.id);
+        s.status = ex && ex.code === 0 ? 'done' : s.resumeId ? 'hibernated' : 'error';
+        if (ex && typeof ex.code === 'number') s.exitCode = ex.code;
         s.pid = undefined;
         s.updatedAt = Date.now();
         store.upsertSession(s);
       }
+      HolderClient.clearExit(s.id);
       // head coach cards had other sizes (wide, earlier 1.5x): reshape a stored one about its centre
       const head = cardSize('head', s.projectId);
       if (s.role === 'head' && (s.w !== head.w || s.h !== head.h)) {
@@ -194,7 +201,7 @@ export class SessionManager extends EventEmitter {
     const live = this.live.get(s.id);
     if (!live) return { value: false };
     // headless: no screen — a question is a pending permission request, the limit comes from the events
-    if (live.stream) return { value: !!live.permission, ...(live.limitText ? { limit: live.limitText } : {}) };
+    if (live.kind === 'stream') return { value: !!live.permission, ...(live.limitText ? { limit: live.limitText } : {}) };
     // saves (card moves, reorders) repeat this: render the screen again only when it printed something new
     if (live.asked && live.asked.text === live.sinceInput) return live.asked;
     const screen = plainTerminalLines(live.sinceInput.slice(-20_000)).join('\n').slice(-1500);
@@ -359,13 +366,11 @@ export class SessionManager extends EventEmitter {
 
   private spawn(s: StoredSession, mode: 'fresh' | 'resume', prompt?: string): void {
     if (this.live.has(s.id)) throw new Error('Session is already running');
-    if (s.agent === 'claude' && s.mode === 'headless' && !s.command) {
-      this.spawnStream(s, mode, prompt);
-      return;
-    }
+    const stream = s.agent === 'claude' && s.mode === 'headless' && !s.command;
     let launch: { file: string; args: string[] };
     try {
-      launch = this.resolveLaunch(s, mode, prompt);
+      // headless: no positional prompt — the first message goes in on stdin once the process is up
+      launch = this.resolveLaunch(s, mode, stream ? undefined : prompt);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       s.status = 'error';
@@ -375,116 +380,96 @@ export class SessionManager extends EventEmitter {
       this.appendOutput(s, `\r\n\x1b[31m[agento] ${msg}\x1b[0m\r\n`);
       throw e;
     }
-    const cwd = fs.existsSync(s.cwd) ? s.cwd : process.cwd();
-    let proc: pty.IPty;
-    try {
-      proc = pty.spawn(launch.file, launch.args, {
-        name: 'xterm-256color',
-        cols: s.cols || 100,
-        rows: s.rows || 30,
-        cwd,
-        env: this.buildEnv(s),
-        useConpty: process.platform === 'win32'
-      });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      s.status = 'error';
-      s.pid = undefined;
-      s.exitCode = 127;
-      this.save(s);
-      this.appendOutput(s, `\r\n\x1b[31m[agento] spawn failed: ${msg}\x1b[0m\r\n`);
-      throw e;
-    }
-
-    const logStream = fs.createWriteStream(this.logPath(s.id), { flags: 'a' });
-    logStream.on('error', (err) => log.warn('log stream error', s.id, err));
-    const banner = `\r\n\x1b[2m[${new Date().toISOString()}] ${mode === 'resume' ? 'resume' : 'start'}: ${launch.file} ${launch.args.join(' ')}\x1b[0m\r\n`;
-
-    const live: Live = {
-      proc,
-      startedAt: Date.now(),
-      quietTimer: null,
-      workingSince: Date.now(),
-      intent: 'none',
-      titleTail: '',
-      logStream,
-      sinceInput: ''
-    };
-    this.live.set(s.id, live);
-    s.pid = proc.pid;
-    s.exitCode = undefined;
-    s.status = 'starting';
-    this.save(s);
-    this.appendOutput(s, banner);
-    log.info('spawned', s.id, s.agent, launch.file, launch.args, 'pid', proc.pid);
-
-    proc.onData((data) => this.onData(s.id, data));
-    proc.onExit(({ exitCode, signal }) => this.onExit(s.id, exitCode, signal));
-  }
-
-  /** Headless Claude: JSON in and out; the first message (a fresh start's prompt) goes in once the CLI is ready. */
-  private spawnStream(s: StoredSession, mode: 'fresh' | 'resume', prompt?: string): void {
-    let launch: { file: string; args: string[] };
-    try {
-      // no positional prompt: in stream mode the first message goes in on stdin
-      launch = this.resolveLaunch(s, mode);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      s.status = 'error';
-      s.pid = undefined;
-      s.exitCode = 127;
-      this.save(s);
-      this.appendOutput(s, `\r\n\x1b[31m[agento] ${msg}\x1b[0m\r\n`);
-      throw e;
-    }
-    const args = [...launch.args, ...HEADLESS_ARGS];
+    const args = stream ? [...launch.args, ...HEADLESS_ARGS] : launch.args;
     const cwd = fs.existsSync(s.cwd) ? s.cwd : process.cwd();
     const env = this.buildEnv(s);
     // a permission question waits for the manager: the MCP call must not time out meanwhile
-    env['MCP_TOOL_TIMEOUT'] = String(6 * 60 * 60 * 1000);
+    if (stream) env['MCP_TOOL_TIMEOUT'] = String(6 * 60 * 60 * 1000);
     const logStream = fs.createWriteStream(this.logPath(s.id), { flags: 'a' });
     logStream.on('error', (err) => log.warn('log stream error', s.id, err));
-    const live: Live = { startedAt: Date.now(), quietTimer: null, workingSince: Date.now(), intent: 'none', titleTail: '', logStream, sinceInput: '' };
-    let stream: StreamProc;
-    try {
-      stream = new StreamProc(launch.file, args, { cwd, env }, {
-        event: (j) => this.onStreamEvent(s.id, j),
-        stderr: (text) => this.appendOutput(s, `\x1b[2m${text.replace(/\r?\n/g, '\r\n')}\x1b[0m`),
-        exit: (code) => this.onExit(s.id, code ?? 0)
-      });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      s.status = 'error';
-      s.pid = undefined;
-      s.exitCode = 127;
-      this.save(s);
-      this.appendOutput(s, `\r\n\x1b[31m[agento] spawn failed: ${msg}\x1b[0m\r\n`);
-      throw e;
-    }
-    live.stream = stream;
+    const live: Live = { holder: new HolderClient(s.id), kind: stream ? 'stream' : 'pty', startedAt: Date.now(), quietTimer: null, workingSince: Date.now(), intent: 'none', titleTail: '', logStream, sinceInput: '' };
     this.live.set(s.id, live);
-    s.pid = stream.pid;
+    this.wireHolder(s.id, live);
+    s.pid = undefined;
     s.exitCode = undefined;
     s.status = 'starting';
     this.save(s);
-    this.appendOutput(s, `\r\n\x1b[2m[${new Date().toISOString()}] ${mode === 'resume' ? 'resume' : 'start'} (headless): ${launch.file} ${args.join(' ')}\x1b[0m\r\n`);
-    log.info('spawned', s.id, s.agent, 'headless', launch.file, args, 'pid', stream.pid);
-    // the CLI reports "init" only when its first turn starts: a first message goes in now; without one it is simply ready
-    if (prompt) {
-      stream.sendUser(prompt);
-      live.workingSince = Date.now();
-      this.setStatus(s, 'working');
-    } else setTimeout(() => {
-      const cur = this.sessions.get(s.id);
-      if (cur && this.live.get(s.id) === live && cur.status === 'starting') this.setStatus(cur, 'waiting');
-    }, 1500);
+    this.appendOutput(s, `\r\n\x1b[2m[${new Date().toISOString()}] ${mode === 'resume' ? 'resume' : 'start'}${stream ? ' (headless)' : ''}: ${launch.file} ${args.join(' ')}\x1b[0m\r\n`);
+    log.info('spawned', s.id, s.agent, stream ? 'headless' : 'pty', launch.file, args);
+    // the holder comes up in the background; writes queued meanwhile are delivered once its pipe is open
+    live.holder.start({ id: s.id, kind: live.kind, file: launch.file, args, cwd, env, cols: s.cols || 100, rows: s.rows || 30 }).catch((e) => {
+      log.warn('session: holder did not start', s.id, e);
+      if (this.live.get(s.id) === live) {
+        this.appendOutput(s, `\r\n\x1b[31m[agento] could not start the session process: ${e instanceof Error ? e.message : String(e)}\x1b[0m\r\n`);
+        this.onExit(s.id, 127);
+      }
+    });
+    if (stream) {
+      // the CLI reports "init" only when its first turn starts: a first message goes in now; without one it is simply ready
+      if (prompt) {
+        live.holder.send(prompt);
+        live.workingSince = Date.now();
+        this.setStatus(s, 'working');
+      } else
+        setTimeout(() => {
+          const cur = this.sessions.get(s.id);
+          if (cur && this.live.get(s.id) === live && cur.status === 'starting') this.setStatus(cur, 'waiting');
+        }, 1500);
+    }
+  }
+
+  /** A holder from before this daemon started: connect and carry on (its backlog of output is replayed). */
+  private reattach(s: StoredSession, info: HolderInfo): void {
+    const logStream = fs.createWriteStream(this.logPath(s.id), { flags: 'a' });
+    logStream.on('error', (err) => log.warn('log stream error', s.id, err));
+    const live: Live = { holder: new HolderClient(s.id), kind: info.kind, startedAt: info.startedAt, quietTimer: null, workingSince: Date.now(), intent: 'none', titleTail: '', logStream, sinceInput: '' };
+    this.live.set(s.id, live);
+    this.wireHolder(s.id, live);
+    if (s.status === 'starting' || s.status === 'hibernated' || s.status === 'done' || s.status === 'error') s.status = 'waiting';
+    s.pid = info.childPid;
+    this.store.upsertSession(s);
+    log.info('reattached', s.id, s.agent, info.kind, 'holder pid', info.pid);
+    live.holder.attach(info).catch((e) => {
+      log.warn('session: could not attach to its holder', s.id, e);
+      if (this.live.get(s.id) === live) this.onExit(s.id, -1);
+    });
+  }
+
+  /** The holder's events drive the session: terminal output, headless events, the end of the process. */
+  private wireHolder(id: string, live: Live): void {
+    const h = live.holder;
+    h.on('hello', (info) => {
+      const s = this.sessions.get(id);
+      if (!s || this.live.get(id) !== live) return;
+      if (info.childPid && s.pid !== info.childPid) {
+        s.pid = info.childPid;
+        this.save(s, false);
+      }
+    });
+    h.on('data', (d) => this.onData(id, d));
+    h.on('event', (j) => this.onStreamEvent(id, j));
+    h.on('stderr', (d) => {
+      const s = this.sessions.get(id);
+      if (s && this.live.get(id) === live) this.appendOutput(s, `\x1b[2m${d.replace(/\r?\n/g, '\r\n')}\x1b[0m`);
+    });
+    h.on('exit', (code, signal) => {
+      if (this.live.get(id) === live) this.onExit(id, code ?? 0, typeof signal === 'number' ? signal : undefined);
+    });
+    h.on('lost', () => {
+      // the holder itself died (not the child's normal end): the session is gone with it
+      if (this.live.get(id) === live) {
+        const s = this.sessions.get(id);
+        if (s) this.appendOutput(s, `\r\n\x1b[31m[agento] lost the session process\x1b[0m\r\n`);
+        this.onExit(id, -1);
+      }
+    });
   }
 
   /** One JSON event from a headless session: the activity log line it makes and the status it means. */
   private onStreamEvent(id: string, j: StreamJson): void {
     const s = this.sessions.get(id);
     const live = this.live.get(id);
-    if (!s || !live?.stream) return;
+    if (!s || !live || live.kind !== 'stream') return;
     const type = String(j['type'] ?? '');
     const line = (text: string): void => this.appendOutput(s, `${text.replace(/\r?\n/g, '\r\n')}\r\n`);
     if (type === 'system') {
@@ -618,6 +603,7 @@ export class SessionManager extends EventEmitter {
       if (live.quietTimer) clearTimeout(live.quietTimer);
       live.permission?.resolve({ behavior: 'deny', message: 'The session ended.' });
       live.logStream?.end();
+      live.holder.detach();
       this.live.delete(id);
     }
     const intent = live?.intent ?? 'none';
@@ -792,12 +778,12 @@ export class SessionManager extends EventEmitter {
     const live = this.live.get(id);
     if (!live) return;
     live.sinceInput = '';
-    if (live.stream) {
+    if (live.kind === 'stream') {
       // no keyboard: Esc interrupts the turn, other keys mean nothing here
-      if (data.includes('\x1b')) live.stream.interrupt();
+      if (data.includes('\x1b')) live.holder.interrupt();
       return;
     }
-    live.proc?.write(data);
+    live.holder.write(data);
   }
 
   /** Claude: terminal ⇄ headless. A running session is restarted in the new mode and resumes its conversation. */
@@ -811,7 +797,7 @@ export class SessionManager extends EventEmitter {
     const live = this.live.get(id);
     if (!live) return;
     if (!s.resumeId) {
-      if (live.stream) return; // it reports its id on init; nothing to resume yet
+      if (live.kind === 'stream') return; // it reports its id on init; nothing to resume yet
       const found = findClaudeResumeId(s.cwd, live.startedAt);
       if (found) s.resumeId = found;
     }
@@ -871,18 +857,18 @@ export class SessionManager extends EventEmitter {
     const transcript = s?.resumeId ? (s.agent === 'claude' ? findTranscript(s.cwd, s.resumeId) : s.agent === 'codex' ? findCodexRollout(s.resumeId) : undefined) : undefined;
     const from = transcript ? fileSize(transcript) : 0;
     live.sinceInput = '';
-    if (live.stream) {
+    if (live.kind === 'stream') {
       // headless: the message is the next turn, no screen to confirm against
       if (live.permission) {
         // a question is open: the answer must come first — the message is kept for after it (the CLI queues stdin anyway)
         log.info('session: message to a headless session with a permission question open', id);
       }
-      live.stream.sendUser(text.replace(/\r\n?/g, '\n'));
+      live.holder.send(text.replace(/\r\n?/g, '\n'));
       live.workingSince = Date.now();
       this.setStatus(s!, 'working');
       return;
     }
-    live.proc?.write(`\x1b[200~${text.replace(/\r\n?/g, '\n')}\x1b[201~`);
+    live.holder.write(`\x1b[200~${text.replace(/\r\n?/g, '\n')}\x1b[201~`);
     if (submit) {
       // Codex folds fast input into one paste and takes an Enter inside that burst as a newline: wait until the paste
       // has landed (longer for longer text) before submitting
@@ -890,7 +876,7 @@ export class SessionManager extends EventEmitter {
       const first = probeOf(text);
       setTimeout(() => {
         if (this.live.get(id) !== live) return;
-        live.proc?.write('\r');
+        live.holder.write('\r');
         this.confirmSubmit(id, live, { first, transcript, from }, 0);
       }, delay);
     }
@@ -909,7 +895,7 @@ export class SessionManager extends EventEmitter {
       // busy: it took the message (or is still taking in the paste) — look again later, press nothing now
       if (this.sessions.get(id)?.status === 'waiting') {
         log.warn('session: the message was not submitted, pressing Enter again', id);
-        live.proc?.write('\r');
+        live.holder.write('\r');
       }
       this.confirmSubmit(id, live, sent, tries + 1);
     }, WAITS[tries]);
@@ -943,7 +929,8 @@ export class SessionManager extends EventEmitter {
     s.cols = cols;
     s.rows = rows;
     try {
-      this.live.get(id)?.proc?.resize(cols, rows);
+      const live = this.live.get(id);
+      if (live?.kind === 'pty') live.holder.resize(cols, rows);
     } catch (e) {
       log.warn('resize failed', id, e);
     }
@@ -952,15 +939,14 @@ export class SessionManager extends EventEmitter {
 
   stop(id: string): void {
     const live = this.live.get(id);
-    if (live?.stream) live.stream.interrupt();
-    else live?.proc?.write('\x03');
+    if (!live) return;
+    if (live.kind === 'stream') live.holder.interrupt();
+    else live.holder.write('\x03');
   }
 
   private killProc(live: Live): void {
     try {
-      if (live.stream) live.stream.kill();
-      else if (process.platform === 'win32') live.proc?.kill();
-      else live.proc?.kill('SIGKILL');
+      live.holder.kill();
     } catch (e) {
       log.warn('kill failed', e);
     }
@@ -1120,6 +1106,17 @@ export class SessionManager extends EventEmitter {
   }
 
   /** Kill all processes (daemon shutdown with killSessions). */
+  /** The daemon is going down but the sessions stay: drop the pipes, the holders keep the processes. */
+  detachAll(): void {
+    for (const live of this.live.values()) {
+      if (live.quietTimer) clearTimeout(live.quietTimer);
+      live.holder.detach();
+      live.logStream?.end();
+    }
+    this.live.clear();
+    this.closed = true;
+  }
+
   killAll(): void {
     for (const [id, live] of this.live) {
       live.intent = 'kill';

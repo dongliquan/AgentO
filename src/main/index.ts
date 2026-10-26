@@ -474,6 +474,17 @@ function registerIpc(): void {
   ipcMain.handle('panels.isOpen', () => getPanelsWindow() !== null);
   ipcMain.on('panels.relay', (e, msg: PanelsRelay) => relayPanels(e.sender, msg));
 
+  // the daemon restarted on its own (a daemon-only restart: the sessions stay in their holders) — a new token:
+  // every window reconnects with it
+  let lastDaemon = readDaemonInfo();
+  setInterval(() => {
+    const now = readDaemonInfo();
+    if (!now || (lastDaemon && now.pid === lastDaemon.pid && now.token === lastDaemon.token)) return;
+    const changed = !!lastDaemon;
+    lastDaemon = now;
+    if (changed) for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('daemon-restarted');
+  }, 2000);
+
   ipcMain.handle('daemon.info', async () => {
     const info = readDaemonInfo();
     if (info && (await probeDaemon(info.port, info.token, 800))) return { port: info.port, token: info.token };

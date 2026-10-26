@@ -9,7 +9,9 @@ export default defineConfig({
       rollupOptions: {
         input: {
           main: resolve(__dirname, 'src/main/index.ts'),
-          daemon: resolve(__dirname, 'src/daemon/index.ts')
+          daemon: resolve(__dirname, 'src/daemon/index.ts'),
+          // one per session: owns the CLI process so the daemon can restart without ending it
+          holder: resolve(__dirname, 'src/daemon/holder.ts')
         },
         output: { entryFileNames: '[name]/index.js' }
       },

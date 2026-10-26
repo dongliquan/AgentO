@@ -29,3 +29,13 @@ export function attachmentsDir(): string {
 export function daemonLogPath(): string {
   return path.join(dataDir(), 'daemon.log');
 }
+
+/** Session holders (holder.ts): their info / exit files; on non-Windows also their sockets. */
+export function holdersDir(): string {
+  return ensureDir(path.join(dataDir(), 'holders'));
+}
+
+/** The local pipe a session holder listens on. */
+export function holderPipe(id: string): string {
+  return process.platform === 'win32' ? `\\\\.\\pipe\\agento-${id}` : path.join(holdersDir(), `${id}.sock`);
+}
