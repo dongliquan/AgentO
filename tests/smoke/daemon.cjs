@@ -197,6 +197,7 @@ async function main() {
 
   // ---------- a daemon restart keeps the session ----------
   const pidBefore = (await c.waitFor((m) => m.type === 'session.upsert' && m.session.id === sid && m.session.pid))?.session.pid;
+  const oldInfo = info;
   await shutdown(c, info, false);
   const holderAlive = fs.existsSync(path.join(dataDir, 'holders', `${sid}.json`));
   check('shutdown leaves the holder running', holderAlive);
@@ -210,6 +211,10 @@ async function main() {
   c.send({ type: 'session.input', id: sid, data: 'echo smoke-after-restart\r' });
   const echoed2 = await c.waitFor((m) => m.type === 'session.data' && m.id === sid && m.data.includes('smoke-after-restart'), 10000);
   check('reattached session takes input', !!echoed2);
+  // the session was started with the old daemon's address: its team tools must still answer there
+  const sameAddr = info.port === oldInfo.port && info.token === oldInfo.token;
+  const oldCall = await mcp(oldInfo, sid, 'tools/list', {});
+  check('team tools still reachable at the old address', sameAddr && (oldCall?.result?.tools ?? []).length > 0, sameAddr ? 'same port and token' : `port ${oldInfo.port}→${info.port}, token ${oldInfo.token === info.token ? 'same' : 'changed'}`);
 
   // ---------- delete and stop ----------
   c.send({ type: 'project.delete', id: project.id });

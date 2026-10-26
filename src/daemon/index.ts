@@ -96,6 +96,31 @@ const VERSION = readVersion();
 
 /* ---------- single instance ---------- */
 
+/**
+ * The daemon's address kept across restarts (team/daemon-address.json): the token, and the port it last listened on.
+ * New on the first start; taken from the previous daemon.json when the file is missing (the daemon that ran before).
+ */
+function keptAddressFile(): string {
+  return path.join(ensureDir(path.join(dataDir(), 'team')), 'daemon-address.json');
+}
+function readKeptAddress(prev: DaemonInfoFile | undefined): { token: string; port?: number } {
+  try {
+    const k = JSON.parse(fs.readFileSync(keptAddressFile(), 'utf8')) as { token?: string; port?: number };
+    if (typeof k.token === 'string' && k.token.length >= 32) return { token: k.token, ...(k.port ? { port: k.port } : {}) };
+  } catch {
+    /* first start with this file */
+  }
+  if (prev && typeof prev.token === 'string' && prev.token.length >= 32) return { token: prev.token, port: prev.port };
+  return { token: randomBytes(32).toString('hex') };
+}
+function saveKeptAddress(port: number, token: string): void {
+  try {
+    fs.writeFileSync(keptAddressFile(), JSON.stringify({ port, token }));
+  } catch (e) {
+    log.warn('could not keep the daemon address', e);
+  }
+}
+
 /** Listen on the lock pipe; false when another daemon holds it. The server stays open for the process's life. */
 let lockServer: import('node:net').Server | null = null;
 function takeDaemonLock(): Promise<boolean> {
@@ -193,9 +218,13 @@ async function main(): Promise<void> {
     log.warn(`daemon.json names pid ${existing.pid}, which is alive but not the lock holder; replacing`);
   }
 
-  const startPort = Number(process.env['ASM_PORT']) || DAEMON_PORT_DEFAULT;
+  // the same port and token as the daemon before: sessions that outlived it (their holders) keep reaching the team
+  // tools at the address they were started with
+  const keep = readKeptAddress(existing);
+  const startPort = Number(process.env['ASM_PORT']) || keep.port || DAEMON_PORT_DEFAULT;
   const { server, wss, port } = await listen(startPort);
-  const token = randomBytes(32).toString('hex');
+  const token = keep.token;
+  saveKeptAddress(port, token);
   const info: DaemonInfoFile = { port, token, pid: process.pid, version: VERSION };
   fs.writeFileSync(daemonJsonPath(), JSON.stringify(info, null, 2));
   log.info(`listening on ws://127.0.0.1:${port}`);
