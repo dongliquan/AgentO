@@ -6,7 +6,6 @@ import { newProject } from '@/commands';
 import { ProjectTree, SessionRow } from './ProjectTree';
 import { SidebarOrders } from './SidebarOrders';
 import { useReport } from './DailyReport';
-import { useTreeMode } from '@/lib/treeMode';
 
 /** Left sidebar: the project tree (Manager, projects ⊃ parts, sessions). Folders and files are in the right panel's Files tab. */
 export function Sidebar(): JSX.Element {
@@ -66,7 +65,6 @@ export function Sidebar(): JSX.Element {
       <div className="sidebar-header">
         <span>PROJECTS</span>
         <span className="grow" />
-        <TreeModeToggle />
         <button
           className="icon-btn"
           title="New Chat — a session just to talk to ChatGPT or Claude"
@@ -93,18 +91,6 @@ export function Sidebar(): JSX.Element {
           onClose={() => setChatAt(null)}
         />
       )}
-    </div>
-  );
-}
-
-/** Active: only the sessions that matter now (the rest fold to "N idle" per project) · All: every session. */
-function TreeModeToggle(): JSX.Element {
-  const mode = useTreeMode((st) => st.mode);
-  const setMode = useTreeMode((st) => st.setMode);
-  return (
-    <div className="segmented sm tree-mode" title="Active: working, asking, failed, handing out work or selected — the rest fold to one row per project">
-      <button className={mode === 'active' ? 'active' : ''} onClick={() => setMode('active')}>Active</button>
-      <button className={mode === 'all' ? 'active' : ''} onClick={() => setMode('all')}>All</button>
     </div>
   );
 }

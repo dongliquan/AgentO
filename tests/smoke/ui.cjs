@@ -52,7 +52,7 @@ async function main() {
   check('project rows show their session count', tree.projects.length > 0 && tree.projects.every((t) => /\(\d+\)$/.test(t) || !/\d/.test(t)), tree.projects.slice(0, 3).join(', '));
   check('part rows show no count', tree.parts.every((t) => !/\(\d+\)$/.test(t)));
   check('one color control per project row', await ev(`[...document.querySelectorAll('.tree .tree-project')].every(r => r.querySelectorAll('.tree-pc').length === 1 && !r.querySelector('.pc-pick'))`));
-  check('tree has the Active | All switch', await ev(`document.querySelectorAll('.tree-mode button').length === 2`));
+  check('project coach sits on the project row', await ev(`[...document.querySelectorAll('.tree .tree-project')].some(r => r.querySelector('.tree-coach'))`));
   check('left sidebar shows no folder rows', await ev(`!document.querySelector('.sidebar .tree-folders') && !document.querySelector('.sidebar .chips')`));
 
   // views
