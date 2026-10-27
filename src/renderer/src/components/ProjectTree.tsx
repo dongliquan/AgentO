@@ -13,6 +13,9 @@ import { pcStyle, projectColor } from '@/lib/format';
 import { useColorMenu } from './ProjectColorMenu';
 import { AgentPicker } from './AgentPicker';
 import { AgentIcon } from './AgentIcon';
+import { useTreeMode, isActiveSession } from '@/lib/treeMode';
+import { useNeedsIds } from './NeedsYou';
+import { useDelegations } from './Delegations';
 
 interface PickerState {
   x: number;
@@ -28,6 +31,11 @@ export function ProjectTree(): JSX.Element {
   const projects = useStore((s) => s.projects);
   const sessions = useStore((s) => s.sessions);
   const [expanded, toggle] = useExpanded();
+  const mode = useTreeMode((st) => st.mode);
+  const selectedId = useStore((st) => st.selectedId);
+  const needs = useNeedsIds((st) => st.ids);
+  const delegating = useDelegations((st) => st.byCoach);
+  const activeCtx = { selectedId, needs, delegating };
   const [picker, setPicker] = useState<PickerState | null>(null);
   const [coachPicker, setCoachPicker] = useState<{ x: number; y: number; projectId: string } | null>(null);
   const openNewSession = useStore((s) => s.openNewSession);
@@ -245,8 +253,36 @@ Not touched: your folders on disk and the Claude / Codex conversation files.`)) 
               </button>
             </div>
           ))}
-        {open && own.map((s) => <SessionRow key={s.id} session={s} depth={inner} />)}
-        {open && parts.map((x) => renderNode(x, inner))}
+        {open && !isPart && mode === 'active' && !expanded.has(`idle:${p.id}`) ? (
+          (() => {
+            const all = [...own.map((s) => ({ s, part: undefined as Project | undefined })), ...parts.flatMap((x) => (sessionsByProject.get(x.id) ?? []).map((s) => ({ s, part: x as Project | undefined })))];
+            const active = all.filter(({ s }) => isActiveSession(s, activeCtx));
+            const idle = all.length - active.length;
+            return (
+              <>
+                {active.map(({ s, part }) => <SessionRow key={s.id} session={s} depth={inner} {...(part ? { prefix: part.name } : {})} />)}
+                {idle > 0 && (
+                  <div className="tree-row tree-idle" style={{ paddingLeft: inner }} onClick={() => toggle(`idle:${p.id}`, true)} title="Sessions with nothing going on — show them all (with their parts)">
+                    <span className="caret">▸</span>
+                    <span className="status-dot hibernated" />
+                    <span className="label">{idle} idle</span>
+                  </div>
+                )}
+              </>
+            );
+          })()
+        ) : (
+          <>
+            {open && !isPart && mode === 'active' && (
+              <div className="tree-row tree-idle" style={{ paddingLeft: inner }} onClick={() => toggle(`idle:${p.id}`, false)} title="Show only the active sessions again">
+                <span className="caret">▾</span>
+                <span className="label">Active only</span>
+              </div>
+            )}
+            {open && own.map((s) => <SessionRow key={s.id} session={s} depth={inner} />)}
+            {open && parts.map((x) => renderNode(x, inner))}
+          </>
+        )}
         {open && isPart && own.length === 0 && <div className="tree-empty" style={{ paddingLeft: inner + 8 }}>No sessions.</div>}
       </div>
     );
@@ -380,7 +416,7 @@ function dropInto(projectId: string, project?: Project): React.HTMLAttributes<HT
   };
 }
 
-export function SessionRow({ session: s, depth }: { session: Session; depth: number }): JSX.Element {
+export function SessionRow({ session: s, depth, prefix }: { session: Session; depth: number; prefix?: string }): JSX.Element {
   const selected = useStore((st) => st.selectedId === s.id);
   // the head coach stays at the project level; every other session can be dragged
   const movable = s.role !== 'head';
@@ -415,8 +451,12 @@ ${s.cwd}`}
     >
       <span className="caret" />
       <span className={`status-dot ${statusClass(s)}`} />
-      <AgentIcon kind={s.agent} color={s.color} />
-      <span className="label" onDoubleClick={(e) => { e.stopPropagation(); void renameSession(s.id); }}>{displayTitle(s)}</span>
+      {s.agent !== 'claude' && <AgentIcon kind={s.agent} color={s.color} />}
+      <span className="label" onDoubleClick={(e) => { e.stopPropagation(); void renameSession(s.id); }}>
+        {prefix && <span className="tree-prefix">{prefix} › </span>}
+        {/* a project's coach is named by its tag (its title repeats the project's name) */}
+        {s.role === 'head' && s.projectId ? '' : displayTitle(s)}
+      </span>
       <RoleTag s={s} />
       {s.role !== 'player' && <DelegationChip id={s.id} />}
       <button
