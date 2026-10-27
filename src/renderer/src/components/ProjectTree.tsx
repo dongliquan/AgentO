@@ -6,7 +6,7 @@ import { useStore } from '@/store';
 import { send } from '@/client';
 import { organizeTeam, removeSession, renameProject, renameSession, saveProject, selectAndReveal } from '@/commands';
 import { askText } from '@/lib/prompt';
-import { AGENT_LABELS, displayTitle, statusClass } from '@/lib/format';
+import { AGENT_LABELS, displayTitle, statusClass, statusLabel } from '@/lib/format';
 import { RoleTag } from './RoleTag';
 import { DelegationChip } from './Delegations';
 import { pcStyle, projectColor } from '@/lib/format';
@@ -418,8 +418,7 @@ ${s.cwd}`}
     >
       {/* like the Files tree: rows with children have an arrow, a session (a leaf) has its icon */}
       <span className="caret" />
-      <AgentIcon kind={s.agent} color={s.color} />
-      <span className={`status-dot ${statusClass(s)}`} />
+      <SessionIcon s={s} />
       <span className="label" onDoubleClick={(e) => { e.stopPropagation(); void renameSession(s.id); }}>
         {displayTitle(s)}
       </span>
@@ -467,4 +466,21 @@ function aggregateStatus(list: Session[]): { state: AggState; text: string } {
   const text = parts.length ? parts.join(' · ') : list.length ? 'all stopped' : 'no sessions';
   const state: AggState = error ? 'error' : needs ? 'needs' : working ? 'working' : idle ? 'idle' : 'off';
   return { state, text };
+}
+
+/**
+ * A session's icon with its state on it, like a messenger's presence dot: a badge at the corner while it works
+ * (pulsing), needs an answer, hit its limit or failed; nothing while idle; the icon faded while it is not running.
+ */
+function SessionIcon({ s }: { s: Session }): JSX.Element {
+  const st = statusClass(s);
+  const needs = s.permission !== undefined || (s.status === 'waiting' && s.attention === true);
+  const badge = s.status === 'working' || s.status === 'starting' ? 'working' : needs ? 'needs' : st === 'limit' ? 'limit' : s.status === 'error' ? 'error' : null;
+  const off = s.status === 'hibernated' || s.status === 'done';
+  return (
+    <span className={`tree-icon ${off ? 'off' : ''}`} title={statusLabel(s)}>
+      <AgentIcon kind={s.agent} color={s.color} />
+      {badge && <span className={`tree-badge ${badge}`} />}
+    </span>
+  );
 }
