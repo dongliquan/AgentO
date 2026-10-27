@@ -87,7 +87,6 @@ export function ProjectTree(): JSX.Element {
     const head = isPart ? undefined : heads.find((h) => h.projectId === p.id);
     const inner = depth + 14;
     const kind = isPart ? 'Part' : 'Project';
-    const single = isPart && own.length === 1 && own[0]!.role !== 'coach' ? own[0]! : undefined;
     return (
       // a top-level project's block is tinted with its color, so each project reads as one area when expanded
       <div key={p.id} className={isPart ? undefined : 'tree-project-block'} style={isPart ? undefined : pcStyle(projectColor(p.id, projects))}>
@@ -104,7 +103,7 @@ export function ProjectTree(): JSX.Element {
             else openNewSession({ projectId: p.id });
           }}
         >
-          <span className="caret">{single ? '' : open ? '▾' : '▸'}</span>
+          <span className="caret">{open ? '▾' : '▸'}</span>
           {!isPart && (
             <button
               className={`pc-dot tree-pc agg-${agg.state}`}
@@ -116,15 +115,13 @@ export function ProjectTree(): JSX.Element {
               }}
             />
           )}
-          {isPart && members.length > 0 && !single && <span className={`status-dot ${AGG_DOT[agg.state]}`} title={agg.text} />}
+          {isPart && members.length > 0 && <span className={`status-dot ${AGG_DOT[agg.state]}`} title={agg.text} />}
           <span className="label" style={{ fontWeight: 600 }} onDoubleClick={(e) => { e.stopPropagation(); void renameProject(p.id); }} title="Double-click to rename">
             {p.name}
             {!isPart && total > 0 && <span className="muted tree-count" title={`${total} session(s)`}> ({total})</span>}
           </span>
           {/* the project's coach lives on its row: status, tag, work handed out — click selects it */}
           {head && <CoachChip s={head} />}
-          {/* a part with one session (and no coach): that session on the part's own row */}
-          {single && <InlineSession s={single} />}
           <button
             className="icon-btn hover-act"
             title={`Rename ${isPart ? 'part' : 'project'} (or double-click the name)`}
@@ -249,7 +246,7 @@ Not touched: your folders on disk and the Claude / Codex conversation files.`)) 
               </button>
             </div>
           )}
-        {open && !single && own.map((s) => <SessionRow key={s.id} session={s} depth={inner} />)}
+        {open && own.map((s) => <SessionRow key={s.id} session={s} depth={inner} />)}
         {open && parts.map((x) => renderNode(x, inner))}
         {open && isPart && own.length === 0 && <div className="tree-empty" style={{ paddingLeft: inner + 8 }}>No sessions.</div>}
       </div>
@@ -484,30 +481,6 @@ function CoachChip({ s }: { s: Session }): JSX.Element {
       <span className={`status-dot ${statusClass(s)}`} />
       <RoleTag s={s} />
       <DelegationChip id={s.id} />
-    </span>
-  );
-}
-
-/** A part's only session, on the part's row: "Part › session" — click opens the session, the part keeps its menu. */
-function InlineSession({ s }: { s: Session }): JSX.Element {
-  const selected = useStore((st) => st.selectedId === s.id);
-  return (
-    <span
-      className={`tree-inline ${selected ? 'selected' : ''}`}
-      title={`${s.title} — ${s.status}\n${s.cwd}`}
-      onClick={(e) => {
-        e.stopPropagation();
-        selectAndReveal(s.id);
-      }}
-      onDoubleClick={(e) => {
-        e.stopPropagation();
-        void renameSession(s.id);
-      }}
-    >
-      <span className="tree-sep">›</span>
-      <span className={`status-dot ${statusClass(s)}`} />
-      {s.agent !== 'claude' && <AgentIcon kind={s.agent} color={s.color} />}
-      <span className="ellipsis">{displayTitle(s)}</span>
     </span>
   );
 }
