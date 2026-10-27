@@ -215,6 +215,7 @@ export function ChatView({
         )}
       </div>
       </ScopeCtx.Provider>
+      {/* a small monitor at the top right: the work this coordinator handed out */}
       {s.role !== 'player' && <DelegationStrip id={s.id} />}
       {s.permission ? <PermissionCard session={s} onShowTerminal={onShowTerminal} /> : choice && <WaitingBar session={s} tail={tail ?? ''} onShowTerminal={onShowTerminal} />}
       {/* the old-answer note: in the Session tab / Focus view, not on every Ground card (cards pass a limit) */}

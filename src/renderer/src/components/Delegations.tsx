@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { create } from 'zustand';
 import type { InboxItem, Session } from '@shared/protocol';
 import { useStore } from '@/store';
@@ -67,10 +67,28 @@ export function DelegationStrip({ id }: { id: string }): JSX.Element | null {
   const sessions = useStore((s) => s.sessions);
   const inbox = useOpenInbox();
   const now = useNow(30_000);
+  const [folded, setFolded] = useState(() => readFolded());
   if (!list?.length) return null;
+  const fold = (v: boolean): void => {
+    setFolded(v);
+    try {
+      localStorage.setItem(FOLD_KEY, v ? '1' : '');
+    } catch {
+      /* not kept */
+    }
+  };
+  if (folded)
+    return (
+      <button className="deleg-strip folded" onClick={() => fold(false)} title="Show the work handed out">
+        Handed out {list.length} ▾
+      </button>
+    );
   return (
     <div className="deleg-strip">
-      <div className="deleg-strip-head">Handed out — {list.length === 1 ? 'the result comes' : `${list.length} results come`} back here by themselves</div>
+      <div className="deleg-strip-head" title="The results come back to this chat by themselves">
+        <span>Handed out {list.length}</span>
+        <button className="deleg-fold" onClick={() => fold(true)} title="Fold">–</button>
+      </div>
       <div className="deleg-cards">
         {list.map((d, i) => {
           const t = sessions.get(d.target);
@@ -99,6 +117,15 @@ Open ${t.title}`}>
       </div>
     </div>
   );
+}
+
+const FOLD_KEY = 'asm.delegFolded';
+function readFolded(): boolean {
+  try {
+    return localStorage.getItem(FOLD_KEY) === '1';
+  } catch {
+    return false;
+  }
 }
 
 /** "→ 2 working" beside a coordinator: the work it handed on that is still going (or waiting to be picked up). */
