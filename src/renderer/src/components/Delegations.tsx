@@ -7,6 +7,7 @@ import { relativeTime, statusClass, statusLabel } from '@/lib/format';
 import { useNow } from '@/lib/hooks';
 import { selectAndReveal } from '@/commands';
 import { Activity } from './OrderProgress';
+import { titleOf } from '@/lib/timeline';
 
 /** a hand-off older than this is not shown as in progress any more (the work was forgotten or done some other way) */
 const STALE_MS = 24 * 3600_000;
@@ -64,28 +65,38 @@ export function DelegationWatcher(): null {
 export function DelegationStrip({ id }: { id: string }): JSX.Element | null {
   const list = useDelegations((s) => s.byCoach.get(id));
   const sessions = useStore((s) => s.sessions);
+  const inbox = useOpenInbox();
   const now = useNow(30_000);
   if (!list?.length) return null;
   return (
     <div className="deleg-strip">
-      <div className="deleg-strip-head">Handed out — waiting for {list.length === 1 ? 'the result' : `${list.length} results`} (they come back here by themselves)</div>
-      {list.map((d, i) => {
-        const t = sessions.get(d.target);
-        if (!t) return null;
-        const task = d.task;
-        // the same session's earlier task is still open: this one waits behind it
-        const queued = list.slice(0, i).some((x) => x.target === d.target);
-        const busy = !queued && (t.status === 'working' || t.status === 'starting');
-        return (
-          <button key={`${d.task ?? ''}${d.target}`} className={`deleg-row ${queued ? 'queued' : ''}`} onClick={() => selectAndReveal(t.id)} title="Open that session">
-            <span className={`status-dot ${statusClass(t)}`} />
-            <span className="deleg-who ellipsis">→ {t.title}</span>
-            {task && <span className="task-id">{task}</span>}
-            <span className="deleg-state">{queued ? 'Queued (after its earlier task)' : busy ? 'Working' : statusLabel(t)} · {relativeTime(d.at, now)}</span>
-            {busy && <Activity session={t} />}
-          </button>
-        );
-      })}
+      <div className="deleg-strip-head">Handed out — {list.length === 1 ? 'the result comes' : `${list.length} results come`} back here by themselves</div>
+      <div className="deleg-cards">
+        {list.map((d, i) => {
+          const t = sessions.get(d.target);
+          if (!t) return null;
+          // the same session's earlier task is still open: this one waits behind it
+          const queued = list.slice(0, i).some((x) => x.target === d.target);
+          const busy = !queued && (t.status === 'working' || t.status === 'starting');
+          // what was asked: the directive this task started with
+          const asked = inbox.find((it) => it.kind === 'directive' && it.sessionId === d.target && it.fromId === id && (d.task ? it.taskId === d.task : it.createdAt === d.at));
+          const summary = asked ? titleOf(asked) : '';
+          return (
+            <button key={`${d.task ?? ''}${d.target}`} className={`deleg-card ${queued ? 'queued' : busy ? 'busy' : ''}`} onClick={() => selectAndReveal(t.id)} title={`${summary}
+
+Open ${t.title}`}>
+              <span className="deleg-card-head">
+                <span className={`status-dot ${statusClass(t)}`} />
+                {d.task && <span className="deleg-task">{d.task}</span>}
+                <span className="deleg-who ellipsis">{t.title}</span>
+              </span>
+              <span className="deleg-time">{queued ? 'Queued' : busy ? 'Working' : statusLabel(t)} · {relativeTime(d.at, now)}</span>
+              {summary && <span className="deleg-summary">{summary}</span>}
+              {busy && <Activity session={t} />}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
