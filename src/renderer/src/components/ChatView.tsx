@@ -1,4 +1,5 @@
 import { parseTeamMessages, type TeamMessage } from '@/lib/teamMessage';
+import { DelegationStrip } from './Delegations';
 import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ChatEntry, ChatTool, Project, Session } from '@shared/protocol';
 import { useStore } from '@/store';
@@ -214,6 +215,7 @@ export function ChatView({
         )}
       </div>
       </ScopeCtx.Provider>
+      {s.role !== 'player' && <DelegationStrip id={s.id} />}
       {s.permission ? <PermissionCard session={s} onShowTerminal={onShowTerminal} /> : choice && <WaitingBar session={s} tail={tail ?? ''} onShowTerminal={onShowTerminal} />}
       {/* the old-answer note: in the Session tab / Focus view, not on every Ground card (cards pass a limit) */}
       <Composer session={s} quick={quick} lastAt={working || limit !== undefined ? undefined : lastAnswerAt(all)} />
@@ -1003,7 +1005,11 @@ function TeamBubble({ msg, turn }: { msg: TeamMessage; turn: string }): JSX.Elem
   const sc = useScoper();
   // the sender as it is named now ("Head Coach · Shop" (head coach) → Shop · Coach), when the session still exists —
   // selected as one string, so a status change of the sender does not re-render the bubble
-  const view = useStore((st) => senderView(msg.sessionId ? st.sessions.get(msg.sessionId) : undefined, st.projects));
+  const view = useStore((st) => {
+    const id = msg.sessionId;
+    const sender = id ? st.sessions.get(id) ?? (id.length < 36 ? [...st.sessions.values()].find((x) => x.id.startsWith(id)) : undefined) : undefined;
+    return senderView(sender, st.projects);
+  });
   const [senderClass, senderName, senderRole, senderColor] = view ? view.split('\u0001') : [];
   // a session's message: its own project/part; a notice: the session it is about; an order: what the turn touched
   const ref = msg.sessionId ?? msg.aboutId;
@@ -1017,7 +1023,7 @@ function TeamBubble({ msg, turn }: { msg: TeamMessage; turn: string }): JSX.Elem
     <div className={`chat-team ${msg.kind}`}>
       <div className="chat-team-head">
         <span className={`team-chip ${roleClass}`} style={senderColor ? pcStyle(senderColor) : undefined}>{from}</span>
-        <MsgTag kind={teamMessageKind(msg)} />
+        <MsgTag kind={teamMessageKind(msg)} {...(msg.taskId ? { taskId: msg.taskId } : {})} />
         {role && role !== from && <span className="muted">{role}</span>}
         {msg.via && <span className="muted">{msg.via}</span>}
         {scopes.map((x) => <ScopeTag key={x.name} scope={x} />)}

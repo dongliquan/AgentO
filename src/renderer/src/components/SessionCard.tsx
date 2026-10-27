@@ -6,7 +6,7 @@ import { send } from '@/client';
 import { exportSession, focusTerminal, removeSession, selectAndReveal } from '@/commands';
 import { AGENT_LABELS, agentColor, basename, formatElapsed, displayTitle } from '@/lib/format';
 import { RoleTag } from './RoleTag';
-import { DelegationChip } from './Delegations';
+import { DelegationChip, useDelegations } from './Delegations';
 import { ModelChip } from './ModelChip';
 import { useNeedsIds } from './NeedsYou';
 import { lastLines } from '@/lib/ansi';
@@ -141,6 +141,7 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
     });
   };
 
+  const handedOut = useDelegations((st) => st.byCoach.get(s.id)?.length ?? 0);
   const showTerminal = layout !== 'board' || zoom >= 0.6;
   // status and role show in the header only (badge, tag); the card border stays plain
   const cls = ['card', layout === 'board' ? '' : layout, selected ? 'selected' : '']
@@ -200,7 +201,7 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
         )}
         <ContextSize session={s} />
         {needsYou && <span className="needs-badge" title="Waiting for your decision — answer in its chat">Needs you</span>}
-        <StatusBadge status={s.status} attention={s.attention} compact={s.w < 300} />
+        <StatusBadge status={s.status} attention={s.attention} compact={s.w < 300} waitingOn={handedOut} />
         <button
           className="card-menu-btn"
           title="Menu"

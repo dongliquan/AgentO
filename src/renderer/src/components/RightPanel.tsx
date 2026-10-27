@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDelegations } from './Delegations';
 import type { InboxItem, Routine, Session, TeamOrderTarget } from '@shared/protocol';
 import { unreadCount, useStore, type RightTab } from '@/store';
 import { requestChanged, send } from '@/client';
@@ -166,6 +167,7 @@ export function SecondPanel({ panels = false }: { panels?: boolean }): JSX.Eleme
  * Folder, ids, status history and changed files sit in a collapsible section below.
  */
 function Detail({ session: s }: { session: Session }): JSX.Element {
+  const handedOut = useDelegations((st) => st.byCoach.get(s.id)?.length ?? 0);
   const projects = useStore((st) => st.projects);
   const timeline = useStore((st) => st.timeline);
   const changed = useStore((st) => st.changed.get(s.cwd));
@@ -215,7 +217,7 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
         <div className="rp-title">
           <AgentIcon kind={s.agent} color={s.color} size={16} />
           <span className="ellipsis" style={{ flex: 1 }} title={s.title}>{displayTitle(s)}</span>
-          <StatusBadge status={s.status} attention={s.attention} />
+          <StatusBadge status={s.status} attention={s.attention} waitingOn={handedOut} />
         </div>
         <div className="rp-meta">
           <RoleTag s={s} />
