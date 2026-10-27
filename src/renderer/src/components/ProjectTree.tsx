@@ -103,7 +103,8 @@ export function ProjectTree(): JSX.Element {
             else openNewSession({ projectId: p.id });
           }}
         >
-          <span className="caret">{open ? '▾' : '▸'}</span>
+          {/* an arrow only when there is something under it */}
+          <span className="caret">{(isPart ? own.length > 0 : true) ? (open ? '▾' : '▸') : ''}</span>
           {!isPart && (
             <button
               className={`pc-dot tree-pc agg-${agg.state}`}
@@ -415,9 +416,10 @@ export function SessionRow({ session: s, depth }: { session: Session; depth: num
       title={`${AGENT_LABELS[s.agent]} · ${s.status}
 ${s.cwd}`}
     >
+      {/* like the Files tree: rows with children have an arrow, a session (a leaf) has its icon */}
       <span className="caret" />
+      <AgentIcon kind={s.agent} color={s.color} />
       <span className={`status-dot ${statusClass(s)}`} />
-      {s.agent !== 'claude' && <AgentIcon kind={s.agent} color={s.color} />}
       <span className="label" onDoubleClick={(e) => { e.stopPropagation(); void renameSession(s.id); }}>
         {displayTitle(s)}
       </span>
