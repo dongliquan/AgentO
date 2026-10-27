@@ -40,7 +40,7 @@ export function askingTail(text: string): string | null {
 }
 
 /** Conversation sizes that call for a fresh start (players do the work and grow faster than coordinators). */
-const CONTEXT_WARN = 300_000;
+const CONTEXT_WARN = 225_000;
 const CONTEXT_WARN_COORD = 150_000;
 
 /* dismissed questions (item ids), per browser */

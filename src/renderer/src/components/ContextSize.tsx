@@ -2,8 +2,8 @@ import type { Session } from '@shared/protocol';
 import { send } from '@/client';
 
 /** sizes that matter: past AUTO the daemon starts the session over by itself once it has been idle a while */
-export const CONTEXT_WARN = 150_000;
-export const CONTEXT_AUTO = 200_000;
+export const CONTEXT_WARN = 100_000;
+export const CONTEXT_AUTO = 150_000;
 /** head coaches / coaches: cleared sooner (every report re-reads their conversation) */
 export const CONTEXT_AUTO_COORD = 100_000;
 
@@ -12,8 +12,8 @@ export function formatTokens(n: number): string {
 }
 
 /**
- * How big a Claude conversation is now — every turn re-reads all of it. Grey while small, amber from 150K, red from
- * 200K (an idle session that big, not in use, gets a fresh start automatically). Click: fresh start now.
+ * How big a Claude conversation is now — every turn re-reads all of it. Grey while small, amber from 100K, red from
+ * 150K (an idle session that big, not in use, gets a fresh start automatically). Click: fresh start now.
  */
 export function ContextSize({ session: s }: { session: Session }): JSX.Element | null {
   if ((s.agent !== 'claude' && s.agent !== 'codex') || !s.context) return null;
