@@ -120,8 +120,6 @@ export function ProjectTree(): JSX.Element {
             {p.name}
             {!isPart && total > 0 && <span className="muted tree-count" title={`${total} session(s)`}> ({total})</span>}
           </span>
-          {/* the project's coach lives on its row: status, tag, work handed out — click selects it */}
-          {head && <CoachChip s={head} />}
           <button
             className="icon-btn hover-act"
             title={`Rename ${isPart ? 'part' : 'project'} (or double-click the name)`}
@@ -230,7 +228,10 @@ Not touched: your folders on disk and the Claude / Codex conversation files.`)) 
             ×
           </button>
         </div>
-        {open && !isPart && !head && (
+        {open && !isPart &&
+          (head ? (
+            <SessionRow session={head} depth={inner} />
+          ) : (
             <div className="tree-row tree-add-head" style={{ paddingLeft: inner }} title="Optional: the project's PM — splits orders among the parts" onClick={() => send({ type: 'head.create', projectId: p.id })}>
               <span className="caret" />
               <span className="label">+ Coach</span>
@@ -245,7 +246,7 @@ Not touched: your folders on disk and the Claude / Codex conversation files.`)) 
                 ✦ Organize Team
               </button>
             </div>
-          )}
+          ))}
         {open && own.map((s) => <SessionRow key={s.id} session={s} depth={inner} />)}
         {open && parts.map((x) => renderNode(x, inner))}
         {open && isPart && own.length === 0 && <div className="tree-empty" style={{ paddingLeft: inner + 8 }}>No sessions.</div>}
@@ -464,23 +465,4 @@ function aggregateStatus(list: Session[]): { state: AggState; text: string } {
   const text = parts.length ? parts.join(' · ') : list.length ? 'all stopped' : 'no sessions';
   const state: AggState = error ? 'error' : needs ? 'needs' : working ? 'working' : idle ? 'idle' : 'off';
   return { state, text };
-}
-
-/** A project's coach on the project row: its status, its tag (project colour), the work it handed out. */
-function CoachChip({ s }: { s: Session }): JSX.Element {
-  const selected = useStore((st) => st.selectedId === s.id);
-  return (
-    <span
-      className={`tree-coach ${selected ? 'selected' : ''}`}
-      title={`Coach — ${s.status}. Click to open it.`}
-      onClick={(e) => {
-        e.stopPropagation();
-        selectAndReveal(s.id);
-      }}
-    >
-      <span className={`status-dot ${statusClass(s)}`} />
-      <RoleTag s={s} />
-      <DelegationChip id={s.id} />
-    </span>
-  );
 }
