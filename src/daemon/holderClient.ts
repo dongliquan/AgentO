@@ -131,7 +131,8 @@ export class HolderClient extends EventEmitter {
     child.on('error', (e) => log.warn('holder: spawn failed', spec.id, e));
     child.unref();
     const infoFile = path.join(holdersDir(), `${spec.id}.json`);
-    const deadline = Date.now() + 10_000;
+    // a cold Electron start under load can take a while; a holder that comes up later than this ends itself
+    const deadline = Date.now() + 30_000;
     while (Date.now() < deadline) {
       if (fs.existsSync(infoFile)) {
         try {

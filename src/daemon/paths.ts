@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export { APP_DIR_NAME, dataDir } from '@shared/datadir';
+export { dataDir } from '@shared/datadir';
 import { dataDir } from '@shared/datadir';
 
 export function ensureDir(dir: string): string {

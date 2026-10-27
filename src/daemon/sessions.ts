@@ -211,7 +211,9 @@ export class SessionManager extends EventEmitter {
   }
 
   private logPath(id: string): string {
-    return path.join(logsDir(), `${id}.log`);
+    const p = path.join(logsDir(), `${id}.log`);
+    trimLog(p);
+    return p;
   }
 
   private loadLogTail(id: string): string {
@@ -1197,5 +1199,22 @@ function codexModel(file: string): string | undefined {
     }
   } catch {
     return undefined;
+  }
+}
+
+/** A session log over LOG_MAX keeps its last LOG_KEEP (checked when a process starts writing to it). */
+const LOG_MAX = 20 * 1024 * 1024;
+const LOG_KEEP = 4 * 1024 * 1024;
+function trimLog(p: string): void {
+  try {
+    const size = fs.statSync(p).size;
+    if (size <= LOG_MAX) return;
+    const fd = fs.openSync(p, 'r');
+    const buf = Buffer.alloc(LOG_KEEP);
+    fs.readSync(fd, buf, 0, LOG_KEEP, size - LOG_KEEP);
+    fs.closeSync(fd);
+    fs.writeFileSync(p, buf);
+  } catch {
+    /* no log yet, or busy: next start */
   }
 }

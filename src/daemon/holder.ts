@@ -46,6 +46,8 @@ const exitFile = path.join(holdersDir(), `${spec.id}.exit.json`);
 const pipe = holderPipe(spec.id, spec.nonce);
 
 let client: net.Socket | null = null;
+/** a daemon connected at least once (a holder nobody ever connected to was given up on by its daemon) */
+let everConnected = false;
 const backlog: string[] = [];
 let backlogBytes = 0;
 let childPid: number | undefined;
@@ -92,7 +94,10 @@ function finish(code: number | null, signal: string | number | null | undefined)
   // give a connected daemon a moment to read the exit, then go
   setTimeout(() => {
     try {
-      if (infoIsMine()) fs.unlinkSync(infoFile);
+      if (infoIsMine()) {
+        fs.unlinkSync(infoFile);
+        fs.rmSync(specFile, { force: true });
+      }
     } catch {
       /* gone */
     }
@@ -153,6 +158,7 @@ try {
 const server = net.createServer((sock) => {
   if (client && !client.destroyed) client.destroy();
   client = sock;
+  everConnected = true;
   sock.setNoDelay(true);
   sock.write(`${JSON.stringify({ t: 'hello', childPid, alive, kind: spec.kind, startedAt })}\n`);
   for (const line of backlog) sock.write(line);
@@ -209,7 +215,28 @@ if (process.platform !== 'win32') {
     /* none */
   }
 }
-server.listen(pipe, () => writeInfo());
+server.listen(pipe, () => {
+  writeInfo();
+  // the info file is how a restarting daemon finds this holder: rewrite it if something removed it (an older holder
+  // of this session closing) — unless a newer holder of the session has taken its place
+  setInterval(() => {
+    if (finishing) return;
+    try {
+      if (!fs.existsSync(infoFile)) writeInfo();
+    } catch {
+      /* next time */
+    }
+  }, 15_000).unref();
+  // started but never reached by its daemon (it gave up waiting, or died): end the child instead of keeping a second
+  // copy of the conversation running
+  setTimeout(() => {
+    if (!everConnected && !finishing) {
+      process.stderr.write('holder: no daemon connected within a minute; ending\n');
+      handle.kill();
+      setTimeout(() => finish(-1, null), 3000);
+    }
+  }, 60_000).unref();
+});
 server.on('error', (e) => {
   process.stderr.write(`holder: pipe error ${e.message}\n`);
   handle.kill();
