@@ -1317,7 +1317,7 @@ button.tree-pc:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, t
 .chat-tool-head .scope-tag { margin-left: 6px; }
 .chat-user-scopes { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; margin-bottom: 4px; }
 /* sidebar: each project's area tinted with its color (header a little stronger) */
-.tree-project-block { background: color-mix(in srgb, var(--pc) 2%, transparent); border-left: 3px solid var(--pc); margin: 0 0 4px; }
+.tree-project-block { background: color-mix(in srgb, var(--pc) 2%, transparent); margin: 0 0 4px; }
 .tree-project-block > .tree-project { background: color-mix(in srgb, var(--pc) 5%, transparent); }
 .tree-project-block .tree-row:hover { background: color-mix(in srgb, var(--pc) 6%, transparent); }
 /* selected: a light row with a project-color outline, never heavier than the project's header */
