@@ -214,6 +214,8 @@ export function ProjectTree(): JSX.Element {
               ⏏
             </button>
           )}
+          {/* a part can be deleted here; a project only from Closed (close it first) — too close to ⏏ otherwise */}
+          {isPart && (
           <button
             className="icon-btn hover-act"
             title={`Delete ${kind}`}
@@ -228,6 +230,7 @@ Not touched: your folders on disk and the Claude / Codex conversation files.`)) 
           >
             ×
           </button>
+          )}
         </div>
         {open && !isPart &&
           (head ? (
