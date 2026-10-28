@@ -147,15 +147,16 @@ function GroundLinksImpl({ layout }: { layout: GroupLayout }): JSX.Element | nul
   );
 }
 
-/** The messages two sessions exchanged (both directions, oldest first) — opened by clicking their link. */
+/** The messages two sessions exchanged (both directions, newest first) — opened by clicking their link. */
 function LinkMessages({ a, b, x, y, onClose }: { a: string; b: string; x: number; y: number; onClose: () => void }): JSX.Element {
   const sessions = useStore((s) => s.sessions);
   const inbox = useStore((s) => s.inbox);
   const now = useNow(15000);
   const items = inbox
     .filter((it) => (it.kind === 'directive' || it.kind === 'report') && ((it.fromId === a && it.sessionId === b) || (it.fromId === b && it.sessionId === a)))
-    .sort((p, q) => p.createdAt - q.createdAt)
-    .slice(-40);
+    // newest first
+    .sort((p, q) => q.createdAt - p.createdAt)
+    .slice(0, 40);
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') onClose();
