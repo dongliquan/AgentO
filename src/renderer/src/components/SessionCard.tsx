@@ -15,7 +15,7 @@ import { useNow } from '@/lib/hooks';
 import { StatusBadge } from './StatusBadge';
 import { ContextSize, freshStart, restoreEarlier } from './ContextSize';
 import { TerminalView } from './TerminalView';
-import { ChatView } from './ChatView';
+import { ChatView, Composer } from './ChatView';
 import { AgentIcon } from './AgentIcon';
 import { useBuffer } from '@/lib/buffers';
 
@@ -45,6 +45,7 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
   // Claude, and Codex once its conversation is found, read as a chat; other CLIs are terminals
   const hasChat = s.agent === 'claude' || (s.agent === 'codex' && !!s.resumeId);
   const [view, setView] = useState<'chat' | 'terminal'>(hasChat ? 'chat' : 'terminal');
+  const typeBox = s.agent !== 'claude' && s.agent !== 'shell' && s.mode !== 'headless';
   const viewRef = useRef(view);
   viewRef.current = view;
   // "Terminal" (Session tab, a choice card, a menu): a card showing its chat switches to the terminal first — the
@@ -220,7 +221,8 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
         ) : view === 'chat' ? (
           <ChatView session={s} onShowTerminal={() => setView('terminal')} limit={40} />
         ) : (
-          <>
+          <div className={typeBox ? 'term-split' : 'term-only'}>
+            <div className="term-area">
             {!(s.status === 'working' || s.status === 'waiting' || s.status === 'starting') && (
               // the terminal still shows the last screen of the stopped process: keys would go nowhere
               <div className="term-stopped">
@@ -230,8 +232,12 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
                 </button>
               </div>
             )}
-            <TerminalView sessionId={s.id} fitKey={`${s.w}x${s.h}:${layout}`} autoFocus={layout === 'fill'} />
-          </>
+            <TerminalView sessionId={s.id} fitKey={`${s.w}x${s.h}:${layout}`} autoFocus={layout === 'fill' && !typeBox} />
+            </div>
+            {/* Codex & co.: a text box sends the message as one paste — typing Korean through the terminal's IME
+                into these TUIs drops or splits syllables */}
+            {typeBox && <Composer session={s} />}
+          </div>
         )}
       </div>
       <Footer session={s} onAnswer={answer} onFocusMode={() => { select(s.id); setFocusMode(true); }} />

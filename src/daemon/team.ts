@@ -41,10 +41,12 @@ const LOG_TEXT_MAX = 4000;
  *   empty = the CLI's default),
  * - no editing tools (Edit/Write/MultiEdit/NotebookEdit): the work and its output belong in players' contexts,
  * - auto-compact at AGENTO_COACH_COMPACT_PCT % of the context window (default 60; empty = the CLI's default).
- * Players keep the CLI defaults. Applies at the next start/resume of a session.
+ * Players: Opus 5.5 unless picked (env AGENTO_PLAYER_MODEL; empty = the CLI's default, Fable on most plans — the
+ * manager does not want Fable unless chosen). Applies at the next start/resume of a session.
  */
 const envOr = (k: string, d: string): string => (process.env[k] !== undefined ? process.env[k]!.trim() : d);
 const COORDINATOR_MODEL = envOr('AGENTO_COACH_MODEL', 'sonnet');
+const PLAYER_MODEL = envOr('AGENTO_PLAYER_MODEL', 'claude-opus-5-5');
 const COORDINATOR_EFFORT = envOr('AGENTO_COACH_EFFORT', 'medium');
 const COORDINATOR_COMPACT_PCT = envOr('AGENTO_COACH_COMPACT_PCT', '60');
 const COORDINATOR_ARGS = (pick?: string): string[] => [
@@ -1038,7 +1040,7 @@ export class Team {
       if (mem) extras.push('--append-system-prompt', mem);
     }
     if (s.role !== 'player') extras.push(...COORDINATOR_ARGS(s.modelPref));
-    else if (s.modelPref) extras.push('--model', s.modelPref);
+    else if (s.modelPref || PLAYER_MODEL) extras.push('--model', s.modelPref || PLAYER_MODEL);
     return extras;
   }
 
