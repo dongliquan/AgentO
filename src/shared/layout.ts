@@ -125,22 +125,45 @@ export function arrangeTeam(sessions: Session[], projects: Project[]): Map<strin
       // up to 8 projects: each one right against the Head Coach card (the middle one of each side centred on it), the
       // corners tucked in beside their neighbours - then everything shifted to start at (0, 0)
       const pos: { x: number; y: number; w: number; h: number }[] = [];
-      // pushed outward (away from the Head Coach) past any block already placed that it would touch
-      const clear = (p: { x: number; y: number; w: number; h: number }, dx: number, dy: number): void => {
-        for (let moved = true; moved; ) {
+      // pushed past any block already placed that it would touch: outward (away from the Head Coach), or — for a block
+      // straight above/below (or beside) it — sideways, away from that block, when that is the shorter way out (a tall
+      // project on the left must not push the one above the Head Coach up past its whole height)
+      const clear = (p: { x: number; y: number; w: number; h: number }, dx: number, dy: number, sideways = true): void => {
+        let sx = 0; // a sideways direction, once taken, is kept (no bouncing between two neighbours)
+        let sy = 0;
+        for (let moved = true, n = 0; moved; n++) {
+          if (n > 40) {
+            if (sideways) {
+              // could not settle sideways: start again, outward only
+              p.x = start.x;
+              p.y = start.y;
+              clear(p, dx, dy, false);
+            }
+            return;
+          }
           moved = false;
           for (const o of [...pos, { x: 0, y: 0, w: T.w, h: T.h }]) {
             const hit = p.x < o.x + o.w + GAP_RING && o.x < p.x + p.w + GAP_RING && p.y < o.y + o.h + GAP_RING && o.y < p.y + p.h + GAP_RING;
             if (!hit) continue;
+            const isHead = o.x === 0 && o.y === 0 && o.w === T.w && o.h === T.h;
+            const away = (pc: number, oc: number, locked: number): number => locked || (pc >= oc ? 1 : -1);
+            const ax = dx !== 0 ? dx : sideways && !isHead ? away(p.x + p.w / 2, o.x + o.w / 2, sx) : 0;
+            const ay = dy !== 0 ? dy : sideways && !isHead ? away(p.y + p.h / 2, o.y + o.h / 2, sy) : 0;
             // the shorter way out along the allowed directions
-            const mx = dx < 0 ? o.x - GAP_RING - p.w - p.x : dx > 0 ? o.x + o.w + GAP_RING - p.x : Infinity;
-            const my = dy < 0 ? o.y - GAP_RING - p.h - p.y : dy > 0 ? o.y + o.h + GAP_RING - p.y : Infinity;
-            if (Math.abs(mx) <= Math.abs(my)) p.x += mx;
-            else p.y += my;
+            const mx = ax < 0 ? o.x - GAP_RING - p.w - p.x : ax > 0 ? o.x + o.w + GAP_RING - p.x : Infinity;
+            const my = ay < 0 ? o.y - GAP_RING - p.h - p.y : ay > 0 ? o.y + o.h + GAP_RING - p.y : Infinity;
+            if (Math.abs(mx) <= Math.abs(my)) {
+              p.x += mx;
+              if (dx === 0) sx = ax;
+            } else {
+              p.y += my;
+              if (dy === 0) sy = ay;
+            }
             moved = true;
           }
         }
       };
+      let start = { x: 0, y: 0 };
       laid.forEach((b, i) => {
         const [r, q] = cells[i]!;
         const dx = q - 1;
@@ -152,6 +175,7 @@ export function arrangeTeam(sessions: Session[], projects: Project[]): Map<strin
           w: b.width,
           h: b.height
         };
+        start = { x: p.x, y: p.y };
         clear(p, dx, dy);
         pos.push(p);
       });
