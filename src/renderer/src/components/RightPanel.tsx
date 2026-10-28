@@ -3,7 +3,7 @@ import { useDelegations } from './Delegations';
 import type { InboxItem, Routine, Session, TeamOrderTarget } from '@shared/protocol';
 import { unreadCount, useStore, type RightTab } from '@/store';
 import { requestChanged, send } from '@/client';
-import { exportSession, focusTerminal, removeSession, selectAndReveal } from '@/commands';
+import { exportSession, focusTerminal, selectAndReveal } from '@/commands';
 import { AGENT_LABELS, STATUS_LABELS, projectLabel, displayTitle, roleLabel, basename, formatDateTime, formatTime, relativeTime } from '@/lib/format';
 import { RoleTag } from './RoleTag';
 import { ModelChip } from './ModelChip';
@@ -33,7 +33,7 @@ import { ProjectFilter, useProjectFilter } from './ProjectFilter';
 import { MyTalk } from './MyTalk';
 import { useNewProject } from './NewProjectDialog';
 import { useTalkProject } from '@/lib/talkFilter';
-import { ContextSize, freshStart, restoreEarlier } from './ContextSize';
+import { ContextSize, restoreEarlier } from './ContextSize';
 import { pcStyle, projectColor } from '@/lib/format';
 import { imageFiles, useAttachments, withAttachments } from '@/lib/attachments';
 import { AttachmentBar } from './AttachmentBar';
@@ -205,7 +205,6 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
     requestChanged(s.cwd);
   }, [s.cwd, s.status]);
 
-  const live = s.status === 'working' || s.status === 'waiting' || s.status === 'starting';
   const openTerminal = (): void => {
     selectAndReveal(s.id);
     setTimeout(() => focusTerminal(s.id), 100);
@@ -230,16 +229,6 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
           {s.agent === 'claude' && !!s.prevResumeIds?.length && (
             <button className="btn sm ghost" onClick={() => restoreEarlier(s)} title="Resume the conversation from before the last fresh start / restart">Earlier Conversation</button>
           )}
-          {s.agent === 'claude' && s.resumeId && (
-            <button className="btn sm ghost" onClick={() => freshStart(s)} title="Write a handoff note, then continue in a new, small conversation (saves tokens)">Fresh Start</button>
-          )}
-          <button className="btn sm ghost" onClick={() => send({ type: 'session.restart', id: s.id })}>Restart</button>
-          {s.status === 'hibernated' ? (
-            <button className="btn sm ghost" onClick={() => send({ type: 'session.resume', id: s.id })}>Resume</button>
-          ) : (
-            <button className="btn sm ghost" disabled={!live} onClick={() => send({ type: 'session.stop', id: s.id })}>Stop</button>
-          )}
-          <button className="btn sm ghost danger" onClick={() => removeSession(s.id)} title="Remove Session (Delete)">Remove</button>
         </div>
       </div>
       <SearchBox value={query} onChange={setQuery} count={hasChat ? hits : termLines.length} placeholder="Search this conversation" />
