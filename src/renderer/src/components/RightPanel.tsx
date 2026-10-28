@@ -33,7 +33,7 @@ import { ProjectFilter, useProjectFilter } from './ProjectFilter';
 import { MyTalk } from './MyTalk';
 import { useNewProject } from './NewProjectDialog';
 import { useTalkProject } from '@/lib/talkFilter';
-import { ContextSize, restoreEarlier } from './ContextSize';
+import { ContextSize } from './ContextSize';
 import { pcStyle, projectColor } from '@/lib/format';
 import { imageFiles, useAttachments, withAttachments } from '@/lib/attachments';
 import { AttachmentBar } from './AttachmentBar';
@@ -226,9 +226,6 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
           <button className="btn sm ghost" onClick={openTerminal}>Terminal</button>
           <ModelChip session={s} />
           <ContextSize session={s} />
-          {s.agent === 'claude' && !!s.prevResumeIds?.length && (
-            <button className="btn sm ghost" onClick={() => restoreEarlier(s)} title="Resume the conversation from before the last fresh start / restart">Earlier Conversation</button>
-          )}
         </div>
       </div>
       <SearchBox value={query} onChange={setQuery} count={hasChat ? hits : termLines.length} placeholder="Search this conversation" />
