@@ -99,6 +99,16 @@ export function FolderTree({ folder, depth = 6, expanded, toggle, onNewSession }
         </button>
         <button
           className="icon-btn hover-act"
+          title="Change Folder — point this project folder at another place"
+          onClick={(e) => {
+            e.stopPropagation();
+            void changeFolder(folder);
+          }}
+        >
+          ✎
+        </button>
+        <button
+          className="icon-btn hover-act"
           title="Remove Folder"
           onClick={(e) => {
             e.stopPropagation();
@@ -241,4 +251,19 @@ export function leafFolders(folders: Folder[]): Folder[] {
 function shortPath(p: string): string {
   const parts = p.replace(/[\\/]+$/, '').split(/[\\/]/).filter(Boolean);
   return parts.slice(-2).join('\\') || p;
+}
+
+/** Pick another place on disk for a project folder. Sessions already in it keep running in their own folder. */
+async function changeFolder(folder: Folder): Promise<void> {
+  const next = await window.desktop.pickFolder();
+  if (!next || next === folder.path) return;
+  const inIt = [...useStore.getState().sessions.values()].filter((s) => s.folderId === folder.id).length;
+  const note = inIt ? `
+
+${inIt} session(s) started here keep working in the old folder; new sessions start in the new one.` : '';
+  if (!window.confirm(`Change this project folder?
+
+${folder.path}
+→ ${next}${note}`)) return;
+  send({ type: 'folder.update', id: folder.id, path: next });
 }

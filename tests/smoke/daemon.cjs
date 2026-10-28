@@ -142,6 +142,16 @@ async function main() {
   const folder = p2?.projects.find((p) => p.id === project.id).folders[0];
   check('folder added', !!folder);
   check('memory file exists', !!project.memory && fs.existsSync(project.memory), project.memory);
+  {
+    // change the folder's place on disk, then put it back
+    const other = path.join(path.dirname(work), 'work-moved');
+    fs.mkdirSync(other, { recursive: true });
+    c.send({ type: 'folder.update', id: folder.id, path: other });
+    const moved = await c.waitFor((m) => m.type === 'projects' && m.projects.some((p) => p.folders.some((f) => f.id === folder.id && f.path === other)));
+    c.send({ type: 'folder.update', id: folder.id, path: work });
+    const back = await c.waitFor((m) => m.type === 'projects' && m.projects.some((p) => p.folders.some((f) => f.id === folder.id && f.path === work)));
+    check('folder location can be changed', !!moved && !!back);
+  }
 
   // ---------- a shell session through a holder ----------
   c.send({ type: 'session.create', projectId: project.id, folderId: folder.id, agent: 'shell', title: 'smoke shell', cols: 100, rows: 30 });

@@ -336,6 +336,8 @@ export type ClientMessage =
   | { type: 'claude.sessions.import'; projectId: string; folderId: string; ids: string[]; titles?: Record<string, string> }
   | { type: 'folder.add'; projectId: string; path: string; autoTrust?: boolean }
   | { type: 'folder.remove'; id: string }
+  /** point a project folder at another place on disk (sessions already in it keep their own working folder) */
+  | { type: 'folder.update'; id: string; path: string }
   | { type: 'session.create'; projectId: string; folderId: string; agent: AgentKind; title?: string; command?: string; args?: string[]; cols?: number; rows?: number; mode?: SessionMode }
   | { type: 'head.create'; projectId?: string }      // one head coach per top-level project
   | { type: 'coach.create'; projectId: string; agent?: 'claude' | 'codex' | 'gemini' } // one coach per project; default claude

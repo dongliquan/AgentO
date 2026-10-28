@@ -606,6 +606,17 @@ async function main(): Promise<void> {
         broadcast({ type: 'projects', projects: store.listProjects() });
         return;
       }
+      case 'folder.update': {
+        const f = store.getFolder(msg.id);
+        if (!f) throw new Error('Folder not found');
+        const p = path.resolve(msg.path);
+        if (!fs.existsSync(p) || !fs.statSync(p).isDirectory()) throw new Error(`Folder does not exist: ${p}`);
+        const dup = store.listProjects().find((x) => x.id === f.projectId)?.folders.some((o) => o.id !== f.id && path.resolve(o.path).toLowerCase() === p.toLowerCase());
+        if (dup) throw new Error(`The project already has ${p}`);
+        store.updateFolder(f.id, p, path.basename(p) || p);
+        broadcast({ type: 'projects', projects: store.listProjects() });
+        return;
+      }
       case 'folder.remove': {
         for (const s of sessions.list()) if (s.folderId === msg.id) sessions.remove(s.id);
         store.removeFolder(msg.id);

@@ -470,6 +470,11 @@ export class Store {
     this.stmt('DELETE FROM routines WHERE id = ?').run(id);
   }
 
+  updateFolder(id: string, folderPath: string, name: string): void {
+    this.projectsCache = null;
+    this.stmt('UPDATE folders SET path = ?, name = ? WHERE id = ?').run(folderPath, name, id);
+  }
+
   removeFolder(id: string): void {
     this.projectsCache = null;
     this.stmt('DELETE FROM folders WHERE id = ?').run(id);
