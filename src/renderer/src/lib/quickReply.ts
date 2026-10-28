@@ -75,11 +75,16 @@ export function quickReplyOf(entries: ChatEntry[]): QuickReply | null {
       if (cur.length) cur = [];
     }
   }
+  // a numbered list of questions ("1. 이름은 무엇으로 할까요? 2. 언제 옮길까요?") is several decisions, each needing its
+  // own answer — not options to pick: no quick reply (Needs you points the manager at it)
+  if (best.length >= 2 && lines.filter((l) => /[?？]/.test(matchOption(l)?.[1] ?? '')).length >= 2) return null;
   if (best.length >= 2 && best.length <= 8) return { options: best, multi: MULTI.test(tail) };
   // an either-or question ("삭제할까요, 남길까요?", "Should I delete them or keep them?"): its alternatives
   const choice = choiceOf(text.slice(-600));
   if (choice) return { options: choice, multi: false };
   // no options: yes/no questions at the end ("1244 하나입니다. 이어서 할까요?", "커밋 5건 push 해도 될까요?")
+  // several questions where one asks "which / what" or "A or B": answers are words, not yes/no — no quick reply
+  if (openQuestions(text.slice(-900)) && /[?？][^?？]*[?？]/.test(plain(text.slice(-900)))) return null;
   const questions = yesNoQuestions(text.slice(-900));
   return questions.length ? { options: [], multi: questions.length > 1, questions, ko: /[가-힣]/.test(questions.join('')) } : null;
 }
@@ -107,6 +112,12 @@ function choiceOf(tail: string): QuickOption[] | null {
   const en = /^(?:should i|shall i|do you want me to|would you like me to|do you want to|should we)\s+(.+?)\s+or\s+(.+?)\?$/i.exec(q);
   if (en) return [en[1]!, en[2]!].map((p, i) => ({ key: String(i + 1), label: p, send: `${p[0]!.toUpperCase()}${p.slice(1)}, please. ("${q}")` }));
   return null;
+}
+
+/** The last paragraphs ask something that is not answered yes or no ("무엇으로 할까요?", "…할까요? 아니면 …할까요?"). */
+function openQuestions(tail: string): boolean {
+  const qs = plain(tail.split(/\n\s*\n/).slice(-3).join('\n')).match(/[^.!?。？\n]+[?？]/g) ?? [];
+  return qs.some((q) => WH.test(q) || /^\s*(?:아니면|또는|혹은|or)\b/i.test(q));
 }
 
 function yesNoQuestions(tail: string): string[] {
