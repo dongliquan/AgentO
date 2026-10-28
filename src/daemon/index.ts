@@ -540,9 +540,19 @@ async function main(): Promise<void> {
       case 'session.setMode':
         sessions.setMode(msg.id, msg.mode);
         return;
-      case 'session.permission':
-        sessions.answerPermission(msg.id, msg.requestId, msg.allow, msg.message);
+      case 'session.permission': {
+        const tool = sessions.answerPermission(msg.id, msg.requestId, msg.allow, msg.message);
+        if (tool && msg.allow && msg.scope && msg.scope !== 'once') {
+          if (msg.scope === 'folder') {
+            const folderId = sessions.get(msg.id)?.folderId;
+            if (folderId) {
+              store.setFolderTrust(folderId, true);
+              broadcast({ type: 'projects', projects: store.listProjects() });
+            }
+          } else team.rememberPermission(msg.id, msg.scope, tool);
+        }
         return;
+      }
       case 'git.subjects':
         sendTo(ws, { type: 'git.subjects.result', subjects: await commitSubjects(msg.folders, msg.hashes) });
         return;

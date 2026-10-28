@@ -201,9 +201,14 @@ async function main() {
   const pending = mcp(info, sid, 'tools/call', { name: 'permission', arguments: { tool_name: 'Bash', input: { command: 'echo smoke-perm' } } });
   const asked = await c.waitFor((m) => m.type === 'session.upsert' && m.session.id === sid && m.session.permission, 10000);
   check('permission request shows on the session', !!asked, asked?.session.permission?.tool);
-  if (asked) c.send({ type: 'session.permission', id: sid, requestId: asked.session.permission.id, allow: true });
+  if (asked) c.send({ type: 'session.permission', id: sid, requestId: asked.session.permission.id, allow: true, scope: 'tool' });
   const answer = await Promise.race([pending, sleep(10000).then(() => null)]);
   check('permission answer reaches the tool', /"behavior":"allow"/.test(toolText(answer)));
+  {
+    // "always allow Bash in this session": the next Bash call is allowed without asking
+    const again = await Promise.race([mcp(info, sid, 'tools/call', { name: 'permission', arguments: { tool_name: 'Bash', input: { command: 'echo again' } } }), sleep(5000).then(() => null)]);
+    check('always-allowed tool is not asked again', !!again && /"behavior":"allow"/.test(toolText(again)));
+  }
 
   // ---------- a daemon restart keeps the session ----------
   const pidBefore = (await c.waitFor((m) => m.type === 'session.upsert' && m.session.id === sid && m.session.pid))?.session.pid;

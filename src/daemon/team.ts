@@ -1044,6 +1044,23 @@ export class Team {
     return extras;
   }
 
+  /* ---------- permissions the manager allowed for good ---------- */
+
+  /** per session: everything, or these tools — kept in the DB (kv 'permAllow'), so they survive restarts */
+  private permAllow(): Record<string, { all?: boolean; tools?: string[] }> {
+    return this.store.getKv<Record<string, { all?: boolean; tools?: string[] }>>('permAllow') ?? {};
+  }
+
+  rememberPermission(sessionId: string, scope: 'tool' | 'session', tool: string): void {
+    const all = this.permAllow();
+    const cur = all[sessionId] ?? {};
+    if (scope === 'session') cur.all = true;
+    else cur.tools = [...new Set([...(cur.tools ?? []), tool])];
+    all[sessionId] = cur;
+    this.store.setKv('permAllow', all);
+    log.info(`permission: ${scope === 'session' ? 'everything' : tool} allowed for good in ${this.sessions.get(sessionId)?.title ?? sessionId}`);
+  }
+
   /* ---------- scope ---------- */
 
   /**
@@ -1604,6 +1621,9 @@ export class Team {
         const folder = this.store.listProjects().flatMap((p) => p.folders).find((f) => f.id === caller.folderId);
         const teamFolder = !caller.folderId && caller.cwd.toLowerCase().startsWith(this.teamDir().toLowerCase());
         if (folder?.autoTrust || teamFolder) return JSON.stringify({ behavior: 'allow', updatedInput: input });
+        // the manager said "always" for this tool, or for everything, in this session
+        const kept = this.permAllow()[caller.id];
+        if (kept?.all || kept?.tools?.includes(tool)) return JSON.stringify({ behavior: 'allow', updatedInput: input });
         const r = await this.sessions.requestPermission(caller.id, tool, input);
         return JSON.stringify(r);
       }

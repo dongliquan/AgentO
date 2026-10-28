@@ -475,6 +475,11 @@ export class Store {
     this.stmt('UPDATE folders SET path = ?, name = ? WHERE id = ?').run(folderPath, name, id);
   }
 
+  setFolderTrust(id: string, trust: boolean): void {
+    this.projectsCache = null;
+    this.stmt('UPDATE folders SET auto_trust = ? WHERE id = ?').run(trust ? 1 : 0, id);
+  }
+
   removeFolder(id: string): void {
     this.projectsCache = null;
     this.stmt('DELETE FROM folders WHERE id = ?').run(id);

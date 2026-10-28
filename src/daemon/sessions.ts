@@ -542,10 +542,11 @@ export class SessionManager extends EventEmitter {
     });
   }
 
-  answerPermission(id: string, requestId: string, allow: boolean, message?: string): void {
+  /** Answers the waiting question; returns the tool it was about (undefined: no such question). */
+  answerPermission(id: string, requestId: string, allow: boolean, message?: string): string | undefined {
     const s = this.sessions.get(id);
     const live = this.live.get(id);
-    if (!s || !live?.permission || live.permission.id !== requestId) return;
+    if (!s || !live?.permission || live.permission.id !== requestId) return undefined;
     const p = live.permission;
     live.permission = undefined;
     this.appendOutput(s, `\x1b[2m[agento] ${allow ? 'allowed' : 'denied'}: ${toolSummary(p.tool, p.input)}\x1b[0m\r\n`);
@@ -554,6 +555,7 @@ export class SessionManager extends EventEmitter {
       live.workingSince = Date.now();
       this.setStatus(s, 'working');
     } else this.save(s);
+    return p.tool;
   }
 
   private onData(id: string, data: string): void {

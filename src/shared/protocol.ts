@@ -283,6 +283,10 @@ export interface UsageReport {
 
 /* ---------- client -> daemon ---------- */
 
+/** how far an Allow reaches: this call only (default), this tool for the rest of this session, everything in this
+ * session, or every session in the session's folder (the folder becomes trusted) */
+export type PermissionScope = 'once' | 'tool' | 'session' | 'folder';
+
 export type ClientMessage =
   | { type: 'hello'; token: string; client: 'ui' | 'cli' }
   | { type: 'project.create'; name: string; parentId?: string } // parentId: create a part of that project
@@ -309,7 +313,7 @@ export type ClientMessage =
   /** Claude: run in a terminal or headless; a running session is restarted in the new mode (same conversation) */
   | { type: 'session.setMode'; id: string; mode: SessionMode }
   /** headless: answer a pending permission request */
-  | { type: 'session.permission'; id: string; requestId: string; allow: boolean; message?: string }
+  | { type: 'session.permission'; id: string; requestId: string; allow: boolean; message?: string; scope?: PermissionScope }
   | { type: 'git.subjects'; folders: string[]; hashes: string[] }   // commit subjects of these hashes, looked up in the folders' repositories   // '' = back to the default; a running Claude switches now
   /** go back to the conversation before the last fresh start / restart (the current one is kept in prevResumeIds) */
   | { type: 'session.restorePrev'; id: string }

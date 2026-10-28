@@ -1,7 +1,7 @@
 import { parseTeamMessages, type TeamMessage } from '@/lib/teamMessage';
 import { DelegationStrip } from './Delegations';
 import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { ChatEntry, ChatTool, Project, Session } from '@shared/protocol';
+import type { ChatEntry, ChatTool, PermissionScope, Project, Session } from '@shared/protocol';
 import { useStore } from '@/store';
 import { send } from '@/client';
 import { useChats } from '@/lib/chat';
@@ -736,7 +736,7 @@ function permissionGist(input: Record<string, unknown>): string {
 function PermissionCard({ session: s, onShowTerminal }: { session: Session; onShowTerminal: () => void }): JSX.Element | null {
   const p = s.permission;
   if (!p) return null;
-  const answer = (allow: boolean): void => send({ type: 'session.permission', id: s.id, requestId: p.id, allow });
+  const answer = (allow: boolean, scope: PermissionScope = 'once'): void => send({ type: 'session.permission', id: s.id, requestId: p.id, allow, scope });
   const gist = permissionGist(p.input);
   const rest = Object.entries(p.input).filter(([k, v]) => v !== undefined && !['command', 'file_path', 'path', 'pattern', 'url', 'query', 'description'].includes(k) || (typeof v === 'string' ? v : JSON.stringify(v)) !== gist);
   return (
@@ -754,6 +754,20 @@ function PermissionCard({ session: s, onShowTerminal }: { session: Session; onSh
           <span className="n">✓</span>
           <span className="label">Allow</span>
         </button>
+        <button className="chat-choice-opt" onClick={() => answer(true, 'tool')} title={`Allow ${p.tool} now and every later ${p.tool} call of this session without asking`}>
+          <span className="n">✓</span>
+          <span className="label">Always allow {p.tool} in this session</span>
+        </button>
+        <button className="chat-choice-opt" onClick={() => answer(true, 'session')} title="Allow this and every later tool call of this session without asking">
+          <span className="n">✓✓</span>
+          <span className="label">Allow everything in this session</span>
+        </button>
+        {s.folderId && (
+          <button className="chat-choice-opt" onClick={() => answer(true, 'folder')} title="Mark this session's folder as trusted: every session there works without asking">
+            <span className="n">★</span>
+            <span className="label">Trust this folder (all its sessions)</span>
+          </button>
+        )}
         <button className="chat-choice-opt" onClick={() => answer(false)} title="Deny this call (Claude is told the manager did not allow it)">
           <span className="n">✗</span>
           <span className="label">Deny</span>
