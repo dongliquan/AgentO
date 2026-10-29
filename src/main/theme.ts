@@ -1,22 +1,22 @@
 /**
- * The theme choice (shared theme spec ch. 3). The main process keeps it in ui-theme.json, written at once — the
- * renderers' localStorage is flushed lazily and lost when the UI is killed. Windows read it synchronously at
- * start (preload getTheme) so new windows open in the right colors; View › Theme shows it as a radio.
+ * The theme choice (shared theme spec ch. 3: light or dark, default light). The main process keeps it in
+ * ui-theme.json, written at once — the renderers' localStorage is flushed lazily and lost when the UI is
+ * killed. Windows read it synchronously at start (preload getTheme) so new windows open in the right colors;
+ * View › Theme shows it as a radio.
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { nativeTheme } from 'electron';
 import { dataDir } from '@shared/datadir';
 
-export type ThemePref = 'light' | 'dark' | 'system';
+export type ThemePref = 'light' | 'dark';
 
 const file = (): string => path.join(dataDir(), 'ui-theme.json');
 
-/** null until a window has told us (first start after an update: the renderer moves its localStorage value here) */
+/** null until a window has told us (first start after an update; an old "system" is resolved by the renderer) */
 function read(): ThemePref | null {
   try {
     const v = (JSON.parse(fs.readFileSync(file(), 'utf8')) as { pref?: unknown }).pref;
-    if (v === 'light' || v === 'dark' || v === 'system') return v;
+    if (v === 'light' || v === 'dark') return v;
   } catch {
     /* first run */
   }
@@ -30,7 +30,7 @@ export function storedThemePref(): ThemePref | null {
 }
 
 export function themePref(): ThemePref {
-  return pref ?? 'system';
+  return pref ?? 'light';
 }
 
 /** Returns true when the choice changed. */
@@ -46,9 +46,9 @@ export function setThemePref(p: ThemePref): boolean {
   return true;
 }
 
-/** --bg / --panel / --text of the resolved theme (styles.css) */
+/** --bg / --panel / --text of the theme (styles.css) */
 export function windowColors(): { bg: string; panel: string; text: string } {
-  const p = themePref();
-  const dark = p === 'dark' || (p === 'system' && nativeTheme.shouldUseDarkColors);
-  return dark ? { bg: '#21252b', panel: '#282c34', text: '#abb2bf' } : { bg: '#f6f7f9', panel: '#ffffff', text: '#1f2328' };
+  return themePref() === 'dark'
+    ? { bg: '#21252b', panel: '#282c34', text: '#abb2bf' }
+    : { bg: '#f6f7f9', panel: '#ffffff', text: '#1f2328' };
 }

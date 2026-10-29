@@ -456,7 +456,7 @@ function registerIpc(): void {
     e.returnValue = storedThemePref();
   });
   ipcMain.on('theme.set', (e, pref: ThemePref) => {
-    if (pref !== 'light' && pref !== 'dark' && pref !== 'system') return;
+    if (pref !== 'light' && pref !== 'dark') return;
     if (!setThemePref(pref)) return;
     const item = appMenu?.getMenuItemById(`view.theme.${pref}`);
     if (item) item.checked = true;

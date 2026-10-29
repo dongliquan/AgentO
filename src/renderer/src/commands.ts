@@ -323,7 +323,6 @@ export const COMMANDS: CommandDef[] = [
   { id: 'agents.login-status', label: 'Check Agent Sign-in', run: () => useStore.getState().openAgents() },
   { id: 'view.theme.light', label: 'Theme: Light', run: () => setThemePref('light') },
   { id: 'view.theme.dark', label: 'Theme: Dark', run: () => setThemePref('dark') },
-  { id: 'view.theme.system', label: 'Theme: System', run: () => setThemePref('system') },
   { id: 'help.docs', label: 'Documentation', run: () => window.alert('Documentation is not available yet.') },
   { id: 'help.check-update', label: 'Check for Updates', run: () => window.alert('Update checking is not available yet.') },
   { id: 'help.about', label: 'About', run: () => {

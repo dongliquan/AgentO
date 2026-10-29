@@ -111,7 +111,7 @@ export function buildMenu(actions: MenuActions): Menu {
       sep,
       {
         label: 'Theme',
-        submenu: (['light', 'dark', 'system'] as const).map((p) =>
+        submenu: (['light', 'dark'] as const).map((p) =>
           item(p[0].toUpperCase() + p.slice(1), `view.theme.${p}`, undefined, {
             id: `view.theme.${p}`,
             type: 'radio',

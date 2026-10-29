@@ -467,10 +467,10 @@ export interface DesktopApi {
   /** recolor the native window-control overlay (Windows/Linux) */
   setTitleBarColors(color: string, symbolColor: string): void;
   /** tell the main process the theme choice (it keeps it on disk, paints new windows, checks View › Theme) */
-  setTheme(pref: 'light' | 'dark' | 'system'): void;
+  setTheme(pref: 'light' | 'dark'): void;
   /** the choice the main process keeps; null before any window has set it */
-  getTheme(): 'light' | 'dark' | 'system' | null;
+  getTheme(): 'light' | 'dark' | null;
   /** another window changed the theme */
-  onThemeChanged(cb: (pref: 'light' | 'dark' | 'system') => void): () => void;
+  onThemeChanged(cb: (pref: 'light' | 'dark') => void): () => void;
   platform: NodeJS.Platform;
 }

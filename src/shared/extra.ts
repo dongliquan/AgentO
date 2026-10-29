@@ -80,7 +80,6 @@ export const MENU_COMMANDS = [
   'view.fullscreen',
   'view.theme.light',
   'view.theme.dark',
-  'view.theme.system',
   // Session
   'session.new.claude',
   'session.new.codex',

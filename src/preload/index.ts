@@ -32,9 +32,9 @@ const desktop: DesktopApi = {
   menuClick: (path: number[]) => ipcRenderer.send('menu.click', path),
   setTitleBarColors: (color: string, symbolColor: string) => ipcRenderer.send('titlebar.colors', color, symbolColor),
   setTheme: (pref) => ipcRenderer.send('theme.set', pref),
-  getTheme: () => ipcRenderer.sendSync('theme.get') as 'light' | 'dark' | 'system' | null,
+  getTheme: () => ipcRenderer.sendSync('theme.get') as 'light' | 'dark' | null,
   onThemeChanged: (cb) => {
-    const listener = (_e: IpcRendererEvent, pref: 'light' | 'dark' | 'system') => cb(pref);
+    const listener = (_e: IpcRendererEvent, pref: 'light' | 'dark') => cb(pref);
     ipcRenderer.on('theme.changed', listener);
     return () => {
       ipcRenderer.removeListener('theme.changed', listener);

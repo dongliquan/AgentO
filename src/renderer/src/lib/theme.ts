@@ -1,20 +1,19 @@
 import type { ITheme } from '@xterm/xterm';
 
 /**
- * Theme as in the shared theme spec (docs/xo-common-spec.md ch. 3, 2026-10-29): light · dark · system,
- * default system. Applied as `<html data-theme>` plus ReadO's `body.theme-light|theme-dark`.
- * The main process keeps the choice on disk (src/main/theme.ts) and tells the other windows; localStorage
- * xo.theme is a copy (and where the choice came from before). public/theme-init.js applies the same before
- * the first paint — keep the two in step.
+ * Theme as in the shared theme spec (docs/xo-common-spec.md ch. 3, manager's correction #T48 on 2026-10-29):
+ * light or dark, default light, no OS following. Applied as `<html data-theme>` plus ReadO's
+ * `body.theme-light|theme-dark`. The main process keeps the choice on disk (src/main/theme.ts) and tells the
+ * other windows; localStorage xo.theme is a copy (and where the choice came from before).
+ * public/theme-init.js applies the same before the first paint — keep the two in step.
  */
-export type ThemePref = 'light' | 'dark' | 'system';
-export type ResolvedTheme = 'light' | 'dark';
+export type ThemePref = 'light' | 'dark';
+export type ResolvedTheme = ThemePref;
 
 const KEY = 'xo.theme';
 /** before 2026-10-29; read once when xo.theme is missing, left in place */
 const OLD_KEY = 'asm.theme';
 const listeners = new Set<(t: ResolvedTheme) => void>();
-const media = window.matchMedia('(prefers-color-scheme: dark)');
 
 /**
  * CLI TUIs (Claude Code etc.) are designed for dark terminals, so terminals stay dark in every app theme.
@@ -44,20 +43,23 @@ export const TERMINAL_THEME: ITheme = {
   brightWhite: '#ffffff'
 };
 
-function isPref(v: unknown): v is ThemePref {
-  return v === 'light' || v === 'dark' || v === 'system';
+/** A saved "system" (the old third choice) becomes what the OS shows now, so nothing changes on screen. */
+function fromSaved(v: unknown): ThemePref | null {
+  if (v === 'light' || v === 'dark') return v;
+  if (v === 'system') return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  return null;
 }
 
 function initialPref(): ThemePref {
-  const kept = window.desktop?.getTheme?.();
-  if (isPref(kept)) return kept;
+  const kept = fromSaved(window.desktop?.getTheme?.());
+  if (kept) return kept;
   try {
-    const v = localStorage.getItem(KEY) ?? localStorage.getItem(OLD_KEY);
-    if (isPref(v)) return v;
+    const v = fromSaved(localStorage.getItem(KEY) ?? localStorage.getItem(OLD_KEY));
+    if (v) return v;
   } catch {
     /* storage unavailable */
   }
-  return 'system';
+  return 'light';
 }
 
 let pref: ThemePref = initialPref();
@@ -67,13 +69,11 @@ export function getThemePref(): ThemePref {
 }
 
 export function resolvedTheme(): ResolvedTheme {
-  const pref = getThemePref();
-  if (pref === 'system') return media.matches ? 'dark' : 'light';
   return pref;
 }
 
 function apply(): void {
-  const t = resolvedTheme();
+  const t = pref;
   document.documentElement.dataset.theme = t;
   document.body?.classList.remove(t === 'dark' ? 'theme-light' : 'theme-dark');
   document.body?.classList.add(`theme-${t}`);
@@ -101,9 +101,6 @@ window.desktop?.onThemeChanged?.((p) => {
   pref = p;
   apply();
 });
-media.addEventListener('change', () => {
-  if (pref === 'system') apply();
-});
-// first start after the update: hand the localStorage choice to the main process
-if (window.desktop?.getTheme && window.desktop.getTheme() === null) window.desktop.setTheme(pref);
+// first start after an update (nothing kept yet, or an old "system"): hand the choice to the main process
+if (window.desktop?.getTheme && window.desktop.getTheme() !== pref) window.desktop.setTheme(pref);
 apply();
