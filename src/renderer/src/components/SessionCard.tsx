@@ -170,7 +170,7 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
         }
       }}
     >
-      <div className="card-header" onPointerDown={onHeaderDown} onDoubleClick={() => { setDraft(s.title); setEditing(true); }}>
+      <div className="card-header" onPointerDown={onHeaderDown} onDoubleClick={() => { select(s.id); setFocusMode(true); }} title="Double-click for Focus view (rename: F2 or the ⋯ menu)">
         <AgentIcon kind={s.agent} color={s.color} size={16} />
         <RoleTag s={s} />
         {s.role !== 'player' && <DelegationChip id={s.id} />}

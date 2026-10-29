@@ -488,13 +488,13 @@ function InOut({ input, output, error }: { input?: string; output?: string; erro
       {input !== undefined && (
         <div className="row">
           <span className="lbl">IN</span>
-          <Collapsible className="val" text={input} lines={6} />
+          <Collapsible className="val" text={input} lines={2} />
         </div>
       )}
       {output !== undefined && output.trim() !== '' && (
         <div className={`row ${error ? 'err' : ''}`}>
           <span className="lbl">{error ? 'ERR' : 'OUT'}</span>
-          <Collapsible className="val out" text={output} lines={4} />
+          <Collapsible className="val out" text={output} lines={2} />
         </div>
       )}
     </div>
