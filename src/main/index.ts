@@ -4,6 +4,7 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, shell, type Tray } from 'electron';
 import { buildMenu } from './menu';
+import { setThemePref, storedThemePref, windowColors, type ThemePref } from './theme';
 import { setupWebviews } from './webviews';
 import { createTray } from './tray';
 import {
@@ -168,13 +169,13 @@ function createWindow(): BrowserWindow {
     height: 900,
     minWidth: 1024,
     minHeight: 640,
-    backgroundColor: '#ffffff',
+    backgroundColor: windowColors().bg,
     icon: windowIcon(),
     // One-row custom title bar (icon · menu · search) drawn by the renderer; native window controls overlay it.
     titleBarStyle: 'hidden',
     ...(process.platform === 'darwin'
       ? { trafficLightPosition: { x: 12, y: 11 } }
-      : { titleBarOverlay: { color: '#ffffff', symbolColor: '#1f2328', height: TITLEBAR_H - 1 } }),
+      : { titleBarOverlay: { color: windowColors().panel, symbolColor: windowColors().text, height: TITLEBAR_H - 1 } }),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
@@ -250,12 +251,12 @@ function togglePanelsWindow(): void {
     minWidth: 520,
     minHeight: 420,
     title: 'AgentO Panels',
-    backgroundColor: '#ffffff',
+    backgroundColor: windowColors().bg,
     icon: windowIcon(),
     titleBarStyle: 'hidden',
     ...(process.platform === 'darwin'
       ? { trafficLightPosition: { x: 12, y: 11 } }
-      : { titleBarOverlay: { color: '#ffffff', symbolColor: '#1f2328', height: TITLEBAR_H - 1 } }),
+      : { titleBarOverlay: { color: windowColors().panel, symbolColor: windowColors().text, height: TITLEBAR_H - 1 } }),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
@@ -353,7 +354,7 @@ function openFileWindow(file: string): void {
     minWidth: 420,
     minHeight: 300,
     title: path.basename(file),
-    backgroundColor: '#ffffff',
+    backgroundColor: windowColors().bg,
     icon: windowIcon(),
     show: false,
     webPreferences: {
@@ -451,6 +452,18 @@ function registerIpc(): void {
     if (win && !win.isDestroyed() && process.platform !== 'darwin') win.setTitleBarOverlay({ color, symbolColor, height: TITLEBAR_H - 1 });
   });
 
+  ipcMain.on('theme.get', (e) => {
+    e.returnValue = storedThemePref();
+  });
+  ipcMain.on('theme.set', (e, pref: ThemePref) => {
+    if (pref !== 'light' && pref !== 'dark' && pref !== 'system') return;
+    if (!setThemePref(pref)) return;
+    const item = appMenu?.getMenuItemById(`view.theme.${pref}`);
+    if (item) item.checked = true;
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.isDestroyed() && w.webContents !== e.sender) w.webContents.send('theme.changed', pref);
+    }
+  });
   ipcMain.on('panels.toggle', () => togglePanelsWindow());
   ipcMain.on('file.openWindow', (_e, file: string) => openFileWindow(file));
   ipcMain.handle('file.openInReadO', (_e, file: string) => (typeof file === 'string' && path.isAbsolute(file) ? openInReadO(file) : 'Not a file path'));

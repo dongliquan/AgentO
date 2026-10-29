@@ -3,6 +3,7 @@
  */
 import { app, Menu, type BrowserWindow, type MenuItemConstructorOptions } from 'electron';
 import type { MenuCommand } from '@shared/extra';
+import { themePref } from './theme';
 
 export interface MenuActions {
   getWindow: () => BrowserWindow | null;
@@ -110,11 +111,13 @@ export function buildMenu(actions: MenuActions): Menu {
       sep,
       {
         label: 'Theme',
-        submenu: [
-          item('Light', 'view.theme.light'),
-          item('Dark', 'view.theme.dark'),
-          item('System', 'view.theme.system')
-        ]
+        submenu: (['light', 'dark', 'system'] as const).map((p) =>
+          item(p[0].toUpperCase() + p.slice(1), `view.theme.${p}`, undefined, {
+            id: `view.theme.${p}`,
+            type: 'radio',
+            checked: themePref() === p
+          })
+        )
       }
     ]
   };

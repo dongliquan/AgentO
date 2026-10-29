@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useStore, type ViewMode } from '@/store';
 import { autoArrange, fitAll, newSessionFor, newProject, runCommand } from '@/commands';
 import { kbd } from '@/lib/keys';
-import { onThemeChange, resolvedTheme, setThemePref } from '@/lib/theme';
+import { getThemePref, onThemeChange, setThemePref, type ThemePref } from '@/lib/theme';
 
 /** the three ways to lay out the live sessions; Timeline (a record of finished work) stands apart from them */
 const MODES: { id: ViewMode; label: string }[] = [
@@ -136,23 +136,36 @@ export function Toolbar(): JSX.Element {
   );
 }
 
-/** Light ⇄ dark (the choice is kept; "system" in View › Theme follows the OS). */
+const THEME_CYCLE: ThemePref[] = ['light', 'dark', 'system'];
+const THEME_LABEL: Record<ThemePref, string> = { light: 'Light', dark: 'Dark', system: 'System' };
+
+/**
+ * Light → Dark → System, as in the shared theme spec; also View › Theme.
+ * Icon only (the label is in the tooltip): the toolbar has no room for text at its right end.
+ */
 function ThemeToggle(): JSX.Element {
-  const [theme, setTheme] = useState(resolvedTheme());
-  useEffect(() => onThemeChange(setTheme), []);
-  const dark = theme === 'dark';
+  const [pref, setPref] = useState(getThemePref());
+  useEffect(() => onThemeChange(() => setPref(getThemePref())), []);
+  const next = THEME_CYCLE[(THEME_CYCLE.indexOf(pref) + 1) % THEME_CYCLE.length];
+  const title = `Theme: ${THEME_LABEL[pref]} — click for ${THEME_LABEL[next]}`;
   return (
-    <button className="icon-btn layout-toggle" title={dark ? 'Light mode' : 'Dark mode'} aria-label={dark ? 'Light mode' : 'Dark mode'} onClick={() => setThemePref(dark ? 'light' : 'dark')}>
-      {dark ? (
+    <button className="icon-btn layout-toggle theme-toggle" title={title} aria-label={title} onClick={() => setThemePref(next)}>
+      {pref === 'light' ? (
         // sun
         <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
           <circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" />
           <path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1" stroke="currentColor" strokeLinecap="round" />
         </svg>
-      ) : (
+      ) : pref === 'dark' ? (
         // moon
         <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
           <path d="M13.2 10.2A5.6 5.6 0 0 1 5.8 2.8a5.6 5.6 0 1 0 7.4 7.4z" fill="none" stroke="currentColor" strokeLinejoin="round" />
+        </svg>
+      ) : (
+        // monitor
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+          <rect x="1.5" y="2.5" width="13" height="8.5" rx="1.2" fill="none" stroke="currentColor" />
+          <path d="M5.5 14h5M8 11v3" stroke="currentColor" strokeLinecap="round" />
         </svg>
       )}
     </button>

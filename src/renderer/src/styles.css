@@ -1,5 +1,14 @@
+/* Pretendard 1.3.9 (SIL OFL 1.1, assets/fonts/Pretendard-OFL.txt) — bundled, the app runs offline */
+@font-face {
+  font-family: "Pretendard Variable";
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: swap;
+  src: url("./assets/fonts/PretendardVariable.woff2") format("woff2-variations");
+}
+
 :root {
-  /* light (default) */
+  /* light */
   --bg: #f6f7f9;
   --panel: #ffffff;
   --panel2: #eef0f3;
@@ -13,6 +22,12 @@
   --role-manager: #0969da;
   --role-coach: #bf3989;
   --err: #cf222e;
+  /* xO common tokens (docs/xo-common-spec.md 3.4): the shared names, as aliases of ours or new */
+  --panel-2: var(--panel2);
+  --text-dim: var(--muted);
+  --text-mute: #8b9098;
+  --border-strong: #c4cad2;
+  --info: #1a4d8f;
   --term-bg: #21252b;
   --preview-text: #b0b0b6;
   --grid-dot: #d0d4da;
@@ -46,7 +61,7 @@
   --agent-ollama: #6e7781;
   --agent-shell: #57606a;
   --agent-custom: #8250df;
-  --font: "Segoe UI", system-ui, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --font: "Pretendard Variable", Pretendard, "Segoe UI", system-ui, "Apple SD Gothic Neo", "Malgun Gothic", "Microsoft YaHei", sans-serif;
   --mono: "D2Coding", "Microsoft YaHei", Consolas, Menlo, monospace;
   --topbar-h: 36px;
   --toolbar-h: 40px;
@@ -70,6 +85,9 @@
   --role-manager: #61afef;
   --role-coach: #d982b5;
   --err: #e06c75;
+  --text-mute: #5c6370;
+  --border-strong: #4b5263;
+  --info: #56b6c2;
   --term-bg: #21252b;
   --preview-text: #9aa0a8;
   --grid-dot: #363b45;

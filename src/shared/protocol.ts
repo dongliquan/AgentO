@@ -466,5 +466,11 @@ export interface DesktopApi {
   menuClick(path: number[]): void;
   /** recolor the native window-control overlay (Windows/Linux) */
   setTitleBarColors(color: string, symbolColor: string): void;
+  /** tell the main process the theme choice (it keeps it on disk, paints new windows, checks View › Theme) */
+  setTheme(pref: 'light' | 'dark' | 'system'): void;
+  /** the choice the main process keeps; null before any window has set it */
+  getTheme(): 'light' | 'dark' | 'system' | null;
+  /** another window changed the theme */
+  onThemeChanged(cb: (pref: 'light' | 'dark' | 'system') => void): () => void;
   platform: NodeJS.Platform;
 }

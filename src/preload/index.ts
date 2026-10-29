@@ -31,6 +31,15 @@ const desktop: DesktopApi = {
   menuTree: () => ipcRenderer.invoke('menu.tree') as Promise<MenuNode[]>,
   menuClick: (path: number[]) => ipcRenderer.send('menu.click', path),
   setTitleBarColors: (color: string, symbolColor: string) => ipcRenderer.send('titlebar.colors', color, symbolColor),
+  setTheme: (pref) => ipcRenderer.send('theme.set', pref),
+  getTheme: () => ipcRenderer.sendSync('theme.get') as 'light' | 'dark' | 'system' | null,
+  onThemeChanged: (cb) => {
+    const listener = (_e: IpcRendererEvent, pref: 'light' | 'dark' | 'system') => cb(pref);
+    ipcRenderer.on('theme.changed', listener);
+    return () => {
+      ipcRenderer.removeListener('theme.changed', listener);
+    };
+  },
   platform: process.platform
 };
 
