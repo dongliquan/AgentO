@@ -352,7 +352,7 @@ function Markdown({ text, className, dot, copy }: { text: string; className: str
 }
 
 function Thinking({ text }: { text: string }): JSX.Element {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   return (
     <div className="chat-item">
       <span className="chat-dot text" />

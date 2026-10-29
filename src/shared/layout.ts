@@ -70,7 +70,7 @@ export function arrangeTeam(sessions: Session[], projects: Project[]): Map<strin
   const teamHead = all.find((s) => s.role === 'head' && !s.projectId);
   const roots = [...projects.filter((p) => !p.parentId).map((p) => p.id), ...new Set(all.filter((s) => s.projectId && !known.has(s.projectId)).map((s) => s.projectId))];
   // each project laid out from (0, 0) first, then placed: around the Head Coach, or in rows of PROJECTS_PER_ROW
-  const laid: { local: [Session, number, number][]; width: number; height: number }[] = [];
+  const laid: { local: [Session, number, number][]; width: number; height: number; hasHead: boolean }[] = [];
   for (const root of roots) {
     const head = all.find((s) => s.role === 'head' && s.projectId === root);
     const blocks = [root, ...projects.filter((p) => p.parentId === root).map((p) => p.id)]
@@ -105,8 +105,14 @@ export function arrangeTeam(sessions: Session[], projects: Project[]): Map<strin
     const height = Math.max(head ? H.h : 0, partsH);
     // the head coach faces the middle of its parts, so its links fan out evenly
     if (head) local.push([head, 0, Math.max(0, (height - H.h) / 2)]);
-    laid.push({ local, width, height });
+    laid.push({ local, width, height, hasHead: !!head });
   }
+  // a project left of the Head Coach: its Coach column goes to the right edge (the side facing the Head Coach), the
+  // parts keep their left-to-right order
+  const facing = (b: (typeof laid)[number], toTheLeft: boolean): [Session, number, number][] =>
+    toTheLeft && b.hasHead
+      ? b.local.map(([s2, lx, ly]): [Session, number, number] => (s2.role === 'head' ? [s2, b.width - H.w, ly] : [s2, lx - H.w - CORRIDOR, ly]))
+      : b.local;
   if (teamHead) {
     // a k×k grid (k odd) with the Head Coach in the centre cell; projects fill the cells nearest to it first
     // (left, right, above, below, then the corners, then the next ring); each column/row as wide/tall as its largest
@@ -184,7 +190,7 @@ export function arrangeTeam(sessions: Session[], projects: Project[]): Map<strin
       const dy = -Math.min(...all2.map((p) => p.y));
       laid.forEach((b, i) => {
         const p = pos[i]!;
-        for (const [s2, lx, ly] of b.local) place(s2, dx + p.x + lx, dy + p.y + ly);
+        for (const [s2, lx, ly] of facing(b, cells[i]![1] < 1)) place(s2, dx + p.x + lx, dy + p.y + ly);
       });
       place(teamHead, dx, dy);
       return out;
@@ -215,7 +221,7 @@ export function arrangeTeam(sessions: Session[], projects: Project[]): Map<strin
       const [r, q] = at[i]!;
       const ox = q < c ? colX[q]! + colW[q]! - b.width : q > c ? colX[q]! : colX[q]! + (colW[q]! - b.width) / 2;
       const oy = r < c ? rowY[r]! + rowH[r]! - b.height : r > c ? rowY[r]! : rowY[r]! + (rowH[r]! - b.height) / 2;
-      for (const [s2, lx, ly] of b.local) place(s2, ox + lx, oy + ly);
+      for (const [s2, lx, ly] of facing(b, q < c)) place(s2, ox + lx, oy + ly);
     });
     place(teamHead, colX[c]! + (colW[c]! - T.w) / 2, rowY[c]! + (rowH[c]! - T.h) / 2);
     return out;
