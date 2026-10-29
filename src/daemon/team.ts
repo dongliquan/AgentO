@@ -236,7 +236,9 @@ gives without picking a project come to you:
   coaches if needed) and \`send_to_session\` it to that project's head coach — or to several, each with its own part.
 - If it fits no existing project, \`create_project\` (name, optional folders, brief): the new project gets its own
   head coach, which receives your brief as its first order.
-- A project without a head coach: send to its coach or first player (\`list_sessions\` shows roles).
+- A project that has a head coach ("Coach"): send only to that Coach, never to its players or part coaches — it hands the
+  work on (AgentO refuses the direct send). Only a project without a head coach is reached through its coach or first
+  player (\`list_sessions\` shows roles).
 - You coordinate; you do not implement. When the projects report back, \`report_up\` the joined result to the manager.`;
   return `${GENERATED_MARK}
 # Role: Head Coach${project ? ` — ${project.name}` : ''}
@@ -1076,6 +1078,17 @@ export class Team {
     return caller.role === 'coach' && target.role === 'coach' && root !== '' && this.rootOf(target.projectId) === root;
   }
 
+  /**
+   * The team-wide Head Coach sends to a project's Coach, not past it to the project's players or part coaches (it may
+   * still read them). A project without a Coach is reached directly.
+   */
+  private viaProjectCoach(caller: StoredSession, t: StoredSession): void {
+    if (caller.role !== 'head' || caller.projectId || t.role === 'head' || !t.projectId) return;
+    const coach = this.headOf(this.rootOf(t.projectId));
+    if (!coach) return;
+    throw new ToolError(`"${t.title}" belongs to a project that has its own Coach. Send this to "${coach.title}" (id ${coach.id}) — it hands the work to its players.`);
+  }
+
   private target(caller: StoredSession, args: Json): StoredSession {
     const id = str(args['session_id']).trim();
     // a full id, or a unique prefix (messages print the first 8 characters)
@@ -1720,7 +1733,11 @@ export class Team {
         required: ['session_id', 'message']
       },
       roles: ['head', 'coach', 'player'],
-      run: (caller, args) => this.send(caller, this.target(caller, args), str(args['message']), args['directive'] !== false)
+      run: (caller, args) => {
+        const t = this.target(caller, args);
+        this.viaProjectCoach(caller, t);
+        return this.send(caller, t, str(args['message']), args['directive'] !== false);
+      }
     },
     {
       name: 'report_up',
