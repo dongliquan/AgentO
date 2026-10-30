@@ -487,9 +487,9 @@ function Tool({ tool: t, cwd, sid, ts }: { tool: ChatTool; cwd: string; sid?: st
   const scope = sc ? toolScope(t, sc) : null;
   const targetRef = useStore((st) => {
     const to = targetSession(t, st.sessions);
-    return to ? `${to.id}${to.title}` : null;
+    return to ? `${to.id}\u0001${to.title}\u0001${projectColor(to.projectId, st.projects)}` : null;
   });
-  const [targetId, target] = targetRef ? targetRef.split('') : [];
+  const [targetId, target, targetColor] = targetRef ? targetRef.split('\u0001') : [];
   // the number AgentO gave this send: the inbox record of a directive from this session to that one, nearest in time
   const taskId = useStore((st) => {
     if (t.name !== 'mcp__agento__send_to_session' || !sid || ts === undefined || !targetId) return undefined;
@@ -547,7 +547,7 @@ function Tool({ tool: t, cwd, sid, ts }: { tool: ChatTool; cwd: string; sid?: st
         <div className="chat-tool-head">
           <b>{title}</b>
           {target && (
-            <button className="chat-target" onClick={() => targetId && selectAndReveal(targetId)} title={`Open ${target}`}>
+            <button className="chat-target" style={targetColor ? pcStyle(targetColor) : undefined} onClick={() => targetId && selectAndReveal(targetId)} title={`Open ${target}`}>
               <span className="seg">→ {scope ? `${scope.name} › ${target}` : target}</span>
             </button>
           )}
@@ -1166,7 +1166,7 @@ function TeamBubble({ msg, turn }: { msg: TeamMessage; turn: string }): JSX.Elem
       <div className="chat-team-head">
         {own && senderName ? (
           // one label for where it came from: project/part › session
-          <button className="chat-target" {...origin}>
+          <button className="chat-target" style={pcStyle(own.color)} {...origin}>
             <span className="seg">{own.name} › {from}</span>
           </button>
         ) : (
