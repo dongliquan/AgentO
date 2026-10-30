@@ -4,7 +4,6 @@ import { send } from '@/client';
 import { AgentPicker } from './AgentPicker';
 import { newProject } from '@/commands';
 import { ProjectTree, SessionRow } from './ProjectTree';
-import { SidebarOrders } from './SidebarOrders';
 import { useReport } from './DailyReport';
 
 /** Left sidebar: the project tree (Manager, projects ⊃ parts, sessions). Folders and files are in the right panel's Files tab. */
@@ -54,9 +53,7 @@ export function Sidebar(): JSX.Element {
           </svg>
         </button>
       </div>
-      {/* the manager's orders sit above the projects they go to */}
-      <SidebarOrders />
-      {/* the team-wide Head Coach: between the manager's orders and the projects it routes them to */}
+      {/* the team-wide Head Coach: above the projects it routes orders to */}
       {teamHead && (
         <div className="sidebar-head">
           <SessionRow session={teamHead} depth={10} />

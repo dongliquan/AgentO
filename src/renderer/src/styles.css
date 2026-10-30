@@ -500,6 +500,9 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .orders-form textarea { min-height: 60px; resize: vertical; }
 .orders-form textarea:focus { outline: none; border-color: var(--accent); }
 /* Orders' form sits in the Tasks-style card; the "＋ New project" chip is dashed */
+.orders-open { display: flex; align-items: baseline; gap: 8px; width: 100%; min-width: 0; margin-bottom: 10px; padding: 6px 10px; border: 1px dashed var(--border-strong); border-radius: 8px; background: none; color: var(--accent); font-size: 12px; font-weight: 600; text-align: left; cursor: pointer; }
+.orders-open:hover { background: var(--panel2); }
+.orders-open .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
 .orders-card { margin-bottom: 10px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border)); border-left: 3px solid var(--accent); background: color-mix(in srgb, var(--accent) 4%, var(--panel)); }
 /* the order box says what it is: the manager's orders go out from here */
 .orders-card-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 11px; }
@@ -1112,13 +1115,6 @@ button.tree-pc:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, t
 /* sidebar: Orders above the projects */
 .sidebar-head { flex: none; padding: 2px 0; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--role-manager) 7%, var(--panel)); }
 .sidebar-head .tree-row { font-weight: 600; }
-.sidebar-orders { flex: none; max-height: 34%; overflow-y: auto; padding: 4px 0; border-bottom: 1px solid var(--border); }
-.sidebar-orders-head .label { font-weight: 600; }
-.sidebar-orders-head .badge { margin-left: auto; margin-right: 8px; min-width: 16px; padding: 0 5px; border-radius: 8px; font-size: 10.5px; text-align: center; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
-.sidebar-order { gap: 6px; font-size: 12px; }
-.sidebar-order.done .label, .sidebar-order.reported .label { color: var(--muted); }
-.sidebar-order .project-tag { max-width: 80px; }
-.sidebar-order .order-pct { flex: none; margin-right: 8px; font-size: 10.5px; }
 .order-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
 .order-dot.working { background: var(--accent); animation: status-pulse 1.4s ease-in-out infinite; }
 .order-dot.waiting { background: var(--warn); }

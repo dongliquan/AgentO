@@ -467,6 +467,23 @@ function Orders(): JSX.Element {
   const [picked, setPicked] = useDraft<string[]>('orders.projects', tops[0] ? [tops[0].id] : []);
   // the order being written survives switching tabs (and restarts) until it is given
   const [text, setText] = useDraft('orders.text', '');
+  // Give an order is for the team-level jobs (several projects, the Head Coach, a schedule): folded to a line until wanted
+  const [cardOpen, setCardOpenState] = useState(() => {
+    try {
+      return localStorage.getItem('asm.orders.open') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const setCardOpen = (v: boolean): void => {
+    setCardOpenState(v);
+    try {
+      localStorage.setItem('asm.orders.open', v ? '1' : '0');
+    } catch {
+      /* not kept */
+    }
+  };
+  const showCard = cardOpen || text.trim() !== '';
   // repeat: off = one order now; every = every N minutes; daily = every day at HH:MM
   const [repeat, setRepeat] = useDraft<'off' | 'every' | 'daily'>('orders.repeat', 'off');
   const [every, setEvery] = useDraft('orders.every', 10);
@@ -596,10 +613,18 @@ function Orders(): JSX.Element {
   return (
     <div className="rp-body manager-compose">
       {/* the same card as Tasks › New task: project chips, the order, attachments and the send row */}
+      {!showCard ? (
+        <button className="orders-open" onClick={() => setCardOpen(true)} title="An order the team splits up and reports back on: to several projects, to the Head Coach, or on a schedule. To work with one session, type into it.">
+          <span>＋ Order</span>
+          <span className="muted">several projects · Head Coach · schedule</span>
+        </button>
+      ) : (
       <div className="new-task orders-card">
       <div className="orders-card-head">
         <span className="orders-card-title">Give an order</span>
         <span className="muted">to the team: it splits the work and reports back here</span>
+        <span className="grow" />
+        {text.trim() === '' && <button className="icon-btn" onClick={() => setCardOpen(false)} title="Fold" aria-label="Fold">×</button>}
       </div>
       <div className="new-task-to" role="tablist">
         <button role="tab" className={`project-tag all ${isTeam ? 'on' : ''}`} onClick={() => setTab('team')} title="Not tied to a project: the Head Coach decides which project it is for, or starts a new one">
@@ -735,6 +760,7 @@ function Orders(): JSX.Element {
         <AttachmentBar items={files.items} onRemove={files.remove} />
       </div>
       </div>
+      )}
       {!isNew && routines.length > 0 && (
         <details className="rp-section manager-routines">
           <summary>
