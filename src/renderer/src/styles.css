@@ -1662,6 +1662,7 @@ button.tl-all { color: var(--accent); border-color: var(--border); }
 .asked-head { display: flex; gap: 8px; align-items: baseline; font-size: 13px; }
 .asked-tag { flex: none; padding: 0 7px; border-radius: 9px; font-size: 10.5px; line-height: 16px; color: #fff; background: var(--warn); }
 .asked-opts { margin: 4px 0 0; padding-left: 20px; font-size: 12.5px; }
-/* Inbox / Logs: the filter + search row stays at the top while the list scrolls */
-.rp-body > .filter-bar { position: sticky; top: -10px; z-index: 2; margin: -10px -12px 0; padding: 10px 12px 8px; background: var(--panel); border-bottom: 1px solid var(--border); }
-.rp-body > .filter-bar + * { margin-top: 2px; }
+/* Inbox / Logs: the filter + search row is fixed; only the list below scrolls (like Manager) */
+.rp-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.rp-pane > .filter-bar { padding: 10px 12px 8px; border-bottom: 1px solid var(--border); background: var(--panel); }
+.rp-pane > .log-bar { margin-bottom: 0; }

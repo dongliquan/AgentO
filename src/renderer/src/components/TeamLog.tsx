@@ -102,12 +102,13 @@ export function TeamLog(): JSX.Element {
 
 
   return (
-    <div className="rp-body log-body" ref={body}>
+    <div className="rp-pane">
       <div className="log-bar filter-bar">
         <ProjectFilter value={pick} onChange={(id) => { setPick(id); setShown(15); }} />
         <RecentToggle value={recentOnly} onChange={setRecentOnly} hidden={older} />
         <SearchBox value={query} onChange={setQuery} count={hits} placeholder="Search the log" />
       </div>
+      <div className="rp-body log-body" ref={body}>
       {visible.length === 0 ? (
         <div className="muted" style={{ fontSize: 12 }}>{searching ? 'No matches.' : 'No team messages yet.'}</div>
       ) : (
@@ -126,6 +127,7 @@ export function TeamLog(): JSX.Element {
           )}
         </>
       )}
+      </div>
     </div>
   );
 }

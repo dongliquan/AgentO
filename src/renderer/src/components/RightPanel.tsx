@@ -340,12 +340,13 @@ function Inbox(): JSX.Element {
   };
 
   return (
-    <div className="rp-body" ref={body}>
+    <div className="rp-pane">
       <div className="filter-bar">
         <ProjectFilter value={pick} onChange={setPick} />
         <RecentToggle value={recentOnly} onChange={setRecentOnly} hidden={older} />
         <SearchBox value={query} onChange={setQuery} count={items.length} placeholder="Search the inbox" />
       </div>
+      <div className="rp-body" ref={body}>
       {items.length === 0 ? (
         <div className="muted" style={{ fontSize: 12 }}>{query ? 'No matches.' : only ? 'No notifications for this project.' : 'No notifications.'}</div>
       ) : (
@@ -396,6 +397,7 @@ function Inbox(): JSX.Element {
       {items.some((i) => !i.read) && (
         <button className="btn sm ghost" onClick={() => items.filter((i) => !i.read).forEach((i) => send({ type: 'inbox.read', id: i.id }))}>Mark All Read</button>
       )}
+      </div>
     </div>
   );
 }
