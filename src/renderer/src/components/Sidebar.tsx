@@ -5,10 +5,12 @@ import { AgentPicker } from './AgentPicker';
 import { newProject } from '@/commands';
 import { ProjectTree, SessionRow } from './ProjectTree';
 import { useReport } from './DailyReport';
+import { askNick, useNick } from '@/lib/nick';
 
 /** Left sidebar: the project tree (Manager, projects ⊃ parts, sessions). Folders and files are in the right panel's Files tab. */
 export function Sidebar(): JSX.Element {
   const setRightTab = useStore((s) => s.setRightTab);
+  const nick = useNick();
   const [chatAt, setChatAt] = useState<{ x: number; y: number } | null>(null);
   const teamHead = useStore((s) => {
     for (const x of s.sessions.values()) if (x.role === 'head' && !x.projectId) return x;
@@ -20,8 +22,9 @@ export function Sidebar(): JSX.Element {
       {/* the manager is the user, above every project: gives orders from the Manager tab */}
       <div className="sidebar-manager" title="You are the manager — your orders and the answers (Manager tab)" onClick={() => setRightTab('orders')}>
         <span className="manager-ico">♛</span>
-        <span className="label">Welcome</span>
-        <span className="role-tag manager">MANAGER</span>
+        <span className="label" title="Double-click to change what you are called" onDoubleClick={(e) => { e.stopPropagation(); void askNick(); }}>
+          {nick ? `${nick}님` : 'Welcome'}
+        </span>
         <button
           className="icon-btn manager-usage"
           title="Report — what was done each day, and the to-do list for the next"

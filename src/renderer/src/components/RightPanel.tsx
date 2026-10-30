@@ -657,10 +657,6 @@ function Orders(): JSX.Element {
             </button>
           );
         })}
-        {tops.length > 0 && <span className="chip-sep" aria-hidden="true" />}
-        <button className="project-tag new" onClick={() => useNewProject.getState().show()} title="New project: name, folders and a brief for its coach">
-          ＋ New Project
-        </button>
       </div>
       <div className="orders-form">
         {isNew ? (

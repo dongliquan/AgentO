@@ -1,4 +1,5 @@
 import { useRef, useEffect } from 'react';
+import { askNick, storedNick } from '@/lib/nick';
 import { useStore } from '@/store';
 import { runCommand, selectAndReveal, zoomBy } from '@/commands';
 import { activeHeadCoach } from '@/lib/activeProject';
@@ -26,6 +27,7 @@ import { Palette } from '@/components/Palette';
 import { NewSessionDialog } from '@/components/NewSessionDialog';
 import { ImportClaudeDialog } from '@/components/ImportClaudeDialog';
 import { AgentsDialog } from '@/components/AgentsDialog';
+import { SettingsDialog } from '@/components/SettingsDialog';
 import { UsageDialog } from '@/components/UsageDialog';
 import { DailyReport } from '@/components/DailyReport';
 import { FindBar } from '@/components/FindBar';
@@ -128,6 +130,10 @@ function handleKey(e: KeyboardEvent): void {
 
 export function App(): JSX.Element {
   useFollowSelection();
+  // the first time: what to call you (asked once; change it by double-clicking the name at the top of the sidebar)
+  useEffect(() => {
+    if (storedNick() === null) void askNick(true);
+  }, []);
   const sidebarOpen = useStore((s) => s.sidebarOpen);
   const rightOpen = useStore((s) => s.rightOpen);
   const detached = useStore((s) => s.panelsDetached);
@@ -204,6 +210,7 @@ export function App(): JSX.Element {
       {newSessionOpen && <NewSessionDialog />}
       {importOpen && <ImportClaudeDialog />}
       <AgentsDialog />
+      <SettingsDialog />
       <UsageDialog />
       <DailyReport />
       <FindBar />

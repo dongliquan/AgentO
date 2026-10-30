@@ -4,6 +4,7 @@ import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState }
 import type { ChatEntry, ChatTool, PermissionScope, Project, Session } from '@shared/protocol';
 import { useStore } from '@/store';
 import { selectAndReveal } from '@/commands';
+import { useCallName } from '@/lib/nick';
 import { send } from '@/client';
 import { useChats } from '@/lib/chat';
 import { renderMarkdown } from '@/lib/markdown';
@@ -1158,7 +1159,8 @@ function TeamBubble({ msg, turn }: { msg: TeamMessage; turn: string }): JSX.Elem
   const scopes = own ? [own] : msg.kind === 'session' ? [] : sc?.turns.get(turn) ?? [];
   const long = msg.body.length > 600;
   const roleClass = senderClass ?? (msg.kind === 'order' ? 'manager' : msg.kind === 'notice' ? 'notice' : msg.role?.includes('head') ? 'head' : msg.role?.includes('coach') ? 'coach' : 'player');
-  const from = senderName ?? msg.from;
+  const me = useCallName();
+  const from = senderName ?? (msg.from === 'Manager' ? me : msg.from);
   const role = msg.kind === 'notice' ? undefined : senderRole ?? msg.role;
   const origin = { ...(senderId ? { onClick: () => selectAndReveal(senderId), title: `Open ${from}` } : {}) };
   return (

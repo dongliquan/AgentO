@@ -6,6 +6,7 @@ import { send } from '@/client';
 import { selectAndReveal } from '@/commands';
 import { dayTime, formatDateTime, pcStyle, projectColor, roleLabel } from '@/lib/format';
 import { useStore } from '@/store';
+import { useCallName } from '@/lib/nick';
 import { matches, selecting } from '@/lib/search';
 import { CopyButton } from './SearchBox';
 import { renderMarkdown } from '@/lib/markdown';
@@ -13,7 +14,8 @@ import { renderMarkdown } from '@/lib/markdown';
 /** Chip for a sender/receiver: the manager (user), a session (role color), or a removed session. */
 function Chip({ session, user, label }: { session?: Session; user?: boolean; label?: string }): JSX.Element {
   const projects = useStore((st) => st.projects);
-  if (user) return <span className="team-chip manager">{label ?? 'Manager'}</span>;
+  const me = useCallName();
+  if (user) return <span className="team-chip manager">{label ?? me}</span>;
   if (!session) return <span className="team-chip">(removed)</span>;
   // the team-wide Head Coach in the manager's color, a project's Coach in its project's
   const cls = session.role === 'head' ? (session.projectId ? 'project' : 'manager') : session.role;

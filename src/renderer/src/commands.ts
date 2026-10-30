@@ -318,7 +318,7 @@ export const COMMANDS: CommandDef[] = [
   { id: 'go.next-waiting', label: 'Go to Waiting Session', shortcut: kbd('Ctrl+Shift+W'), run: gotoNextWaiting },
   { id: 'agents.detect', label: 'Re-detect Agents', run: () => useStore.getState().openAgents() },
   { id: 'usage.refresh', label: 'Refresh Usage', run: () => send({ type: 'usage.refresh' }) },
-  { id: 'app.settings', label: 'Settings', run: () => window.alert('Settings are not available yet.') },
+  { id: 'app.settings', label: 'Settings', run: () => useStore.getState().openSettings() },
   { id: 'agents.settings', label: 'Agent Connections (Claude, ChatGPT, Gemini)', run: () => useStore.getState().openAgents() },
   { id: 'agents.login-status', label: 'Check Agent Sign-in', run: () => useStore.getState().openAgents() },
   { id: 'view.theme.light', label: 'Theme: Light', run: () => setThemePref('light') },

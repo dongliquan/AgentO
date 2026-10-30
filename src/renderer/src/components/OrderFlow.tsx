@@ -8,6 +8,7 @@ import { descendants, type LogNode } from '@/lib/threads';
 import { kindSlug, msgKind, type MsgKind } from '@/lib/msgKind';
 import { MsgTag } from './MsgTag';
 import { formatDateTime, pcStyle, projectColor } from '@/lib/format';
+import { useCallName } from '@/lib/nick';
 import { CopyButton } from './SearchBox';
 import { renderMarkdown } from '@/lib/markdown';
 import { FlowStatus } from './FlowStatus';
@@ -77,6 +78,7 @@ export function OrderFlowDialog(): JSX.Element | null {
   const close = useFlow((s) => s.close);
   const inbox = useOpenInbox();
   const sessions = useStore((s) => s.sessions);
+  const me = useCallName();
   const [picked, setPicked] = useState<string | null>(null);
   useEffect(() => setPicked(null), [orderId]);
   useEffect(() => {
@@ -108,7 +110,7 @@ export function OrderFlowDialog(): JSX.Element | null {
   const x = (id: string): number => PAD_X + lanes.indexOf(id) * LANE_W + LANE_W / 2;
   const width = PAD_X * 2 + lanes.length * LANE_W;
   const height = HEAD_H + steps.length * ROW_H + 24;
-  const label = (id: string): string => (id === 'user' ? 'Manager' : sessions.get(id)?.title ?? '(removed session)');
+  const label = (id: string): string => (id === 'user' ? me : sessions.get(id)?.title ?? '(removed session)');
   // a project's Coach in its project's color (as everywhere), the manager as ever, every other session its own color
   const projects = useStore.getState().projects;
   const chipOf = (id: string): { cls: string; style?: Record<string, string> } => {

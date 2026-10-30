@@ -505,7 +505,8 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .orders-open .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
 .orders-card { margin-bottom: 10px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border)); border-left: 3px solid var(--accent); background: color-mix(in srgb, var(--accent) 4%, var(--panel)); }
 /* the order box says what it is: the manager's orders go out from here */
-.orders-card-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 11px; }
+.orders-card-head { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 11px; }
+.orders-card-head .grow { flex: 1; }
 .orders-card-head .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .orders-card-title { flex: none; font-size: 12px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.03em; }
 .new-task-to .project-tag.new { color: var(--accent); background: transparent; border: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent); }
@@ -1115,6 +1116,7 @@ button.tree-pc:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, t
 /* sidebar: Orders above the projects */
 .sidebar-head { flex: none; padding: 2px 0; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--role-manager) 7%, var(--panel)); }
 .sidebar-head .tree-row { font-weight: 600; }
+.sidebar-head .tree-row .caret { display: none; }
 .order-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
 .order-dot.working { background: var(--accent); animation: status-pulse 1.4s ease-in-out infinite; }
 .order-dot.waiting { background: var(--warn); }
@@ -1635,3 +1637,13 @@ button.tl-all { color: var(--accent); border-color: var(--border); }
 .tabstrip { box-shadow: inset 3px 0 0 var(--pc); }
 .tab-part { flex: none; font-size: 10px; font-weight: 700; color: var(--pc); background: color-mix(in srgb, var(--pc) 12%, transparent); border-radius: 3px; padding: 0 4px; line-height: 15px; }
 /* a pan to a picked session is a compositor flight along a straight path (Board.tsx flyTo); dragging and the wheel stay immediate */
+
+.dialog.settings-dialog { width: 480px; }
+.settings-row { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 12px; }
+.settings-label { flex: none; width: 74px; font-weight: 600; }
+.settings-input { flex: 1; min-width: 0; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+.settings-row .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seg-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.seg-toggle button { padding: 3px 12px; font-size: 12px; background: var(--panel); color: var(--text); border: 0; cursor: pointer; }
+.seg-toggle button + button { border-left: 1px solid var(--border); }
+.seg-toggle button.on { background: var(--accent); color: #fff; }

@@ -77,6 +77,7 @@ export interface AppState {
   importClaude: { projectId?: string; folderId?: string } | null;
   /** Agents › Connections dialog and the CLIs' install / sign-in state (null until the daemon answers) */
   agentsOpen: boolean;
+  settingsOpen: boolean;
   usageOpen: boolean;
   usageReport: UsageReport | null;
   agentConnections: AgentConnection[] | null;
@@ -114,6 +115,8 @@ export interface AppState {
   closeNewSession(): void;
   openImportClaude(at?: { projectId?: string; folderId?: string }): void;
   openAgents(): void;
+  openSettings(): void;
+  closeSettings(): void;
   openUsage(): void;
   closeUsage(): void;
   closeAgents(): void;
@@ -202,6 +205,7 @@ export const useStore = create<AppState>((set, get) => ({
   newSessionPreset: {},
   importClaude: null,
   agentsOpen: false,
+  settingsOpen: false,
   usageOpen: false,
   usageReport: null,
   agentConnections: null,
@@ -413,6 +417,8 @@ export const useStore = create<AppState>((set, get) => ({
   openImportClaude: (at) => set({ importClaude: at ?? {}, claudeSessions: null }),
   closeImportClaude: () => set({ importClaude: null }),
   openAgents: () => set({ agentsOpen: true }),
+  openSettings: () => set({ settingsOpen: true }),
+  closeSettings: () => set({ settingsOpen: false }),
   openUsage: () => set({ usageOpen: true }),
   closeUsage: () => set({ usageOpen: false }),
   closeAgents: () => set({ agentsOpen: false }),
