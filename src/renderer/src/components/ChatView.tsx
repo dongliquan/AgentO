@@ -252,7 +252,7 @@ function lastAnswerAt(entries: ChatEntry[]): number | undefined {
 const STALE_MS = 60 * 60_000;
 const STATUS_ASK = 'Status check: in 3–5 short lines — what is done, what is in progress, and what is waiting on me (if anything). Do not start new work.';
 
-/** A run of team turns: folded to "Team - N messages (senders)", or open with a header to fold it again. */
+/** A run of team turns: the messages fold to "Team - N messages (senders)" (or open with the bar to fold them again); the work on them is never hidden. */
 function TeamRun({ entries, cwd, open, onToggle }: { entries: ChatEntry[]; cwd: string; open: boolean; onToggle: () => void }): JSX.Element {
   const msgs = entries.flatMap((e) => (e.kind === 'user' && e.text ? (parseTeamMessages(e.text) ?? []) : []));
   const from = [...new Set(msgs.map((m) => m.from))];
@@ -260,12 +260,13 @@ function TeamRun({ entries, cwd, open, onToggle }: { entries: ChatEntry[]; cwd: 
   const who = from.slice(0, 3).join(', ') + (from.length > 3 ? ` +${from.length - 3}` : '');
   return (
     <>
-      <button className={`chat-teamrun ${open ? 'open' : ''}`} onClick={onToggle} aria-expanded={open} title={open ? 'Fold the team traffic' : 'Show the team traffic'}>
+      <button className={`chat-teamrun ${open ? 'open' : ''}`} onClick={onToggle} aria-expanded={open} title={open ? 'Fold the team messages' : 'Show the team messages'}>
         <span className="caret">{open ? '▾' : '▸'}</span>
         <span>⇄ {label}</span>
         {who && <span className="muted ellipsis">{who}</span>}
       </button>
-      {open && entries.map((e) => <Entry key={e.id} entry={e} cwd={cwd} />)}
+      {/* the bar folds the team messages only; the session's own work on them (answers, tools) stays in view */}
+      {entries.map((e) => (e.kind === 'user' && e.text && parseTeamMessages(e.text) ? open && <Entry key={e.id} entry={e} cwd={cwd} /> : <Entry key={e.id} entry={e} cwd={cwd} />))}
     </>
   );
 }
