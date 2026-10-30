@@ -176,7 +176,7 @@ export function ChatView({
     if (s.attention !== undefined) return s.attention;
     if (!tail) return false;
     const t = lastLines(tail, 14).join('\n');
-    return /❯\s*\d+\.|›\s*\d+\.|^\s*\d+\.\s+(Yes|No)\b|Enter to confirm|Press enter to confirm/m.test(t);
+    return /❯\s*\d+\.|›\s*\d+\.|^\s*\d+\.\s+(Yes|No)\b|Enter to confirm|Enter to select|Press enter to confirm/m.test(t);
   }, [tail, s.attention, s.limit]);
 
   return (
@@ -546,6 +546,8 @@ function Tool({ tool: t, cwd, sid, ts }: { tool: ChatTool; cwd: string; sid?: st
     );
   } else if (t.name === 'mcp__agento__send_to_session' && typeof t.input['message'] === 'string' && !t.isError) {
     body = <SentMessage text={t.input['message']} quiet={t.input['directive'] === false} result={t.result} to={target ?? ''} />;
+  } else if (t.name === 'AskUserQuestion' && Array.isArray(t.input['questions'])) {
+    body = <AskedQuestions questions={t.input['questions'] as AskedQuestion[]} answer={t.result} />;
   } else if (t.name === 'Bash' || t.name === 'PowerShell') {
     body = <InOut input={str(t.input['command'])} output={t.result} error={t.isError} />;
   } else if (t.name === 'Read' || t.name === 'Glob' || t.name === 'Grep') {
@@ -603,6 +605,37 @@ function Collapsible({ text, lines = 2, className }: { text: string; lines?: num
           {open ? 'Show less' : 'Show more'}
         </button>
       )}
+    </div>
+  );
+}
+
+interface AskedQuestion {
+  question?: string;
+  header?: string;
+  options?: { label?: string; description?: string }[];
+}
+
+/** A question Claude put to the user with choices (AskUserQuestion): the question and its options, not the raw JSON. */
+function AskedQuestions({ questions, answer }: { questions: AskedQuestion[]; answer?: string }): JSX.Element {
+  return (
+    <div className="chat-asked">
+      {questions.map((q, i) => (
+        <div key={i} className="asked-q">
+          <div className="asked-head">
+            {q.header && <span className="asked-tag">{q.header}</span>}
+            <span>{q.question}</span>
+          </div>
+          <ol className="asked-opts">
+            {(q.options ?? []).map((o, k) => (
+              <li key={k}>
+                <b>{o.label}</b>
+                {o.description && <span className="muted"> — {o.description}</span>}
+              </li>
+            ))}
+          </ol>
+        </div>
+      ))}
+      <div className="chat-sent-foot">{answer ? `Answer: ${answer.slice(0, 300)}` : 'Waiting for your answer…'}</div>
     </div>
   );
 }

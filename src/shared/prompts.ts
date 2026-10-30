@@ -4,7 +4,7 @@
  * after finishing its turn shows none of these.
  */
 export const PROMPT_RE =
-  /Do you trust the files|Yes, I trust this folder|Trust\s*this\s*folder\?|Trust\s*and\s*continue|Set\s*up\s*the\s*Codex\s*agent\s*sandbox|Would\s*you\s*like\s*to\s*run\s*the\s*following\s*command|Input\s*disabled\s*until\s*setup|Quick safety check|Do you want to (?:proceed|make this edit|create|run)|Allow (?:once|always|command)|Apply (?:this|these) changes\?|Enter to confirm|Enter to continue|Teach auto mode/i;
+  /Do you trust the files|Yes, I trust this folder|Trust\s*this\s*folder\?|Trust\s*and\s*continue|Set\s*up\s*the\s*Codex\s*agent\s*sandbox|Would\s*you\s*like\s*to\s*run\s*the\s*following\s*command|Input\s*disabled\s*until\s*setup|Quick safety check|Do you want to (?:proceed|make this edit|create|run)|Allow (?:once|always|command)|Apply (?:this|these) changes\?|Enter to confirm|Enter to select|Enter to continue|Teach auto mode/i;
 
 /**
  * Claude Code paused by the subscription's usage limit ("Usage limit reached · continuing automatically at 2pm",
