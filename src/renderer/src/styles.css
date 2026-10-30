@@ -378,7 +378,14 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .link-messages-head .grow { flex: 1; }
 .link-messages .feed-list { overflow: auto; padding: 8px; }
 /* Log tab: threads per order (TeamLog.tsx) */
-.log-body { gap: 10px; }
+.log-body { gap: 14px; background: var(--panel2); }
+/* each order a card of its own: raised off the grey list, a stripe in its status color, its head set apart */
+.log-body .order-thread { margin-bottom: 0; padding: 8px 10px 10px; background: var(--panel); border: 1px solid var(--border-strong); border-left: 4px solid var(--border-strong); border-radius: 8px; box-shadow: var(--shadow-sm); }
+.log-body .order-thread.st-reported { border-left-color: var(--ok); }
+.log-body .order-thread.st-working { border-left-color: var(--accent); }
+.log-body .order-thread.st-waiting { border-left-color: var(--warn); }
+.log-body .order-thread.st-error { border-left-color: var(--err); }
+.log-body .order-thread > .order-head { padding-bottom: 6px; margin-bottom: 2px; border-bottom: 1px solid var(--border); }
 .log-node { display: flex; flex-direction: column; gap: 4px; }
 .log-children { margin-left: 10px; padding-left: 10px; border-left: 2px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
 /* My Orders: reports sit under their order with a light ↳, no tree lines */

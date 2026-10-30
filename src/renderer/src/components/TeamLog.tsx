@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { InboxItem, Session } from '@shared/protocol';
 import { useStore } from '@/store';
 import { useNow } from '@/lib/hooks';
@@ -13,19 +13,10 @@ import { RECENT_MS, RecentToggle, useRecentOnly } from './RecentToggle';
 
 import { count, descendants, prune, withManager, type LogNode } from '@/lib/threads';
 
-/** Expand / collapse every thread at once: a new nonce re-applies `open` to each node. */
-interface Bulk {
-  open: boolean;
-  nonce: number;
-}
-
-function Thread({ node, depth, query, bulk, defaultOpen }: { node: LogNode; depth: number; query: string; bulk: Bulk; defaultOpen: boolean }): JSX.Element {
+function Thread({ node, depth, query, defaultOpen }: { node: LogNode; depth: number; query: string; defaultOpen: boolean }): JSX.Element {
   const sessions = useStore((s) => s.sessions);
   const now = useNow(15000);
   const [open, setOpen] = useState(defaultOpen);
-  useEffect(() => {
-    if (bulk.nonce) setOpen(bulk.open);
-  }, [bulk]);
   const searching = query.trim() !== '';
   const shown = open || searching; // search results always show the path to each match
   const n = count(node);
@@ -40,7 +31,7 @@ function Thread({ node, depth, query, bulk, defaultOpen }: { node: LogNode; dept
       {shown && node.children.length > 0 && (
         <div className="log-children">
           {node.children.map((c) => (
-            <Thread key={c.item.id} node={c} depth={depth + 1} query={query} bulk={bulk} defaultOpen={depth < 2} />
+            <Thread key={c.item.id} node={c} depth={depth + 1} query={query} defaultOpen={depth < 2} />
           ))}
         </div>
       )}
@@ -50,17 +41,14 @@ function Thread({ node, depth, query, bulk, defaultOpen }: { node: LogNode; dept
 
 /** Manager view of a thread: the order and the reports back to the user; the team traffic in between on demand. */
 /** latest: the newest order, shown in full */
-function ManagerThread({ node, query, bulk, latest = false }: { node: LogNode; query: string; bulk: Bulk; latest?: boolean }): JSX.Element {
+function ManagerThread({ node, query, latest = false, showProject }: { node: LogNode; query: string; latest?: boolean; showProject: boolean }): JSX.Element {
   const [open, setOpen] = useState(false);
-  useEffect(() => {
-    if (bulk.nonce) setOpen(bulk.open);
-  }, [bulk]);
   const all = descendants(node);
   const toUser = all.filter(withManager);
   const team = all.length - toUser.length;
   return (
     // the same card as Orders › My Orders; expanded, the whole thread (head coach → coaches → players) replaces the ↳ reports
-    <OrderCard node={node} query={query} latest={latest} showProject hideReports={open}>
+    <OrderCard node={node} query={query} latest={latest} showProject={showProject} hideReports={open}>
       {team > 0 && (
         <button className="log-toggle" onClick={() => setOpen(!open)}>
           {open ? '▾ Hide' : '▸ Show'} {team} team message{team > 1 ? 's' : ''} in between
@@ -69,7 +57,7 @@ function ManagerThread({ node, query, bulk, latest = false }: { node: LogNode; q
       {open && (
         <div className="log-children">
           {node.children.map((c) => (
-            <Thread key={c.item.id} node={c} depth={1} query={query} bulk={bulk} defaultOpen />
+            <Thread key={c.item.id} node={c} depth={1} query={query} defaultOpen />
           ))}
         </div>
       )}
@@ -77,20 +65,10 @@ function ManagerThread({ node, query, bulk, latest = false }: { node: LogNode; q
   );
 }
 
-/** Expand all: chevrons pointing apart · collapse all: chevrons pointing together. */
-function ExpandIcon({ open }: { open: boolean }): JSX.Element {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      {open ? <path d="M4.5 6 8 2.5 11.5 6M4.5 10 8 13.5 11.5 10" /> : <path d="M4.5 2.5 8 6 11.5 2.5M4.5 13.5 8 10 11.5 13.5" />}
-    </svg>
-  );
-}
-
 export function TeamLog(): JSX.Element {
   const inbox = useOpenInbox();
   const sessions = useStore((s) => s.sessions);
   const [query, setQuery] = useState('');
-  const [bulk, setBulk] = useState<Bulk>({ open: false, nonce: 0 });
   const [shown, setShown] = useState(15);
   // the project filter is shared with the Manager tab and the Inbox
   const pick = useTalkProject((s) => s.project);
@@ -120,7 +98,7 @@ export function TeamLog(): JSX.Element {
     return threads.map((t) => prune(t, hit)).filter((t): t is LogNode => t !== null);
   }, [threads, query, searching, sessions]);
   const hits = useMemo(() => (searching ? visible.reduce((sum, t) => sum + 1 + count(t), 0) : undefined), [visible, searching]);
-  useHighlight(body, query, [visible, bulk, shown]);
+  useHighlight(body, query, [visible, shown]);
 
 
   return (
@@ -129,12 +107,6 @@ export function TeamLog(): JSX.Element {
         <ProjectFilter value={pick} onChange={(id) => { setPick(id); setShown(15); }} />
         <RecentToggle value={recentOnly} onChange={setRecentOnly} hidden={older} />
         <SearchBox value={query} onChange={setQuery} count={hits} placeholder="Search the log" />
-        <button className="icon-btn" onClick={() => setBulk({ open: true, nonce: Date.now() })} title="Expand all — the team messages under every order" aria-label="Expand all">
-          <ExpandIcon open />
-        </button>
-        <button className="icon-btn" onClick={() => setBulk({ open: false, nonce: Date.now() })} title="Collapse all — your orders and the reports to you" aria-label="Collapse all">
-          <ExpandIcon open={false} />
-        </button>
       </div>
       {visible.length === 0 ? (
         <div className="muted" style={{ fontSize: 12 }}>{searching ? 'No matches.' : 'No team messages yet.'}</div>
@@ -142,9 +114,9 @@ export function TeamLog(): JSX.Element {
         <>
           {visible.slice(0, shown).map((t, i) =>
             !searching ? (
-              <ManagerThread key={t.item.id} node={t} query={query} bulk={bulk} latest={i === 0} />
+              <ManagerThread key={t.item.id} node={t} query={query} latest={i === 0} showProject={!only} />
             ) : (
-              <Thread key={t.item.id} node={t} depth={0} query={query} bulk={bulk} defaultOpen />
+              <Thread key={t.item.id} node={t} depth={0} query={query} defaultOpen />
             )
           )}
           {visible.length > shown && (

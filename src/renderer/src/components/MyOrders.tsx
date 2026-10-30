@@ -48,7 +48,7 @@ export function OrderCard({
   const own = to ? projects.find((p) => p.id === to.projectId) : undefined;
   const root = own?.parentId ? projects.find((p) => p.id === own.parentId) : own;
   return (
-    <div className="order-thread">
+    <div className={`order-thread ${mine ? `st-${st}` : ''}`}>
       {(mine || (showProject && root)) && (
         <div className="order-head">
           {mine && (
