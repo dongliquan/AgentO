@@ -949,7 +949,16 @@ button.tree-pc:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, t
 .chat-io .val { min-width: 0; flex: 1; }
 .chat-io pre { margin: 0; font-family: var(--mono); font-size: 11.5px; line-height: 1.45; white-space: pre-wrap; word-break: break-all; }
 .chat-undelivered { flex: none; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; line-height: 16px; color: var(--warn, #b45309); border: 1px solid currentColor; animation: dot-fade 2.4s ease-in-out infinite; }
-.chat-target { flex: none; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 700; line-height: 16px; color: #fff; background: var(--accent); }
+.chat-target { flex: none; display: inline-flex; align-items: stretch; max-width: 280px; padding: 0; border: 0; border-radius: 11px; overflow: hidden; font-size: 12px; font-weight: 700; line-height: 18px; color: #fff; background: var(--accent); cursor: pointer; }
+.chat-target .seg { padding: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-target .seg.scope { background: var(--pc); }
+.chat-target:hover { filter: brightness(1.1); }
+.team-chip.link { cursor: pointer; }
+.team-chip.link:hover { text-decoration: underline; }
+.chat-team.instruction { border-left-width: 4px; background: color-mix(in srgb, var(--accent) 7%, var(--bg)); }
+.chat-sent { margin-top: 6px; border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 6px; padding: 6px 10px; background: color-mix(in srgb, var(--accent) 7%, var(--bg)); }
+.chat-sent .chat-sent-text pre { margin: 0; font-family: inherit; font-size: 13px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+.chat-sent-foot { margin-top: 4px; font-size: 11px; color: var(--muted); }
 .chat-io .out pre { color: var(--muted); background: var(--panel2); margin: -2px -4px; padding: 2px 4px; border-radius: 3px; }
 .chat-diff { margin-top: 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); padding: 6px 0; font-family: var(--mono); font-size: 11.5px; overflow-x: auto; }
 .chat-diff > div { padding: 0 10px; white-space: pre; min-height: 17px; }

@@ -3,6 +3,7 @@ import { DelegationStrip } from './Delegations';
 import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ChatEntry, ChatTool, PermissionScope, Project, Session } from '@shared/protocol';
 import { useStore } from '@/store';
+import { selectAndReveal } from '@/commands';
 import { send } from '@/client';
 import { useChats } from '@/lib/chat';
 import { renderMarkdown } from '@/lib/markdown';
@@ -190,7 +191,7 @@ export function ChatView({
                   key={g.key}
                   entries={g.entries}
                   cwd={s.cwd}
-                  open={i === segs.length - 1 || opened.has(g.key)}
+                  open={opened.has(g.key)}
                   onToggle={() => {
                     stick.current = false;
                     const next = new Set(opened);
@@ -430,7 +431,11 @@ function Tool({ tool: t, cwd }: { tool: ChatTool; cwd: string }): JSX.Element {
   const { title, detail } = toolSummary(t, cwd);
   const sc = useScoper();
   const scope = sc ? toolScope(t, sc) : null;
-  const target = useStore((st) => targetSession(t, st.sessions)?.title ?? null);
+  const targetRef = useStore((st) => {
+    const to = targetSession(t, st.sessions);
+    return to ? `${to.id}${to.title}` : null;
+  });
+  const [targetId, target] = targetRef ? targetRef.split('') : [];
   const undelivered = useStore((st) => {
     if (t.name !== 'mcp__agento__send_to_session' || !WAITING_MSG.test(t.result ?? '')) return false;
     const to = targetSession(t, st.sessions);
@@ -456,6 +461,8 @@ function Tool({ tool: t, cwd }: { tool: ChatTool; cwd: string }): JSX.Element {
         ))}
       </ul>
     );
+  } else if (t.name === 'mcp__agento__send_to_session' && typeof t.input['message'] === 'string' && !t.isError) {
+    body = <SentMessage text={t.input['message']} quiet={t.input['directive'] === false} result={t.result} to={target ?? ''} />;
   } else if (t.name === 'Bash' || t.name === 'PowerShell') {
     body = <InOut input={str(t.input['command'])} output={t.result} error={t.isError} />;
   } else if (t.name === 'Read' || t.name === 'Glob' || t.name === 'Grep') {
@@ -474,9 +481,14 @@ function Tool({ tool: t, cwd }: { tool: ChatTool; cwd: string }): JSX.Element {
       <div className="chat-tool">
         <div className="chat-tool-head">
           <b>{title}</b>
-          {target && <span className="chat-target" title={`Session this goes to: ${target}`}>→ {target}</span>}
+          {target && (
+            <button className="chat-target" onClick={() => targetId && selectAndReveal(targetId)} title={`Open ${target}`}>
+              {scope && <span className="seg scope" style={pcStyle(scope.color)}>{scope.name}</span>}
+              <span className="seg">{scope ? '› ' : '→ '}{target}</span>
+            </button>
+          )}
           {undelivered && <span className="chat-undelivered" title="Queued: the session is busy or stopped, so it gets this when it is idle">⏳ waiting</span>}
-          {scope && <ScopeTag scope={scope} />}
+          {scope && !target && <ScopeTag scope={scope} />}
           {detail && <span className="chat-tool-detail" title={detail}>{detail}</span>}
         </div>
         {body}
@@ -508,6 +520,20 @@ function Collapsible({ text, lines = 2, className }: { text: string; lines?: num
           {open ? 'Show less' : 'Show more'}
         </button>
       )}
+    </div>
+  );
+}
+
+/** What one session told another: the message itself, in the foreground, with how it went below it. */
+function SentMessage({ text, quiet, result, to }: { text: string; quiet: boolean; result?: string; to: string }): JSX.Element {
+  const queued = WAITING_MSG.test(result ?? '');
+  return (
+    <div className="chat-sent">
+      <Collapsible className="chat-sent-text" text={text} lines={4} />
+      <div className="chat-sent-foot">
+        {result === undefined ? 'Sending…' : queued ? `Queued — ${to || 'it'} gets this when idle` : `Delivered${to ? ` to ${to}` : ''}`}
+        {quiet && ' · no completion report asked'}
+      </div>
     </div>
   );
 }
@@ -1056,6 +1082,10 @@ function TeamBubble({ msg, turn }: { msg: TeamMessage; turn: string }): JSX.Elem
     return senderView(sender, st.projects);
   });
   const [senderClass, senderName, senderRole, senderColor] = view ? view.split('\u0001') : [];
+  const senderId = useStore((st) => {
+    const id = msg.sessionId;
+    return id ? (st.sessions.get(id) ?? (id.length < 36 ? [...st.sessions.values()].find((x) => x.id.startsWith(id)) : undefined))?.id : undefined;
+  });
   // a session's message: its own project/part; a notice: the session it is about; an order: what the turn touched
   const ref = msg.sessionId ?? msg.aboutId;
   const own = ref && sc ? sc.ofSession(ref) : null;
@@ -1065,9 +1095,15 @@ function TeamBubble({ msg, turn }: { msg: TeamMessage; turn: string }): JSX.Elem
   const from = senderName ?? msg.from;
   const role = senderRole ?? msg.role;
   return (
-    <div className={`chat-team ${msg.kind}`}>
+    <div className={`chat-team ${msg.kind} ${['task', 'order'].includes(teamMessageKind(msg)) ? 'instruction' : ''}`}>
       <div className="chat-team-head">
-        <span className={`team-chip ${roleClass}`} style={senderColor ? pcStyle(senderColor) : undefined}>{from}</span>
+        <span
+          className={`team-chip ${roleClass} ${senderId ? 'link' : ''}`}
+          style={senderColor ? pcStyle(senderColor) : undefined}
+          {...(senderId ? { onClick: () => selectAndReveal(senderId), title: `Open ${from}` } : {})}
+        >
+          {from}
+        </span>
         <MsgTag kind={teamMessageKind(msg)} {...(msg.taskId ? { taskId: msg.taskId } : {})} />
         {role && role !== from && <span className="muted">{role}</span>}
         {msg.via && <span className="muted">{msg.via}</span>}
