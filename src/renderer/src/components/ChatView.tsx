@@ -125,6 +125,27 @@ export function ChatView({
   useHighlight(scroller, query, [entries]);
   // team runs fold to one row - except the last one (what the session is on now)
   const segs = useMemo(() => (!searching && hasTeam ? segments(entries, src) : null), [entries, src, searching, hasTeam]);
+  // each message's clock time (shown when its minute differs from the last shown) and the time of the entry before it
+  const marks = useMemo(() => {
+    const out = new Map<string, { time?: string; since?: number }>();
+    let last = '';
+    let prev: ChatEntry | undefined;
+    for (const e of entries) {
+      const m: { time?: string; since?: number } = {};
+      if (prev) m.since = prev.ts;
+      const mine = e.kind === 'user' && !(e.text && parseTeamMessages(e.text));
+      if (mine || (e.kind === 'assistant' && e.text?.trim())) {
+        const c = clockTime(e.ts);
+        if (c !== last) {
+          m.time = c;
+          last = c;
+        }
+      }
+      out.set(e.id, m);
+      prev = e;
+    }
+    return out;
+  }, [entries]);
   const working = s.status === 'working' || s.status === 'starting';
   // the answer ends with a question and options: quick-reply buttons instead of typing (not while it works or asks the TUI)
   const quick = useMemo(() => (working ? null : quickReplyOf(all)), [all, working]);
@@ -182,7 +203,7 @@ export function ChatView({
               g.kind === 'entry' ? (
                 <Fragment key={g.entry.id}>
                   {gapBefore(segs, i) && <TimeDivider ts={g.entry.ts} />}
-                  <Entry entry={g.entry} cwd={s.cwd} sid={s.id} />
+                  <Entry entry={g.entry} cwd={s.cwd} sid={s.id} {...marks.get(g.entry.id)} />
                 </Fragment>
               ) : (
                 <Fragment key={g.key}>
@@ -207,14 +228,10 @@ export function ChatView({
           : entries.map((e, i) => (
               <Fragment key={e.id}>
                 {(i === 0 || e.ts - entries[i - 1]!.ts > DIVIDER_GAP_MS) && <TimeDivider ts={e.ts} />}
-                <Entry entry={e} cwd={s.cwd} sid={s.id} />
+                <Entry entry={e} cwd={s.cwd} sid={s.id} {...marks.get(e.id)} />
               </Fragment>
             ))}
-        {working && (
-          <div className="chat-working">
-            <span className="spark">✱</span> Working…
-          </div>
-        )}
+        {working && <WorkingLine entries={all} cwd={s.cwd} />}
       </div>
       </ScopeCtx.Provider>
       {/* a small monitor at the top right: the work this coordinator handed out */}
@@ -272,9 +289,36 @@ function TeamRun({ entries, cwd, sid, open, onToggle }: { entries: ChatEntry[]; 
   );
 }
 
+const clockTime = (ms: number): string => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+/** 9s · 1m 12s */
+function duration(ms: number): string {
+  const sec = Math.max(0, Math.round(ms / 1000));
+  return sec < 60 ? `${sec}s` : `${Math.floor(sec / 60)}m ${sec % 60}s`;
+}
+
+/** "✱ Running Bash… · 1m 12s": what it is doing now (from the newest entry) and how long this turn has run. */
+function WorkingLine({ entries, cwd }: { entries: ChatEntry[]; cwd: string }): JSX.Element {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const last = entries[entries.length - 1];
+  const turn = [...entries].reverse().find((e) => e.kind === 'user');
+  const verb =
+    last?.kind === 'tool' && last.tool && !last.tool.done ? `Running ${toolSummary(last.tool, cwd).title}` : last?.kind === 'thinking' ? 'Thinking' : last?.kind === 'assistant' ? 'Writing' : 'Working';
+  return (
+    <div className="chat-working">
+      <span className="spark">✱</span> {verb}…{turn && now > turn.ts ? <span className="muted"> · {duration(now - turn.ts)}</span> : null}
+    </div>
+  );
+}
+
 const Entry = memo(EntryView);
 
-function EntryView({ entry: e, cwd, sid }: { entry: ChatEntry; cwd: string; sid?: string }): JSX.Element | null {
+function EntryView({ entry: e, cwd, sid, time, since }: { entry: ChatEntry; cwd: string; sid?: string; time?: string; since?: number }): JSX.Element | null {
+  const stamp = time ? <div className="chat-clock">{time}</div> : null;
   if (e.kind === 'user') {
     const team = e.text ? parseTeamMessages(e.text) : null;
     if (team) return <>{team.map((t, i) => <TeamBubble key={i} msg={t} turn={e.id} />)}</>;
@@ -285,16 +329,19 @@ function EntryView({ entry: e, cwd, sid }: { entry: ChatEntry; cwd: string; sid?
     const { body, images } = splitAttachments(raw);
     const text = body.replace(/\[Image #\d+\]/g, '').trim();
     return (
-      <div className="chat-user">
-        <TurnScopes id={e.id} />
-        {text && <CopyButton text={text} />}
-        {text && <div className="chat-user-text">{text}</div>}
-        {images.length > 0 || e.images ? <ChatImages listed={images} entry={e} sid={sid} cwd={cwd} /> : null}
-      </div>
+      <>
+        {stamp}
+        <div className="chat-user">
+          <TurnScopes id={e.id} />
+          {text && <CopyButton text={text} />}
+          {images.length > 0 || e.images ? <ChatImages listed={images} entry={e} sid={sid} cwd={cwd} /> : null}
+          {text && <div className="chat-user-text">{text}</div>}
+        </div>
+      </>
     );
   }
-  if (e.kind === 'assistant') return <Markdown className="chat-item chat-text" text={e.text ?? ''} dot="text" copy />;
-  if (e.kind === 'thinking') return <Thinking text={e.text ?? ''} />;
+  if (e.kind === 'assistant') return <>{stamp}<Markdown className="chat-item chat-text" text={e.text ?? ''} dot="text" copy /></>;
+  if (e.kind === 'thinking') return <Thinking text={e.text ?? ''} took={since !== undefined && e.ts > since && e.ts - since < 3_600_000 ? e.ts - since : undefined} />;
   if (e.kind === 'system') return <div className="chat-system">{e.text}</div>;
   if (e.kind === 'tool' && e.tool) return <Tool tool={e.tool} cwd={cwd} sid={sid} ts={e.ts} />;
   return null;
@@ -327,6 +374,7 @@ function ChatImages({ listed, entry: e, sid, cwd }: { listed: string[]; entry: C
 
 function ChatImage({ path, cwd }: { path: string; cwd: string }): JSX.Element {
   const [url, setUrl] = useState<string | null | undefined>(undefined);
+  const [dim, setDim] = useState('');
   useEffect(() => {
     let live = true;
     void imageDataUrl(path).then((u) => live && setUrl(u));
@@ -334,10 +382,14 @@ function ChatImage({ path, cwd }: { path: string; cwd: string }): JSX.Element {
       live = false;
     };
   }, [path]);
-  const name = path.split(/[\\/]/).pop() ?? path;
+  const name = path.split(/[\/]/).pop() ?? path;
   return (
-    <button className={`chat-image ${url ? '' : 'missing'}`} title={`${path}\nClick to view`} onClick={() => openFile(path, cwd)}>
-      {url ? <img src={url} alt={name} /> : <span className="chat-image-name">🖼 {url === null ? `${name} (not found)` : name}</span>}
+    <button className={`chat-image ${url === null ? 'missing' : ''}`} title={`${path}
+Click to view`} onClick={() => openFile(path, cwd)}>
+      {url ? <img src={url} alt="" onLoad={(e) => setDim(`${e.currentTarget.naturalWidth}×${e.currentTarget.naturalHeight}`)} /> : <span aria-hidden="true">🖼</span>}
+      <span className="chat-image-name">{name}</span>
+      {dim && <span className="chat-image-dim">{dim}</span>}
+      {url === null && <span className="chat-image-dim">not found</span>}
     </button>
   );
 }
@@ -354,13 +406,13 @@ function Markdown({ text, className, dot, copy }: { text: string; className: str
   );
 }
 
-function Thinking({ text }: { text: string }): JSX.Element {
+function Thinking({ text, took }: { text: string; took?: number }): JSX.Element {
   const [open, setOpen] = useState(true);
   return (
     <div className="chat-item">
       <span className="chat-dot text" />
       <div className="chat-thinking">
-        <button className="chat-link" onClick={() => setOpen(!open)}>{open ? '▾' : '▸'} Thinking</button>
+        <button className="chat-link" onClick={() => setOpen(!open)}>{open ? '▾' : '▸'} {took !== undefined && took >= 1000 ? `Thought for ${duration(took)}` : 'Thinking'}</button>
         {open && <div className="chat-thinking-body">{text}</div>}
       </div>
     </div>
@@ -1090,38 +1142,44 @@ function TeamBubble({ msg, turn }: { msg: TeamMessage; turn: string }): JSX.Elem
   const sc = useScoper();
   // the sender as it is named now ("Head Coach · Shop" (head coach) → Shop · Coach), when the session still exists —
   // selected as one string, so a status change of the sender does not re-render the bubble
+  // (a notice such as "X finished" is from AgentO, but it is about a session: that session is shown as its origin)
+  const refId = msg.sessionId ?? msg.aboutId;
   const view = useStore((st) => {
-    const id = msg.sessionId;
+    const id = refId;
     const sender = id ? st.sessions.get(id) ?? (id.length < 36 ? [...st.sessions.values()].find((x) => x.id.startsWith(id)) : undefined) : undefined;
     return senderView(sender, st.projects);
   });
   const [senderClass, senderName, senderRole, senderColor] = view ? view.split('\u0001') : [];
   const senderId = useStore((st) => {
-    const id = msg.sessionId;
+    const id = refId;
     return id ? (st.sessions.get(id) ?? (id.length < 36 ? [...st.sessions.values()].find((x) => x.id.startsWith(id)) : undefined))?.id : undefined;
   });
   // a session's message: its own project/part; a notice: the session it is about; an order: what the turn touched
-  const ref = msg.sessionId ?? msg.aboutId;
-  const own = ref && sc ? sc.ofSession(ref) : null;
+  const own = refId && sc ? sc.ofSession(refId) : null;
   const scopes = own ? [own] : msg.kind === 'session' ? [] : sc?.turns.get(turn) ?? [];
   const long = msg.body.length > 600;
   const roleClass = senderClass ?? (msg.kind === 'order' ? 'manager' : msg.kind === 'notice' ? 'notice' : msg.role?.includes('head') ? 'head' : msg.role?.includes('coach') ? 'coach' : 'player');
   const from = senderName ?? msg.from;
-  const role = senderRole ?? msg.role;
+  const role = msg.kind === 'notice' ? undefined : senderRole ?? msg.role;
+  const origin = { ...(senderId ? { onClick: () => selectAndReveal(senderId), title: `Open ${from}` } : {}) };
   return (
     <div className={`chat-team ${msg.kind} ${['task', 'order'].includes(teamMessageKind(msg)) ? 'instruction' : ''}`}>
       <div className="chat-team-head">
-        <span
-          className={`team-chip ${roleClass} ${senderId ? 'link' : ''}`}
-          style={senderColor ? pcStyle(senderColor) : undefined}
-          {...(senderId ? { onClick: () => selectAndReveal(senderId), title: `Open ${from}` } : {})}
-        >
-          {from}
-        </span>
+        {own && senderName ? (
+          // one label for where it came from: project/part › session
+          <button className="chat-target from" {...origin}>
+            <span className="seg scope" style={pcStyle(own.color)}>{own.name}</span>
+            <span className="seg">› {from}</span>
+          </button>
+        ) : (
+          <span className={`team-chip ${roleClass} ${senderId ? 'link' : ''}`} style={senderColor ? pcStyle(senderColor) : undefined} {...origin}>
+            {from}
+          </span>
+        )}
         <MsgTag kind={teamMessageKind(msg)} {...(msg.taskId ? { taskId: msg.taskId } : {})} />
         {role && role !== from && <span className="muted">{role}</span>}
         {msg.via && <span className="muted">{msg.via}</span>}
-        {scopes.map((x) => <ScopeTag key={x.name} scope={x} />)}
+        {scopes.filter((x) => !(own && senderName && x.name === own.name)).map((x) => <ScopeTag key={x.name} scope={x} />)}
         <span className="grow" />
         <CopyButton text={msg.body} />
       </div>
