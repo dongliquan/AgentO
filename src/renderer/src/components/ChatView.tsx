@@ -82,12 +82,27 @@ export function ChatView({
   const chat = useChats((st) => st.chats[s.id]);
   const connected = useStore((st) => st.connected);
   const scroller = useRef<HTMLDivElement>(null);
+  const inner = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const prependHeight = useRef<number | null>(null);
 
   useEffect(() => {
     if (connected) send({ type: 'chat.subscribe', id: s.id });
   }, [connected, s.id, s.resumeId]);
+
+  // content that grows after it was drawn (a folded block measured, an image, a bar under the chat) must not leave the
+  // newest line below the fold: while pinned to the bottom, stay there when the content or the box changes size
+  useEffect(() => {
+    const el = scroller.current;
+    const box = inner.current;
+    if (!el || !box) return;
+    const ro = new ResizeObserver(() => {
+      if (stick.current && prependHeight.current === null) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(box);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // keep pinned to the bottom unless the user scrolled up
   useLayoutEffect(() => {
@@ -175,6 +190,7 @@ export function ChatView({
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
       >
+        <div className="chat-inner" ref={inner}>
         {chat && !chat.available && (
           <div className="chat-empty">
             No transcript for this session yet.
@@ -233,6 +249,7 @@ export function ChatView({
               </Fragment>
             ))}
         {working && <WorkingLine entries={all} cwd={s.cwd} />}
+        </div>
       </div>
       </ScopeCtx.Provider>
       {/* a small monitor at the top right: the work this coordinator handed out */}
