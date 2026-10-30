@@ -415,10 +415,27 @@ function patchStats(lines: string[]): string {
   return parts.join(', ');
 }
 
+/** The session an AgentO team tool addresses (send_to_session, read_session, …). */
+function targetSession(t: ChatTool, sessions: Map<string, Session>): Session | undefined {
+  const ref = t.name.startsWith('mcp__agento__') ? t.input['session_id'] : undefined;
+  if (typeof ref !== 'string' || !ref.trim()) return undefined;
+  const r = ref.trim();
+  return sessions.get(r) ?? (r.length >= 6 ? [...sessions.values()].find((x) => x.id.startsWith(r)) : undefined);
+}
+
+/** A send the daemon queued ("Queued for …") whose target has not become idle since: most likely still undelivered. */
+const WAITING_MSG = /^Queued for /;
+
 function Tool({ tool: t, cwd }: { tool: ChatTool; cwd: string }): JSX.Element {
   const { title, detail } = toolSummary(t, cwd);
   const sc = useScoper();
   const scope = sc ? toolScope(t, sc) : null;
+  const target = useStore((st) => targetSession(t, st.sessions)?.title ?? null);
+  const undelivered = useStore((st) => {
+    if (t.name !== 'mcp__agento__send_to_session' || !WAITING_MSG.test(t.result ?? '')) return false;
+    const to = targetSession(t, st.sessions);
+    return !!to && to.status !== 'waiting';
+  });
   const state = !t.done ? 'run' : t.isError ? 'err' : 'ok';
   let body: JSX.Element | null = null;
 
@@ -457,6 +474,8 @@ function Tool({ tool: t, cwd }: { tool: ChatTool; cwd: string }): JSX.Element {
       <div className="chat-tool">
         <div className="chat-tool-head">
           <b>{title}</b>
+          {target && <span className="chat-target" title={`Session this goes to: ${target}`}>→ {target}</span>}
+          {undelivered && <span className="chat-undelivered" title="Queued: the session is busy or stopped, so it gets this when it is idle">⏳ waiting</span>}
           {scope && <ScopeTag scope={scope} />}
           {detail && <span className="chat-tool-detail" title={detail}>{detail}</span>}
         </div>
@@ -466,16 +485,27 @@ function Tool({ tool: t, cwd }: { tool: ChatTool; cwd: string }): JSX.Element {
   );
 }
 
-function Collapsible({ text, lines = 4, className }: { text: string; lines?: number; className?: string }): JSX.Element {
+/** Text folded to `lines` visible lines (a long line that wraps counts too); "Show more" only when something is hidden. */
+function Collapsible({ text, lines = 2, className }: { text: string; lines?: number; className?: string }): JSX.Element {
   const [open, setOpen] = useState(false);
-  const all = text.replace(/\s+$/, '').split('\n');
-  const long = all.length > lines;
+  const [clipped, setClipped] = useState(false);
+  const ref = useRef<HTMLPreElement>(null);
+  const body = text.replace(/\s+$/, '');
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || open) return;
+    const measure = (): void => setClipped(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [body, open, lines]);
   return (
     <div className={className}>
-      <pre>{open || !long ? all.join('\n') : all.slice(0, lines).join('\n')}</pre>
-      {long && (
+      <pre ref={ref} className="chat-clip" style={open ? undefined : { maxHeight: `${lines * 1.45}em`, overflow: 'hidden' }}>{body}</pre>
+      {(clipped || open) && (
         <button className="chat-link" onClick={() => setOpen(!open)}>
-          {open ? 'Show less' : `Show ${all.length - lines} more lines`}
+          {open ? 'Show less' : 'Show more'}
         </button>
       )}
     </div>

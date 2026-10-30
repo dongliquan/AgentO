@@ -947,7 +947,9 @@ button.tree-pc:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, t
 .chat-io .lbl { flex: none; width: 26px; color: var(--muted); font-size: 10px; font-weight: 600; padding-top: 2px; }
 .chat-io .row.err .lbl { color: var(--err); }
 .chat-io .val { min-width: 0; flex: 1; }
-.chat-io pre { margin: 0; font-family: var(--mono); font-size: 11.5px; white-space: pre-wrap; word-break: break-all; }
+.chat-io pre { margin: 0; font-family: var(--mono); font-size: 11.5px; line-height: 1.45; white-space: pre-wrap; word-break: break-all; }
+.chat-undelivered { flex: none; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; line-height: 16px; color: var(--warn, #b45309); border: 1px solid currentColor; animation: dot-fade 2.4s ease-in-out infinite; }
+.chat-target { flex: none; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 700; line-height: 16px; color: #fff; background: var(--accent); }
 .chat-io .out pre { color: var(--muted); background: var(--panel2); margin: -2px -4px; padding: 2px 4px; border-radius: 3px; }
 .chat-diff { margin-top: 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); padding: 6px 0; font-family: var(--mono); font-size: 11.5px; overflow-x: auto; }
 .chat-diff > div { padding: 0 10px; white-space: pre; min-height: 17px; }
