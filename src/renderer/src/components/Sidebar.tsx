@@ -23,7 +23,7 @@ export function Sidebar(): JSX.Element {
       <div className="sidebar-manager" title="You are the manager — your orders and the answers (Manager tab)" onClick={() => setRightTab('orders')}>
         <span className="manager-ico">♛</span>
         <span className="label" title="Double-click to change what you are called" onDoubleClick={(e) => { e.stopPropagation(); void askNick(); }}>
-          {nick ? `${nick}님` : 'Welcome'}
+          {nick || 'Welcome'}
         </span>
         <button
           className="icon-btn manager-usage"

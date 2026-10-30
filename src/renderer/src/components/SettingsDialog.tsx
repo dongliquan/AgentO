@@ -40,7 +40,7 @@ export function SettingsDialog(): JSX.Element | null {
               if (e.key === 'Enter' && !e.nativeEvent.isComposing) save();
             }}
           />
-          <span className="muted">{name.trim() ? `shown as "${name.trim()}님"` : 'shown as "Manager"'}</span>
+          <span className="muted">{name.trim() ? `shown as "${name.trim()}"` : 'shown as "Manager"'}</span>
         </label>
         <div className="settings-row">
           <span className="settings-label">Theme</span>
