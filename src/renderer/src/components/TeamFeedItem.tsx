@@ -4,7 +4,7 @@ import { MsgTag } from './MsgTag';
 import type { InboxItem, Session } from '@shared/protocol';
 import { send } from '@/client';
 import { selectAndReveal } from '@/commands';
-import { formatDateTime, pcStyle, projectColor, relativeTime, roleLabel } from '@/lib/format';
+import { dayTime, formatDateTime, pcStyle, projectColor, roleLabel } from '@/lib/format';
 import { useStore } from '@/store';
 import { matches, selecting } from '@/lib/search';
 import { CopyButton } from './SearchBox';
@@ -29,7 +29,7 @@ function Chip({ session, user, label }: { session?: Session; user?: boolean; lab
  * The stored text is "<from title> → <to title>: <message>"; the chips come from fromId / sessionId instead.
  */
 /** defaultOpen: shown in full from the start (the latest order) */
-export function TeamFeedItem({ item: it, sessions, now, query = '', defaultOpen = false }: { item: InboxItem; sessions: Map<string, Session>; now: number; query?: string; defaultOpen?: boolean }): JSX.Element {
+export function TeamFeedItem({ item: it, sessions, query = '', defaultOpen = false }: { item: InboxItem; sessions: Map<string, Session>; now: number; query?: string; defaultOpen?: boolean }): JSX.Element {
   const [open, setOpen] = useState(defaultOpen);
   const target = sessions.get(it.sessionId);
   // Records addressed to the user are filed under the sender itself (fromId === sessionId): "<from> → Manager (you): …"
@@ -63,7 +63,7 @@ ${body}`;
         <span className="feed-arrow">→</span>
         {toUser ? <Chip user /> : <Chip session={target} />}
         <span className="grow" />
-        <span className="time" title={formatDateTime(it.createdAt)}>{new Date(it.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · {relativeTime(it.createdAt, now)}</span>
+        <span className="time" title={formatDateTime(it.createdAt)}>{dayTime(it.createdAt)}</span>
         <CopyButton text={copy} title="Copy this message" />
       </div>
       {viaShown && <div className="feed-via">{viaShown}</div>}
