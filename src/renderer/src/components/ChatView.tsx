@@ -332,7 +332,7 @@ function EntryView({ entry: e, cwd, sid, time, since }: { entry: ChatEntry; cwd:
       <>
         {stamp}
         <div className="chat-user">
-          <TurnScopes id={e.id} />
+          <TurnMeta id={e.id} sid={sid} text={text} ts={e.ts} />
           {text && <CopyButton text={text} />}
           {images.length > 0 || e.images ? <ChatImages listed={images} entry={e} sid={sid} cwd={cwd} /> : null}
           {text && <div className="chat-user-text">{text}</div>}
@@ -1194,9 +1194,29 @@ function ScopeTag({ scope }: { scope: Scope }): JSX.Element {
   return <span className="scope-tag" style={pcStyle(scope.color)} title={scope.name}>{scope.name}</span>;
 }
 
-/** The projects/parts the user's own turn went to (in a Head Coach or Coach chat). */
-function TurnScopes({ id }: { id: string }): JSX.Element | null {
+/**
+ * Above the user's own turn: the number AgentO gave it (the inbox record of that direct input — same session, the text
+ * in it, nearest in time) at the left, and the projects/parts it went to (in a Head Coach or Coach chat) at the right.
+ */
+function TurnMeta({ id, sid, text, ts }: { id: string; sid?: string; text: string; ts: number }): JSX.Element | null {
   const list = useScoper()?.turns.get(id);
-  if (!list?.length) return null;
-  return <div className="chat-user-scopes">{list.map((x) => <ScopeTag key={x.name} scope={x} />)}</div>;
+  const taskId = useStore((st) => {
+    if (!sid) return undefined;
+    const first = text.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
+    let best: { id: string; d: number } | undefined;
+    for (const it of st.inbox) {
+      if (it.kind !== 'directive' || it.fromId !== 'user' || it.sessionId !== sid || !it.taskId) continue;
+      if (first.length >= 4 && !it.text.includes(first.slice(0, 80))) continue;
+      const d = Math.abs(it.createdAt - ts);
+      if (d < 10 * 60_000 && (!best || d < best.d)) best = { id: it.taskId, d };
+    }
+    return best?.id;
+  });
+  if (!taskId && !list?.length) return null;
+  return (
+    <div className="chat-user-scopes">
+      {taskId && <span className="task-id chat-task chat-user-task" title="The piece of work AgentO numbered when this was sent">{taskId}</span>}
+      {list?.map((x) => <ScopeTag key={x.name} scope={x} />)}
+    </div>
+  );
 }
