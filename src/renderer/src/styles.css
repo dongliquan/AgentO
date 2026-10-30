@@ -952,10 +952,7 @@ button.tree-pc:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, t
 .chat-undelivered { flex: none; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; line-height: 16px; color: var(--warn, #b45309); border: 1px solid currentColor; animation: dot-fade 2.4s ease-in-out infinite; }
 .chat-target { flex: none; display: inline-flex; align-items: stretch; max-width: 280px; padding: 0; border: 0; border-radius: 11px; overflow: hidden; font-size: 12px; font-weight: 700; line-height: 18px; color: #fff; background: var(--accent); cursor: pointer; }
 .chat-target .seg { padding: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-target .seg.scope { background: var(--pc); }
 .chat-target:hover { filter: brightness(1.1); }
-.chat-target.from { color: var(--text); background: var(--panel2); font-weight: 600; }
-.chat-target.from .seg.scope { color: #fff; }
 .team-chip.link { cursor: pointer; }
 .team-chip.link:hover { text-decoration: underline; }
 .chat-team.instruction { border-left-width: 4px; background: color-mix(in srgb, var(--accent) 7%, var(--bg)); }

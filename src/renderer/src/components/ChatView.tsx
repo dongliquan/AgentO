@@ -548,8 +548,7 @@ function Tool({ tool: t, cwd, sid, ts }: { tool: ChatTool; cwd: string; sid?: st
           <b>{title}</b>
           {target && (
             <button className="chat-target" onClick={() => targetId && selectAndReveal(targetId)} title={`Open ${target}`}>
-              {scope && <span className="seg scope" style={pcStyle(scope.color)}>{scope.name}</span>}
-              <span className="seg">{scope ? '› ' : '→ '}{target}</span>
+              <span className="seg">→ {scope ? `${scope.name} › ${target}` : target}</span>
             </button>
           )}
           {taskId && <span className="task-id chat-task" title="The piece of work AgentO numbered when this was sent">{taskId}</span>}
@@ -1167,9 +1166,8 @@ function TeamBubble({ msg, turn }: { msg: TeamMessage; turn: string }): JSX.Elem
       <div className="chat-team-head">
         {own && senderName ? (
           // one label for where it came from: project/part › session
-          <button className="chat-target from" {...origin}>
-            <span className="seg scope" style={pcStyle(own.color)}>{own.name}</span>
-            <span className="seg">› {from}</span>
+          <button className="chat-target" {...origin}>
+            <span className="seg">{own.name} › {from}</span>
           </button>
         ) : (
           <span className={`team-chip ${roleClass} ${senderId ? 'link' : ''}`} style={senderColor ? pcStyle(senderColor) : undefined} {...origin}>
