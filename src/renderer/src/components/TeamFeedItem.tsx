@@ -11,9 +11,9 @@ import { CopyButton } from './SearchBox';
 import { renderMarkdown } from '@/lib/markdown';
 
 /** Chip for a sender/receiver: the manager (user), a session (role color), or a removed session. */
-function Chip({ session, user }: { session?: Session; user?: boolean }): JSX.Element {
+function Chip({ session, user, label }: { session?: Session; user?: boolean; label?: string }): JSX.Element {
   const projects = useStore((st) => st.projects);
-  if (user) return <span className="team-chip manager">Manager (you)</span>;
+  if (user) return <span className="team-chip manager">{label ?? 'Manager (you)'}</span>;
   if (!session) return <span className="team-chip">(removed)</span>;
   // the team-wide Head Coach in the manager's color, a project's Coach in its project's
   const cls = session.role === 'head' ? (session.projectId ? 'project' : 'manager') : session.role;
@@ -42,6 +42,9 @@ export function TeamFeedItem({ item: it, sessions, now, query = '', defaultOpen 
   const fromUser = it.fromId === 'user';
   const fromSession = fromUser ? undefined : sessions.get(it.fromId ?? (toUser ? it.sessionId : ''));
   const via = fromUser && arrow >= 0 ? it.text.slice(0, arrow).replace(/^Manager \(you\)( · )?/, '') : '';
+  // ("Direct" says what the tag already says)
+  const direct = msgKind(it) === 'direct';
+  const viaShown = via.toLowerCase() === 'direct' ? '' : via;
   const long = body.length > 220;
   // rendered like a session card's conversation (headings, lists, code, bold)
   const html = useMemo(() => renderMarkdown(body), [body]);
@@ -54,15 +57,16 @@ ${body}`;
   return (
     <div className={`feed-item ${it.kind} ${it.read ? '' : 'unread'}`}>
       <div className="feed-head">
-        <MsgTag kind={msgKind(it)} taskId={it.taskId} />
-        <Chip user={fromUser} session={fromSession} />
+        {/* typed in by the manager: the sender chip itself says "Direct" (no tag, no "Manager (you)" besides it) */}
+        {direct ? it.taskId && <span className="task-id">{it.taskId}</span> : <MsgTag kind={msgKind(it)} taskId={it.taskId} />}
+        <Chip user={fromUser} session={fromSession} {...(direct ? { label: 'Direct' } : {})} />
         <span className="feed-arrow">→</span>
         {toUser ? <Chip user /> : <Chip session={target} />}
         <span className="grow" />
-        <span className="time" title={formatDateTime(it.createdAt)}>{relativeTime(it.createdAt, now)}</span>
+        <span className="time" title={formatDateTime(it.createdAt)}>{new Date(it.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · {relativeTime(it.createdAt, now)}</span>
         <CopyButton text={copy} title="Copy this message" />
       </div>
-      {via && <div className="feed-via">{via}</div>}
+      {viaShown && <div className="feed-via">{viaShown}</div>}
       <div
         className={`feed-body ${long && !open && !hit ? 'clamped' : ''}`}
         onClick={() => {
