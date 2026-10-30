@@ -378,7 +378,7 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .link-messages-head .grow { flex: 1; }
 .link-messages .feed-list { overflow: auto; padding: 8px; }
 /* Log tab: threads per order (TeamLog.tsx) */
-.log-body { gap: 14px; background: var(--panel2); }
+.log-body { gap: 14px; }
 /* each order a card of its own: raised off the grey list, the whole card faintly tinted and edged in its status color */
 .log-body .order-thread { --st: var(--border-strong); margin-bottom: 0; padding: 8px 10px 10px; background: color-mix(in srgb, var(--st) 7%, var(--panel)); border: 1px solid color-mix(in srgb, var(--st) 45%, var(--border)); border-radius: 8px; box-shadow: var(--shadow-sm); }
 .log-body .order-thread.st-reported { --st: var(--ok); }
