@@ -16,7 +16,7 @@ export function MsgTag({ kind, taskId, className = '' }: { kind: MsgKind; taskId
   return (
     <>
       <span className={`msg-tag k-${kindSlug(kind)} ${className}`} title={TITLE[kind]}>
-        {kind === 'direct' ? 'Direct' : kind}
+        {kind}
       </span>
       {taskId && <span className="task-id" title="The piece of work (numbered by AgentO when it was sent)">{taskId}</span>}
     </>

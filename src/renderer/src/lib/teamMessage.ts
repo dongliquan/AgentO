@@ -41,7 +41,7 @@ export function parseTeamMessages(raw: string): TeamMessage[] | null {
         const tail = m[5] ?? '';
         const t = /(?:^| — )(#T\d+)$/.exec(tail);
         const via = t ? tail.slice(0, t.index) : tail;
-        cur = { kind: 'order', from: 'Manager (you)', ...(via ? { via } : {}), ...(t ? { taskId: t[1] } : {}), body: rest };
+        cur = { kind: 'order', from: 'Manager', ...(via ? { via } : {}), ...(t ? { taskId: t[1] } : {}), body: rest };
       }
       else cur = { kind: 'notice', from: 'AgentO', body: rest };
       continue;

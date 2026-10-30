@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { create } from 'zustand';
-import type { InboxItem, Session } from '@shared/protocol';
+import type { InboxItem } from '@shared/protocol';
 import { useStore } from '@/store';
 import { selectAndReveal } from '@/commands';
 import { useOpenInbox, threadsOf } from '@/lib/closed';
 import { descendants, type LogNode } from '@/lib/threads';
 import { kindSlug, msgKind, type MsgKind } from '@/lib/msgKind';
 import { MsgTag } from './MsgTag';
-import { formatDateTime } from '@/lib/format';
+import { formatDateTime, pcStyle, projectColor } from '@/lib/format';
 import { CopyButton } from './SearchBox';
 import { renderMarkdown } from '@/lib/markdown';
 import { FlowStatus } from './FlowStatus';
@@ -65,7 +65,8 @@ const HEAD_H = 66;
 const ROW_H = 46;
 const PAD_X = 20;
 
-const roleClass = (s: Session | undefined): string => (!s ? 'removed' : s.role === 'head' ? 'head' : s.role === 'coach' ? 'coach' : 'player');
+/** colors for sessions that are not a project's Coach (each session of a flow its own) */
+const SESSION_COLORS = ['#0d9488', '#7c3aed', '#0891b2', '#c026d3', '#16a34a', '#92400e'];
 
 /**
  * An order as a sequence diagram: one lane per party (the manager, then sessions as they join), one arrow per message
@@ -107,7 +108,16 @@ export function OrderFlowDialog(): JSX.Element | null {
   const x = (id: string): number => PAD_X + lanes.indexOf(id) * LANE_W + LANE_W / 2;
   const width = PAD_X * 2 + lanes.length * LANE_W;
   const height = HEAD_H + steps.length * ROW_H + 24;
-  const label = (id: string): string => (id === 'user' ? 'Manager (you)' : sessions.get(id)?.title ?? '(removed session)');
+  const label = (id: string): string => (id === 'user' ? 'Manager' : sessions.get(id)?.title ?? '(removed session)');
+  // a project's Coach in its project's color (as everywhere), the manager as ever, every other session its own color
+  const projects = useStore.getState().projects;
+  const chipOf = (id: string): { cls: string; style?: Record<string, string> } => {
+    if (id === 'user') return { cls: 'manager' };
+    const s = sessions.get(id);
+    if (!s) return { cls: 'removed' };
+    if (s.role === 'head') return s.projectId ? { cls: 'project', style: pcStyle(projectColor(s.projectId, projects)) } : { cls: 'manager' };
+    return { cls: 'project', style: pcStyle(SESSION_COLORS[Math.max(0, lanes.indexOf(id) - 1) % SESSION_COLORS.length]!) };
+  };
   const sel = steps.find((s) => s.item.id === picked) ?? steps[steps.length - 1];
   // the latest directive each session got, and whether it reported after it: still working on it?
   const pending = new Set<string>();
@@ -137,12 +147,13 @@ export function OrderFlowDialog(): JSX.Element | null {
           <div className="flow-inner" style={{ width, height }}>
             {lanes.map((id) => {
               const s = id === 'user' ? undefined : sessions.get(id);
+              const chip = chipOf(id);
               const busy = s && (s.status === 'working' || s.status === 'starting');
               return (
                 <div
                   key={id}
-                  className={`flow-lane-head team-chip ${id === 'user' ? 'manager' : roleClass(s)}`}
-                  style={{ left: x(id) - LANE_W / 2 + 6, width: LANE_W - 12 }}
+                  className={`flow-lane-head team-chip ${chip.cls}`}
+                  style={{ left: x(id) - LANE_W / 2 + 6, width: LANE_W - 12, ...chip.style }}
                   title={label(id)}
                   onClick={() => s && selectAndReveal(s.id)}
                 >
@@ -205,10 +216,10 @@ export function OrderFlowDialog(): JSX.Element | null {
         {sel && (
           <div className="flow-detail">
             <div className="flow-detail-head">
-              <span className={`team-chip ${sel.from === 'user' ? 'manager' : roleClass(sessions.get(sel.from))}`}>{label(sel.from)}</span>
+              <span className={`team-chip ${chipOf(sel.from).cls}`} style={chipOf(sel.from).style}>{label(sel.from)}</span>
               <MsgTag kind={sel.tag} taskId={sel.item.taskId} />
               <span className="muted">{sel.kind === 'report' ? 'reported to' : 'sent to'}</span>
-              <span className={`team-chip ${sel.to === 'user' ? 'manager' : roleClass(sessions.get(sel.to))}`}>{label(sel.to)}</span>
+              <span className={`team-chip ${chipOf(sel.to).cls}`} style={chipOf(sel.to).style}>{label(sel.to)}</span>
               {outcome(sel.item) && <span className={`flow-outcome ${outcome(sel.item)!.split(' ')[0]}`}>{outcome(sel.item)}</span>}
               <span className="muted grow">{formatDateTime(sel.item.createdAt)}</span>
               <CopyButton text={full(sel.item)} title="Copy this message" />

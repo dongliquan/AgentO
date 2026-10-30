@@ -90,7 +90,7 @@ export function TeamLog(): JSX.Element {
   }, [scoped, recentOnly]);
   const older = scoped.length - threads.length;
   const titleOf = (id: string | undefined, map: Map<string, Session>): string | undefined =>
-    id === 'user' ? 'Manager (you)' : id ? map.get(id)?.title : undefined;
+    id === 'user' ? 'Manager' : id ? map.get(id)?.title : undefined;
   const searching = query.trim() !== '';
   const visible = useMemo(() => {
     if (!searching) return threads;

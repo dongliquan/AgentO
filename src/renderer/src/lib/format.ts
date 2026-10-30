@@ -112,7 +112,7 @@ export function dayTime(ms: number, nowMs = Date.now()): string {
   const day = (t: number): string => new Date(t).toDateString();
   if (day(ms) === day(nowMs)) return `Today ${hm}`;
   if (day(ms) === day(nowMs - 86_400_000)) return `Yesterday ${hm}`;
-  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${hm}`;
+  return `${String(d.getFullYear()).slice(2)}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${hm}`;
 }
 
 export function relativeTime(ms: number, nowMs = Date.now()): string {

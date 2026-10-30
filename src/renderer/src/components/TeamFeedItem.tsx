@@ -13,7 +13,7 @@ import { renderMarkdown } from '@/lib/markdown';
 /** Chip for a sender/receiver: the manager (user), a session (role color), or a removed session. */
 function Chip({ session, user, label }: { session?: Session; user?: boolean; label?: string }): JSX.Element {
   const projects = useStore((st) => st.projects);
-  if (user) return <span className="team-chip manager">{label ?? 'Manager (you)'}</span>;
+  if (user) return <span className="team-chip manager">{label ?? 'Manager'}</span>;
   if (!session) return <span className="team-chip">(removed)</span>;
   // the team-wide Head Coach in the manager's color, a project's Coach in its project's
   const cls = session.role === 'head' ? (session.projectId ? 'project' : 'manager') : session.role;
@@ -50,8 +50,8 @@ export function TeamFeedItem({ item: it, sessions, query = '', defaultOpen = fal
   const html = useMemo(() => renderMarkdown(body), [body]);
   // a search hit may sit past the clamp, so a matching item shows in full
   const hit = query.trim() !== '' && matches(query, body);
-  const fromName = fromUser ? 'Manager (you)' : fromSession?.title ?? '(removed)';
-  const toName = toUser ? 'Manager (you)' : target?.title ?? '(removed)';
+  const fromName = fromUser ? 'Manager' : fromSession?.title ?? '(removed)';
+  const toName = toUser ? 'Manager' : target?.title ?? '(removed)';
   const copy = (): string => `[${it.kind === 'directive' ? 'Order' : 'Report'}] ${fromName} → ${toName} · ${formatDateTime(it.createdAt)}
 ${body}`;
   return (
