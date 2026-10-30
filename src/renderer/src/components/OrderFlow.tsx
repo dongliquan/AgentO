@@ -96,6 +96,14 @@ export function OrderFlowDialog(): JSX.Element | null {
   }, [steps]);
   if (!orderId) return null;
 
+  // a "handed on" arrow answers the order it came for — but it is drawn after the work the session handed out, so it reads
+  // as the next step: it says which pieces it sent meanwhile ("→ #T33")
+  const sentWith = (i: number): string[] => {
+    const a = steps[i]!;
+    let since = 0;
+    for (let k = i - 1; k >= 0; k--) if (steps[k]!.from === a.from && steps[k]!.kind === 'report') { since = steps[k]!.item.createdAt; break; }
+    return steps.filter((s) => s.kind === 'directive' && s.from === a.from && s.item.taskId && s.item.createdAt > since && s.item.createdAt <= a.item.createdAt).map((s) => s.item.taskId!);
+  };
   const x = (id: string): number => PAD_X + lanes.indexOf(id) * LANE_W + LANE_W / 2;
   const width = PAD_X * 2 + lanes.length * LANE_W;
   const height = HEAD_H + steps.length * ROW_H + 24;
@@ -187,6 +195,7 @@ export function OrderFlowDialog(): JSX.Element | null {
                   onClick={() => setPicked(s.item.id)}
                 >
                   <MsgTag kind={s.tag} taskId={s.item.taskId} />
+                  {s.tag === 'handed on' && sentWith(i).length > 0 && <b className="flow-sent" title="The work it handed out meanwhile">→ {sentWith(i).join(' ')} </b>}
                   {gist(s.item).replace(/^\(report\)\s*/, '').replace(/^(?:finished|replied|stopped|handed on)(?: \([^)]*\))?:\s*/, '') || '(empty)'}
                 </button>
               );

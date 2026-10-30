@@ -191,6 +191,7 @@ export function ChatView({
                   key={g.key}
                   entries={g.entries}
                   cwd={s.cwd}
+                  sid={s.id}
                   open={opened.has(g.key)}
                   onToggle={() => {
                     stick.current = false;
@@ -253,7 +254,7 @@ const STALE_MS = 60 * 60_000;
 const STATUS_ASK = 'Status check: in 3–5 short lines — what is done, what is in progress, and what is waiting on me (if anything). Do not start new work.';
 
 /** A run of team turns: the messages fold to "Team - N messages (senders)" (or open with the bar to fold them again); the work on them is never hidden. */
-function TeamRun({ entries, cwd, open, onToggle }: { entries: ChatEntry[]; cwd: string; open: boolean; onToggle: () => void }): JSX.Element {
+function TeamRun({ entries, cwd, sid, open, onToggle }: { entries: ChatEntry[]; cwd: string; sid: string; open: boolean; onToggle: () => void }): JSX.Element {
   const msgs = entries.flatMap((e) => (e.kind === 'user' && e.text ? (parseTeamMessages(e.text) ?? []) : []));
   const from = [...new Set(msgs.map((m) => m.from))];
   const label = `Team · ${msgs.length} message${msgs.length === 1 ? '' : 's'}`;
@@ -266,7 +267,7 @@ function TeamRun({ entries, cwd, open, onToggle }: { entries: ChatEntry[]; cwd: 
         {who && <span className="muted ellipsis">{who}</span>}
       </button>
       {/* the bar folds the team messages only; the session's own work on them (answers, tools) stays in view */}
-      {entries.map((e) => (e.kind === 'user' && e.text && parseTeamMessages(e.text) ? open && <Entry key={e.id} entry={e} cwd={cwd} /> : <Entry key={e.id} entry={e} cwd={cwd} />))}
+      {entries.map((e) => (e.kind === 'user' && e.text && parseTeamMessages(e.text) ? open && <Entry key={e.id} entry={e} cwd={cwd} sid={sid} /> : <Entry key={e.id} entry={e} cwd={cwd} sid={sid} />))}
     </>
   );
 }
@@ -295,7 +296,7 @@ function EntryView({ entry: e, cwd, sid }: { entry: ChatEntry; cwd: string; sid?
   if (e.kind === 'assistant') return <Markdown className="chat-item chat-text" text={e.text ?? ''} dot="text" copy />;
   if (e.kind === 'thinking') return <Thinking text={e.text ?? ''} />;
   if (e.kind === 'system') return <div className="chat-system">{e.text}</div>;
-  if (e.kind === 'tool' && e.tool) return <Tool tool={e.tool} cwd={cwd} />;
+  if (e.kind === 'tool' && e.tool) return <Tool tool={e.tool} cwd={cwd} sid={sid} ts={e.ts} />;
   return null;
 }
 
@@ -428,7 +429,7 @@ function targetSession(t: ChatTool, sessions: Map<string, Session>): Session | u
 /** A send the daemon queued ("Queued for …") whose target has not become idle since: most likely still undelivered. */
 const WAITING_MSG = /^Queued for /;
 
-function Tool({ tool: t, cwd }: { tool: ChatTool; cwd: string }): JSX.Element {
+function Tool({ tool: t, cwd, sid, ts }: { tool: ChatTool; cwd: string; sid?: string; ts?: number }): JSX.Element {
   const { title, detail } = toolSummary(t, cwd);
   const sc = useScoper();
   const scope = sc ? toolScope(t, sc) : null;
@@ -437,6 +438,17 @@ function Tool({ tool: t, cwd }: { tool: ChatTool; cwd: string }): JSX.Element {
     return to ? `${to.id}${to.title}` : null;
   });
   const [targetId, target] = targetRef ? targetRef.split('') : [];
+  // the number AgentO gave this send: the inbox record of a directive from this session to that one, nearest in time
+  const taskId = useStore((st) => {
+    if (t.name !== 'mcp__agento__send_to_session' || !sid || ts === undefined || !targetId) return undefined;
+    let best: { id: string; d: number } | undefined;
+    for (const it of st.inbox) {
+      if (it.kind !== 'directive' || it.fromId !== sid || it.sessionId !== targetId || !it.taskId) continue;
+      const d = Math.abs(it.createdAt - ts);
+      if (d < 5 * 60_000 && (!best || d < best.d)) best = { id: it.taskId, d };
+    }
+    return best?.id;
+  });
   const undelivered = useStore((st) => {
     if (t.name !== 'mcp__agento__send_to_session' || !WAITING_MSG.test(t.result ?? '')) return false;
     const to = targetSession(t, st.sessions);
@@ -488,6 +500,7 @@ function Tool({ tool: t, cwd }: { tool: ChatTool; cwd: string }): JSX.Element {
               <span className="seg">{scope ? '› ' : '→ '}{target}</span>
             </button>
           )}
+          {taskId && <span className="task-id chat-task" title="The piece of work AgentO numbered when this was sent">{taskId}</span>}
           {undelivered && <span className="chat-undelivered" title="Queued: the session is busy or stopped, so it gets this when it is idle">⏳ waiting</span>}
           {scope && !target && <ScopeTag scope={scope} />}
           {detail && <span className="chat-tool-detail" title={detail}>{detail}</span>}

@@ -1170,6 +1170,8 @@ button.tree-pc:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, t
 .msg-tag.k-note { --tag: var(--muted); }
 .flow-label .msg-tag { margin-right: 4px; vertical-align: 1px; }
 /* the task id ("#T12") after a tag: small, mono, muted */
+.task-id.chat-task { font-weight: 600; color: var(--accent); }
+.flow-sent { font-style: normal; font-family: var(--mono); font-size: 10.5px; margin-right: 3px; }
 .task-id { flex: none; margin-left: 3px; font-family: var(--mono); font-size: 10px; color: var(--muted); }
 .flow-label .task-id { margin-right: 4px; }
 .flow-legend .msg-tag + .msg-tag { margin-left: 2px; }
