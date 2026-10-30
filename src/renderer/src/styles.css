@@ -949,8 +949,8 @@ button.tree-pc:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, t
 .chat-io .row.err .lbl { color: var(--err); }
 .chat-io .val { min-width: 0; flex: 1; }
 .chat-io pre { margin: 0; font-family: var(--mono); font-size: 11.5px; line-height: 1.45; white-space: pre-wrap; word-break: break-all; }
-.chat-undelivered { flex: none; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; line-height: 16px; color: var(--warn, #b45309); border: 1px solid currentColor; animation: dot-fade 2.4s ease-in-out infinite; }
-.chat-target { flex: none; display: inline-flex; align-items: stretch; max-width: 240px; padding: 0; border: 0; border-radius: 9px; overflow: hidden; font-size: 11px; font-weight: 700; line-height: 16px; color: #fff; background: var(--pc, var(--accent)); cursor: pointer; }
+.chat-undelivered { flex: none; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 400; line-height: 16px; color: var(--warn, #b45309); border: 1px solid currentColor; animation: dot-fade 2.4s ease-in-out infinite; }
+.chat-target { flex: none; display: inline-flex; align-items: stretch; max-width: 240px; padding: 0; border: 0; border-radius: 9px; overflow: hidden; font-size: 11px; font-weight: 400; line-height: 16px; color: #fff; background: var(--pc, var(--accent)); cursor: pointer; }
 .chat-target .seg { padding: 0 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-target:hover { filter: brightness(1.1); }
 .team-chip.link { cursor: pointer; }
@@ -1369,7 +1369,7 @@ button.tree-pc:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, t
 .pc-custom { cursor: pointer; font-size: 12px; border-top: 1px solid var(--border); border-radius: 0; }
 .pc-custom input[type=color] { width: 22px; height: 18px; padding: 0; border: none; background: none; cursor: pointer; }
 /* Head Coach / Coach chats: which project (or part) a message or a tool call is about */
-.scope-tag { flex: none; display: inline-block; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 7px; border-radius: 9px; font-size: 10.5px; font-weight: 600; line-height: 16px; color: #fff; background: var(--pc); vertical-align: middle; }
+.scope-tag { flex: none; display: inline-block; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 7px; border-radius: 9px; font-size: 10.5px; font-weight: 400; line-height: 16px; color: #fff; background: var(--pc); vertical-align: middle; }
 .chat-tool-head .scope-tag { margin-left: 6px; }
 .chat-user-scopes { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; margin-bottom: 4px; }
 /* sidebar: each project's area tinted with its color (header a little stronger) */
