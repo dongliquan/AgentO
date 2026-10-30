@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react';
-import { askNick, storedNick } from '@/lib/nick';
+import { firstRun } from '@/lib/firstrun';
 import { useStore } from '@/store';
 import { runCommand, selectAndReveal, zoomBy } from '@/commands';
 import { activeHeadCoach } from '@/lib/activeProject';
@@ -130,9 +130,9 @@ function handleKey(e: KeyboardEvent): void {
 
 export function App(): JSX.Element {
   useFollowSelection();
-  // the first time: what to call you (asked once; change it by double-clicking the name at the top of the sidebar)
+  // the first start: what to call you, then the agent setup when Claude Code is not ready yet
   useEffect(() => {
-    if (storedNick() === null) void askNick(true);
+    void firstRun();
   }, []);
   const sidebarOpen = useStore((s) => s.sidebarOpen);
   const rightOpen = useStore((s) => s.rightOpen);

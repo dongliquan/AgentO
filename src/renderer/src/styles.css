@@ -1647,3 +1647,11 @@ button.tl-all { color: var(--accent); border-color: var(--border); }
 .seg-toggle button { padding: 3px 12px; font-size: 12px; background: var(--panel); color: var(--text); border: 0; cursor: pointer; }
 .seg-toggle button + button { border-left: 1px solid var(--border); }
 .seg-toggle button.on { background: var(--accent); color: #fff; }
+
+.agents-start { padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border)); border-radius: 8px; background: color-mix(in srgb, var(--accent) 5%, var(--panel)); font-size: 12px; }
+.agents-start.ready { border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); background: color-mix(in srgb, var(--ok) 6%, var(--panel)); color: var(--ok); }
+.agents-start ol { margin: 6px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.agents-start li { color: var(--muted); }
+.agents-start li.next { color: var(--text); }
+.agents-start li.done { color: var(--ok); text-decoration: line-through; }
+.agents-start li .btn { margin-left: 6px; }

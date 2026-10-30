@@ -40,6 +40,9 @@ export function AgentsDialog(): JSX.Element | null {
   }, [open]);
 
   if (!open) return null;
+  const claude = items?.find((c) => c.kind === 'claude');
+  const installed = !!claude?.installed;
+  const signed = installed && claude?.signedIn !== false;
   const run = (kind: Kind, action: 'install' | 'login'): void => void window.desktop.agentTerminal(kind, action);
 
   return (
@@ -47,6 +50,27 @@ export function AgentsDialog(): JSX.Element | null {
       <div className="dialog agents-dialog">
         <button className="icon-btn dialog-x" onClick={() => close()} title="Close (Esc)" aria-label="Close">×</button>
         <h3>Agent Connections</h3>
+        {items && (
+          <div className={`agents-start ${signed ? 'ready' : ''}`}>
+            {signed ? (
+              <b>Claude Code is ready — you can create projects and sessions. Codex (review) and Gemini are optional.</b>
+            ) : (
+              <>
+                <b>Get started — connect Claude Code</b>
+                <ol>
+                  <li className={installed ? 'done' : 'next'}>
+                    Install it {!installed && <button className="btn sm primary" onClick={() => run('claude', 'install')}>Install</button>}
+                  </li>
+                  <li className={installed ? 'next' : ''}>
+                    Sign in — a terminal opens; sign in through the browser, then close it{' '}
+                    {installed && <button className="btn sm primary" onClick={() => run('claude', 'login')}>Sign in</button>}
+                  </li>
+                  <li>Come back here: it checks again by itself (or press Check again)</li>
+                </ol>
+              </>
+            )}
+          </div>
+        )}
         <div className="muted field-hint">
           AgentO runs these CLIs with their own sign-in (your subscription). Install or sign in opens a terminal window;
           come back here when it is done.
