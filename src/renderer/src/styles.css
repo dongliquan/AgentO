@@ -1666,3 +1666,6 @@ button.tl-all { color: var(--accent); border-color: var(--border); }
 .rp-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .rp-pane > .filter-bar { padding: 10px 12px 8px; border-bottom: 1px solid var(--border); background: var(--panel); }
 .rp-pane > .log-bar { margin-bottom: 0; }
+.deleg-card-head .deleg-x { flex: none; width: auto; margin-left: auto; padding: 0 4px; border-radius: 4px; color: var(--muted); opacity: 0; line-height: 1.2; }
+.deleg-card:hover .deleg-x { opacity: 1; }
+.deleg-card-head .deleg-x:hover { background: var(--panel2); color: var(--text); }
