@@ -533,6 +533,22 @@ export class Team {
     return heads.find((s) => s.projectId === rootId && rootId !== '') ?? heads.find((s) => s.projectId === '');
   }
 
+  /**
+   * A project was started from the UI: the team-wide Head Coach is told, quietly (it waits for the Head Coach's next work,
+   * no turn of its own), so it knows the project and its Coach exists when it routes later orders.
+   */
+  announceProject(projectId: string, coachId: string): void {
+    const hc = this.all().find((s) => s.role === 'head' && s.projectId === '');
+    const project = this.project(projectId);
+    const coach = this.sessions.get(coachId);
+    if (!hc || !project || !coach) return;
+    const folders = project.folders.map((f) => f.path).join(', ');
+    this.enqueue(hc.id, {
+      text: `[AgentO] FYI — the manager started a new project "${project.name}" (id ${project.id.slice(0, 8)}). Its Coach is "${coach.title}" (${coach.id.slice(0, 8)}) and already has the brief; folders: ${folders || 'none'}. Send later orders for this project to that Coach. No reply needed.`,
+      wake: false
+    });
+  }
+
   /** Who receives an order for a project: project → its head coach, else its parts' leads; part → its lead. */
   private recipientsFor(projectId: string): StoredSession[] {
     const p = this.project(projectId);

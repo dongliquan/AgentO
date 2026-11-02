@@ -373,6 +373,8 @@ async function main(): Promise<void> {
       log.warn('could not add the Codex reviewer', name, (e as Error).message);
     }
     team.order({ kind: 'session', sessionId: head.id }, START_ORDER(plan, text.trim(), reviewer?.id), via, true);
+    // started by the manager (not by the Head Coach's own create_project): the Head Coach should know it exists
+    if (via === 'New project') team.announceProject(project.id, head.id);
     broadcast({ type: 'orders.done', done: store.listDoneOrders(), tasks: store.listTaskOrders() });
     log.info('project started from an order', name, dirs.join(', '), via);
     return head;
