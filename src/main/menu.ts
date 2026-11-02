@@ -133,7 +133,7 @@ export function buildMenu(actions: MenuActions): Menu {
       {
         // a web page in the right panel's Web tab, with the user's own sign-in (web / app subscriptions)
         label: 'Open Web',
-        submenu: [item('Gemini', 'web.gemini'), item('ChatGPT', 'web.chatgpt'), item('文心一言', 'web.ernie')]
+        submenu: [item('Gemini', 'web.gemini'), item('ChatGPT', 'web.chatgpt')]
       },
       {
         label: 'New Session',

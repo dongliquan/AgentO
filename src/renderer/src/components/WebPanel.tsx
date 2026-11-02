@@ -106,7 +106,7 @@ const Page = memo(function Page({ page, visible }: { page: WebPage; visible: boo
 });
 
 /**
- * Right panel › Web: the user's web pages (Gemini, ChatGPT, ERNIE …) as chips, the chosen one below. Always mounted
+ * Right panel › Web: the user's web pages (Gemini, ChatGPT …) as chips, the chosen one below. Always mounted
  * (hidden off the Web tab), so a page and its conversation survive switching tabs.
  */
 export function WebPanel({ visible }: { visible: boolean }): JSX.Element {

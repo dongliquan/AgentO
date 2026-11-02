@@ -45,7 +45,7 @@ const TAB_TITLE: Partial<Record<RightTab, string>> = {
   files: 'Files — the selected session\'s project folders; a file name clicked in a chat is shown here',
   orders: 'You, the manager: what you said and the answers, and the order box (projects, new project, routines)',
   log: 'Everything the team sent each other, by order',
-  web: 'Gemini, ChatGPT, ERNIE on the web — your own sign-in and subscription'
+  web: 'Gemini, ChatGPT on the web — your own sign-in and subscription'
 };
 
 /** Badge counts for the tab strip and the docked columns: unread (Inbox). */

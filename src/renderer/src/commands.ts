@@ -252,7 +252,6 @@ export const COMMANDS: CommandDef[] = [
   { id: 'session.new', label: 'New Session…', shortcut: kbd('Ctrl+N'), run: () => newSessionFor() },
   { id: 'web.gemini', label: 'Open Web: Gemini', run: () => useWebPages.getState().open('https://gemini.google.com/app', 'Gemini') },
   { id: 'web.chatgpt', label: 'Open Web: ChatGPT', run: () => useWebPages.getState().open('https://chatgpt.com/', 'ChatGPT') },
-  { id: 'web.ernie', label: 'Open Web: 文心一言', run: () => useWebPages.getState().open('https://yiyan.baidu.com/', '文心一言') },
   { id: 'session.new-chat.codex', label: 'New Chat: ChatGPT (Codex)', run: () => send({ type: 'chat.new', agent: 'codex' }) },
   { id: 'session.new-chat.claude', label: 'New Chat: Claude', run: () => send({ type: 'chat.new', agent: 'claude' }) },
   { id: 'session.new.claude', label: `New Session: ${AGENT_LABELS.claude}`, run: () => newSessionFor('claude') },

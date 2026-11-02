@@ -3,7 +3,7 @@ import { useStore } from '@/store';
 import { useDock } from '@/lib/dock';
 
 /**
- * Web pages in the right panel's Web tab (Gemini, ChatGPT, ERNIE …) for the user's own use with a web / app
+ * Web pages in the right panel's Web tab (Gemini, ChatGPT …) for the user's own use with a web / app
  * subscription — the manager's tool, not part of any project. Kept in this window only (not the daemon) and
  * remembered per viewer; each page keeps its own location.
  */
@@ -24,19 +24,12 @@ export const WEB_ZOOM = 0.85;
 export const WEB_PARTITION = 'persist:agento-web';
 
 /**
- * hosts: where the site may send its page (yiyan.baidu.com now lands on wenxin.baidu.com).
+ * hosts: where the site may send its page (a site may land on another host of its own).
  * css: a style laid over the site's own (only looks — e.g. the Chinese text in Microsoft YaHei).
  */
 export const WEB_SITES: { label: string; url: string; hosts: string[]; css?: string }[] = [
   { label: 'Gemini', url: 'https://gemini.google.com/app', hosts: ['gemini.google.com'] },
-  { label: 'ChatGPT', url: 'https://chatgpt.com/', hosts: ['chatgpt.com', 'chat.openai.com'] },
-  {
-    label: '文心一言',
-    url: 'https://yiyan.baidu.com/',
-    hosts: ['yiyan.baidu.com', 'wenxin.baidu.com'],
-    // text in YaHei; icon fonts (i, svg, *icon* classes) and code keep theirs
-    css: `body, body *:not(i):not(svg):not(svg *):not(code):not(pre):not(pre *):not([class*="icon"]):not([class*="Icon"]) { font-family: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", sans-serif !important; }`
-  }
+  { label: 'ChatGPT', url: 'https://chatgpt.com/', hosts: ['chatgpt.com', 'chat.openai.com'] }
 ];
 
 /** The known site a page belongs to (by any of its hosts). */
@@ -68,7 +61,7 @@ export function siteHost(url: string): string {
 function load(): { pages: WebPage[]; active: string | null } {
   try {
     const v = JSON.parse(localStorage.getItem(KEY) || '{}') as { pages?: WebPage[]; active?: string | null };
-    const pages = (v.pages ?? []).filter((p) => typeof p.url === 'string' && p.url.startsWith('https://'));
+    const pages = (v.pages ?? []).filter((p) => typeof p.url === 'string' && p.url.startsWith('https://') && !/(^|\.)baidu\.com\//.test(p.url.replace(/^https:\/\//, '')));
     return { pages, active: pages.some((p) => p.id === v.active) ? v.active ?? null : pages[0]?.id ?? null };
   } catch {
     return { pages: [], active: null };

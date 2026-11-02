@@ -801,7 +801,7 @@ button.tree-pc:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, t
 .dock-empty { padding: 16px; font-size: 12px; }
 .dock-gap { cursor: default; }
 /* Right panel › Web: site chips, then the chosen page (pages stay mounted while hidden) */
-/* the Web tab's own chrome (site chips 文心一言 …) in YaHei; the rest of the app keeps --font */
+/* the Web tab's own chrome (site chips) in YaHei; the rest of the app keeps --font */
 .web-panel { font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", sans-serif; flex: 1; min-height: 0; flex-direction: column; position: relative; }
 .web-sites { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--border); flex: none; overflow-x: auto; }
 .web-site { display: inline-flex; align-items: center; gap: 4px; flex: none; font-size: 12px; padding: 2px 4px 2px 10px; border-radius: 12px; border: 1px solid var(--border); color: var(--muted); cursor: pointer; }

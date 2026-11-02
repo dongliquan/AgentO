@@ -46,7 +46,6 @@ export const MENU_COMMANDS = [
   'project.export',
   'web.gemini',
   'web.chatgpt',
-  'web.ernie',
   'session.new-chat.codex',
   'session.new-chat.claude',
   'session.import-claude',

@@ -1,5 +1,5 @@
 /**
- * Web pages (gemini.google.com, chatgpt.com, yiyan.baidu.com … in the right panel's Web tab): <webview> tags in the main window.
+ * Web pages (gemini.google.com, chatgpt.com … in the right panel's Web tab): <webview> tags in the main window.
  *
  * - One persistent partition, so a sign-in survives restarts and is shared by every web card.
  * - The user agent is Chrome's (Electron's own token removed): some sites refuse to sign in from an "embedded app".
@@ -11,7 +11,7 @@ import { app, ipcMain, session, shell, type WebContents } from 'electron';
 export const WEB_PARTITION = 'persist:agento-web';
 
 /** Pop-ups a sign-in needs (Google, Apple, Microsoft, OpenAI, Anthropic): opened in a small app window. */
-const AUTH_HOSTS = [/(^|\.)accounts\.google\.com$/, /(^|\.)appleid\.apple\.com$/, /(^|\.)login\.microsoftonline\.com$/, /(^|\.)live\.com$/, /(^|\.)auth\.openai\.com$/, /(^|\.)openai\.com$/, /(^|\.)anthropic\.com$/, /(^|\.)claude\.ai$/, /(^|\.)baidu\.com$/];
+const AUTH_HOSTS = [/(^|\.)accounts\.google\.com$/, /(^|\.)appleid\.apple\.com$/, /(^|\.)login\.microsoftonline\.com$/, /(^|\.)live\.com$/, /(^|\.)auth\.openai\.com$/, /(^|\.)openai\.com$/, /(^|\.)anthropic\.com$/, /(^|\.)claude\.ai$/];
 
 function isAuth(url: string): boolean {
   try {
