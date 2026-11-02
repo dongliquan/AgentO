@@ -1029,7 +1029,7 @@ button.tree-pc:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, t
 .rp-more-body h4 { margin: 6px 0 0; }
 /* Focus mode: its own bar above the card */
 .focus-view { display: flex; flex-direction: column; }
-.focus-bar { flex: none; height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 10px; font-size: 12px; border-bottom: 1px solid var(--border); background: var(--panel); }
+.focus-bar { flex: none; height: var(--toolbar-h); display: flex; align-items: center; gap: 8px; padding: 0 10px; font-size: 12px; border-bottom: 1px solid var(--border); background: var(--panel); }
 .focus-bar .grow { flex: 1; }
 .focus-card { flex: 1; min-height: 0; position: relative; }
 .layout-toggle { width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border-radius: 4px; color: var(--muted); flex: none; }
