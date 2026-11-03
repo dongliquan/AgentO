@@ -60,33 +60,75 @@ export function quickReplyOf(entries: ChatEntry[]): QuickReply | null {
   // the last run of option lines, keys in order
   let best: QuickOption[] = [];
   let cur: QuickOption[] = [];
+  let curStart = 0;
+  let bestStart = 0;
+  let bestEnd = 0;
   const next = (k: string): string => String.fromCharCode(k.charCodeAt(0) + 1);
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
     const m = matchOption(line);
     if (m) {
       const key = m[0].toUpperCase();
       const first = key === 'A' || key === '1';
       if (cur.length && key === next(cur[cur.length - 1]!.key)) cur.push(opt(key, m[1]));
-      else if (first) cur = [opt(key, m[1])];
-      else cur = [];
-      if (cur.length >= 2) best = [...cur];
+      else if (first) {
+        cur = [opt(key, m[1])];
+        curStart = i;
+      } else cur = [];
+      if (cur.length >= 2) {
+        best = [...cur];
+        bestStart = curStart;
+        bestEnd = i;
+      }
     } else if (line.trim() && !/^\s{2,}|^\s*[-*]\s/.test(line)) {
       // a plain paragraph ends a list; indented / bulleted detail lines belong to the option above
       if (cur.length) cur = [];
     }
   }
+  // a numbered list that explains something ("흐름은 이렇습니다: 1. 2. 3.") is not the choice: the question must introduce
+  // the list, or follow it straight away — not sit after other sections (bullets, more paragraphs) further down
+  if (best.length >= 2 && !asksAboutList(lines, bestStart, bestEnd)) best = [];
   // a numbered list of questions ("1. 이름은 무엇으로 할까요? 2. 언제 옮길까요?") is several decisions, each needing its
   // own answer — not options to pick: no quick reply (Needs you points the manager at it)
   if (best.length >= 2 && lines.filter((l) => /[?？]/.test(matchOption(l)?.[1] ?? '')).length >= 2) return null;
   if (best.length >= 2 && best.length <= 8) return { options: best, multi: MULTI.test(tail) };
   // an either-or question ("삭제할까요, 남길까요?", "Should I delete them or keep them?"): its alternatives
-  const choice = choiceOf(text.slice(-600));
+  const choice = choiceOf(text.slice(-600)) ?? whetherOf(text.slice(-600));
   if (choice) return { options: choice, multi: false };
   // no options: yes/no questions at the end ("1244 하나입니다. 이어서 할까요?", "커밋 5건 push 해도 될까요?")
   // several questions where one asks "which / what" or "A or B": answers are words, not yes/no — no quick reply
   if (openQuestions(text.slice(-900)) && /[?？][^?？]*[?？]/.test(plain(text.slice(-900)))) return null;
   const questions = yesNoQuestions(text.slice(-900));
   return questions.length ? { options: [], multi: questions.length > 1, questions, ko: /[가-힣]/.test(questions.join('')) } : null;
+}
+
+/** Does the question belong to the list at lines [from, to]? It introduces the list, or is within the next two paragraphs. */
+function asksAboutList(lines: string[], from: number, to: number): boolean {
+  const intro = lines.slice(0, from).reverse().find((l) => l.trim());
+  if (intro && ASKS.test(intro)) return true;
+  const paras = lines
+    .slice(to + 1)
+    .join('\n')
+    .split(/\n\s*\n/)
+    .filter((p) => p.trim());
+  const at = paras.findIndex((p) => ASKS.test(p));
+  if (at < 0) return true; // no question after it (the ask is inside the options): as before
+  const isList = (p: string): boolean => p.split('\n').filter((l) => /^\s*(?:[-*]|\d+[.)])\s+/.test(l)).length >= 2;
+  return at < 2 && !paras.slice(0, at).some(isList);
+}
+
+/**
+ * "…넘길지, 넘긴다면 전체인지 P0~P2만인지 알려 주세요." — the last sentence names its alternatives with -인지: they become
+ * the options (the opening "-할지" part is a yes/no the manager can answer with Other…).
+ */
+function whetherOf(tail: string): QuickOption[] | null {
+  const sentences = plain(tail).split(/(?<=[.!?。？])\s+|\n/).map((s) => s.trim()).filter(Boolean);
+  const last = sentences[sentences.length - 1];
+  if (!last || !ASKS.test(last)) return null;
+  const alts = [...last.matchAll(/([^\s,，]+?)인지(?=[\s,，.]|$)/g)].map((m) => m[1]!);
+  if (alts.length < 2 || alts.length > 4) return null;
+  const q = last.replace(/[.。]$/, '');
+  return alts.map((p, i) => ({ key: String(i + 1), label: p, send: `${p} 쪽으로 해 주세요. ("${q}")` }));
 }
 
 // a question answered yes or no (not "어느 쪽 / which / how …")
