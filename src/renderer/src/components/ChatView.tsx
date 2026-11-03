@@ -962,7 +962,7 @@ const REPLAY_SEND_MS = 700;
 /** One-click replies after Send: go ahead as it stands / in the order given / as recommended (full wording in the tooltip). */
 const GO_REPLIES = [
   { label: 'Go', text: '진행해줘' },
-  { label: 'Order', text: '순서대로 해줘' },
+  { label: 'Steps', text: '순서대로 해줘' },
   { label: 'Best', text: '추천대로 해줘' }
 ];
 
