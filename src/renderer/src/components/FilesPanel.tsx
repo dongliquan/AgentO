@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { AgentKind, Folder, Project } from '@shared/protocol';
 import { useStore } from '@/store';
-import { send } from '@/client';
+import { requestChanged, requestList, send } from '@/client';
 import { useReveal } from '@/lib/fileRefs';
 import { useTalkProject } from '@/lib/talkFilter';
 import { AGENT_LABELS, pcStyle, projectColor } from '@/lib/format';
@@ -73,6 +73,21 @@ export function FilesPanel(): JSX.Element {
   }, [revealNonce]);
   const [picker, setPicker] = useState<{ x: number; y: number; folder: Folder } | null>(null);
   const openNewSession = useStore((s) => s.openNewSession);
+  // listings are cached once loaded: reload every open directory (and the git marks) of this project's folders
+  const refresh = useCallback((): void => {
+    const roots = (project?.folders ?? []).map((f) => norm(f.path));
+    for (const p of useStore.getState().fsLists.keys()) {
+      const n = norm(p);
+      if (roots.some((r) => n === r || n.startsWith(r + '\\'))) requestList(p, true);
+    }
+    for (const f of project?.folders ?? []) requestChanged(f.path);
+  }, [project]);
+  // coming back to the window: files were probably changed meanwhile (editor, a session, git)
+  useEffect(() => {
+    const onFocus = (): void => refresh();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [refresh]);
 
   if (!project) return <div className="rp-body muted dock-empty">No open project. Create one in the sidebar with +.</div>;
   const folders = leafFolders(project.folders);
@@ -92,6 +107,9 @@ export function FilesPanel(): JSX.Element {
             Memory
           </button>
         )}
+        <button className="icon-btn" title="Refresh — reload the file list and git marks" onClick={refresh}>
+          ⟳
+        </button>
         <button
           className="icon-btn"
           title="Add Folder to the project"
