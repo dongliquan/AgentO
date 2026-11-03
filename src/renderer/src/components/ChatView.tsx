@@ -959,11 +959,11 @@ const REPLAY_MAX_MS = 8000;
 const REPLAY_PAUSE_MS = 400;
 const REPLAY_SEND_MS = 700;
 
-/** One-click replies beside Send: go ahead as it stands / in the order given / with its recommendation. */
+/** One-click replies after Send: go ahead as it stands / in the order given / as recommended (full wording in the tooltip). */
 const GO_REPLIES = [
   { label: 'Go', text: '진행해줘' },
-  { label: 'In order', text: '순서대로 해줘' },
-  { label: 'Recommended', text: '추천대로 해줘' }
+  { label: 'Order', text: '순서대로 해줘' },
+  { label: 'Rec.', text: '추천대로 해줘' }
 ];
 
 /** The message box under a session's conversation — also used for terminal agents (Codex) in the Session tab. */
@@ -1240,6 +1240,7 @@ export function Composer({ session: s, quick, lastAt }: { session: Session; quic
           }
         }}
       />
+      <button className={`btn primary sm ${ghost?.sending ? 'sending' : ''}`} disabled={!ghost && ((!live && !wakeable) || !text.trim() || files.busy)} onClick={() => submit()}>Send</button>
       <div className="go-btns" role="group" aria-label="Quick go-ahead replies">
         {GO_REPLIES.map((g) => (
           <button
@@ -1256,7 +1257,6 @@ export function Composer({ session: s, quick, lastAt }: { session: Session; quic
           </button>
         ))}
       </div>
-      <button className={`btn primary sm ${ghost?.sending ? 'sending' : ''}`} disabled={!ghost && ((!live && !wakeable) || !text.trim() || files.busy)} onClick={() => submit()}>Send</button>
     </div>
     </>
   );

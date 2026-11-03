@@ -1007,6 +1007,9 @@ button.tree-pc:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, t
 .chat-choice-foot { display: flex; justify-content: flex-end; }
 .go-btns { flex: none; display: flex; gap: 4px; align-self: flex-end; }
 .chat-composer .go-btn { padding-left: 9px; padding-right: 9px; white-space: nowrap; }
+.chat-composer .go-btn { background: color-mix(in srgb, var(--ok) 14%, var(--panel)); border-color: color-mix(in srgb, var(--ok) 50%, var(--border)); color: var(--ok); font-weight: 600; }
+.chat-composer .go-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--ok) 26%, var(--panel)); }
+
 .chat-composer { display: flex; gap: 6px; align-items: flex-end; padding: 8px 10px; border-top: 1px solid var(--border); background: var(--panel); }
 .chat-composer { --composer-h: 30px; }
 /* the Send button is as tall as the one-line field (the field grows upward from there) */
