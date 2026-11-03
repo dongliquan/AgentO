@@ -3,7 +3,7 @@ import { useDelegations } from './Delegations';
 import type { InboxItem, Routine, Session, TeamOrderTarget } from '@shared/protocol';
 import { unreadCount, useStore, type RightTab } from '@/store';
 import { requestChanged, send } from '@/client';
-import { exportSession, focusTerminal } from '@/commands';
+import { exportSession } from '@/commands';
 import { AGENT_LABELS, STATUS_LABELS, projectLabel, displayTitle, roleLabel, basename, formatDateTime, formatTime, relativeTime } from '@/lib/format';
 import { RoleTag } from './RoleTag';
 import { ModelChip } from './ModelChip';
@@ -209,10 +209,8 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
   // the Terminal button switches this panel's own view (chat ⇄ terminal); the Ground card keeps what it shows
   const [termMode, setTermMode] = useState(false);
   useEffect(() => setTermMode(false), [s.id]);
-  const openTerminal = (): void => {
-    setTermMode(true);
-    setTimeout(() => focusTerminal(s.id), 100);
-  };
+  // (no focusTerminal here: the Ground card listens to that event and would switch to its terminal too)
+  const openTerminal = (): void => setTermMode(true);
 
   return (
     <>
