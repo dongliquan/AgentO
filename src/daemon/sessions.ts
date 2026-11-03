@@ -60,6 +60,8 @@ export interface CreateSessionOpts {
   at?: { x: number; y: number };
   /** Claude: terminal or headless (default: headless for team roles, terminal otherwise) */
   mode?: SessionMode;
+  /** the manager's model pick (a Claude / Codex model id); absent = the team default (never the CLI's, which may be Fable) */
+  modelPref?: string;
 }
 
 interface Live {
@@ -736,7 +738,8 @@ export class SessionManager extends EventEmitter {
     };
     if (opts.command) s.command = opts.command;
     if (opts.args) s.args = opts.args;
-    if (AUTO_MODEL && role === 'player' && opts.role === 'player' && opts.agent === 'claude' && !opts.command && LIGHT_ROLE.test(s.title)) s.modelPref = LIGHT_MODEL;
+    if (opts.modelPref && /^[\w.:\[\]-]{1,80}$/.test(opts.modelPref)) s.modelPref = opts.modelPref;
+    if (AUTO_MODEL && !s.modelPref && role === 'player' && opts.role === 'player' && opts.agent === 'claude' && !opts.command && LIGHT_ROLE.test(s.title)) s.modelPref = LIGHT_MODEL;
     // Claude: team roles run headless by default (JSON in / out, no screen); the manager's own sessions in a terminal
     if (opts.agent === 'claude' && !opts.command) s.mode = opts.mode ?? (opts.role && HEADLESS_DEFAULT ? 'headless' : 'tui');
     this.buffers.set(s.id, '');

@@ -1,3 +1,4 @@
+import { CLAUDE_MODELS } from './ModelChip';
 import { useEffect, useMemo, useState } from 'react';
 import type { AgentKind } from '@shared/protocol';
 import { useStore } from '@/store';
@@ -26,6 +27,8 @@ export function NewSessionDialog(): JSX.Element {
   const [agent, setAgent] = useState<AgentKind>((preset.agent as AgentKind) ?? 'claude');
   const [title, setTitle] = useState('');
   const [headless, setHeadless] = useState(false);
+  // '' = the default (Opus 5.5 — never Fable unless picked)
+  const [model, setModel] = useState('');
   const [adding, setAdding] = useState(false);
 
   // keep folder valid when project changes / folders arrive
@@ -67,7 +70,7 @@ export function NewSessionDialog(): JSX.Element {
       title: title.trim() || `${AGENT_LABELS[agent]} · ${folder?.name ?? ''}`.trim(),
       cols: 100,
       rows: 30,
-      ...(agent === 'claude' ? { mode: headless ? 'headless' : 'tui' } : {})
+      ...(agent === 'claude' ? { mode: headless ? 'headless' : 'tui', ...(model ? { model } : {}) } : {})
     });
     close();
   };
@@ -114,6 +117,15 @@ export function NewSessionDialog(): JSX.Element {
             ))}
           </div>
         </div>
+        {agent === 'claude' && (
+          <div className="field">
+            <label>Model</label>
+            <select value={model} onChange={(e) => setModel(e.target.value)}>
+              <option value="">Default — Opus 5.5</option>
+              {CLAUDE_MODELS.filter((m) => m.id !== 'claude-opus-5-5').map((m) => <option key={m.id} value={m.id}>{m.label} — {m.note}</option>)}
+            </select>
+          </div>
+        )}
         {agent === 'claude' && (
           <div className="field">
             <label>Run</label>

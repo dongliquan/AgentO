@@ -650,6 +650,7 @@ async function main(): Promise<void> {
         if (msg.cols !== undefined) opts.cols = msg.cols;
         if (msg.rows !== undefined) opts.rows = msg.rows;
         if (msg.mode !== undefined) opts.mode = msg.mode;
+        if (msg.model) opts.modelPref = msg.model;
         const session = sessions.create(opts);
         // a project with a head coach is laid out as a team: the new card joins its part's rows
         const own = store.listProjects().find((p) => p.id === msg.projectId);

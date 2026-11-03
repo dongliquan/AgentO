@@ -154,10 +154,11 @@ async function main() {
   }
 
   // ---------- a shell session through a holder ----------
-  c.send({ type: 'session.create', projectId: project.id, folderId: folder.id, agent: 'shell', title: 'smoke shell', cols: 100, rows: 30 });
+  c.send({ type: 'session.create', projectId: project.id, folderId: folder.id, agent: 'shell', title: 'smoke shell', cols: 100, rows: 30, model: 'claude-sonnet-5-5' });
   const up = await c.waitFor((m) => m.type === 'session.upsert' && m.session.title === 'smoke shell' && (m.session.status === 'working' || m.session.status === 'waiting'), 15000);
   const sid = up?.session.id;
   check('shell session starts', !!sid, up ? up.session.status : 'no status');
+  check('a model picked at creation is kept', up?.session.modelPref === 'claude-sonnet-5-5', String(up?.session.modelPref));
   const holderFile = sid && (await until(() => fs.existsSync(path.join(dataDir, 'holders', `${sid}.json`)), 10000));
   check('session runs in a holder', !!holderFile);
   c.send({ type: 'session.attach', id: sid });

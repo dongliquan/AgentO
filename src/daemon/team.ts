@@ -45,8 +45,9 @@ const LOG_TEXT_MAX = 4000;
  * manager does not want Fable unless chosen). Applies at the next start/resume of a session.
  */
 const envOr = (k: string, d: string): string => (process.env[k] !== undefined ? process.env[k]!.trim() : d);
-const COORDINATOR_MODEL = envOr('AGENTO_COACH_MODEL', 'sonnet');
-const PLAYER_MODEL = envOr('AGENTO_PLAYER_MODEL', 'claude-opus-5-5');
+// never empty: the CLI's own default is Fable on most plans, which the manager does not want unless chosen
+const COORDINATOR_MODEL = envOr('AGENTO_COACH_MODEL', 'sonnet') || 'sonnet';
+const PLAYER_MODEL = envOr('AGENTO_PLAYER_MODEL', 'claude-opus-5-5') || 'claude-opus-5-5';
 const COORDINATOR_EFFORT = envOr('AGENTO_COACH_EFFORT', 'medium');
 const COORDINATOR_COMPACT_PCT = envOr('AGENTO_COACH_COMPACT_PCT', '60');
 const COORDINATOR_ARGS = (pick?: string): string[] => [

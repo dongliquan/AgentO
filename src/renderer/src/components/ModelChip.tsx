@@ -7,7 +7,7 @@ import { askText } from '@/lib/prompt';
 import { useEscape } from '@/lib/hooks';
 
 /** Claude models to pick from (the CLI takes the full ids with --model and /model). */
-const CLAUDE_MODELS: { id: string; label: string; note: string }[] = [
+export const CLAUDE_MODELS: { id: string; label: string; note: string }[] = [
   { id: 'claude-fable-5-1', label: 'Fable 5.1', note: 'strongest, most usage' },
   { id: 'claude-opus-5-5', label: 'Opus 5.5', note: 'strong coding' },
   { id: 'claude-sonnet-5-5', label: 'Sonnet 5.5', note: 'fast, much less usage' },
