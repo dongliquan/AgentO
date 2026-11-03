@@ -24,7 +24,7 @@ import { kbd } from '@/lib/keys';
 import { makeScoper, ScopeCtx, toolScope, useScoper, type Scope } from '@/lib/chatScope';
 import { dayTime, displayTitle, formatDateTime, pcStyle, projectColor, relativeTime, roleLabel } from '@/lib/format';
 import { useNow } from '@/lib/hooks';
-import { frequentInputs, recentInputs, recordInput } from '@/lib/inputHistory';
+import { recentInputs, recordInput } from '@/lib/inputHistory';
 import { countUse } from '@/lib/uiUsage';
 
 /** Searchable text of a transcript entry: its text, or a tool's name, input and result. */
@@ -959,6 +959,13 @@ const REPLAY_MAX_MS = 8000;
 const REPLAY_PAUSE_MS = 400;
 const REPLAY_SEND_MS = 700;
 
+/** One-click replies beside Send: go ahead as it stands / in the order given / with its recommendation. */
+const GO_REPLIES = [
+  { label: '진행', text: '진행해줘' },
+  { label: '순서대로', text: '순서대로 해줘' },
+  { label: '추천대로', text: '추천대로 해줘' }
+];
+
 /** The message box under a session's conversation — also used for terminal agents (Codex) in the Session tab. */
 export function Composer({ session: s, quick, lastAt }: { session: Session; quick?: QuickReply | null; lastAt?: number }): JSX.Element {
   const nowTick = useNow(60_000);
@@ -967,15 +974,8 @@ export function Composer({ session: s, quick, lastAt }: { session: Session; quic
   const [quickClosed, setQuickClosed] = useState<string | null>(null);
   const [severalFor, setSeveralFor] = useState<string | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
-  // ↑ / ↓ in the box walk through what was typed before; the phrases typed again and again show as chips
+  // ↑ / ↓ in the box walk through what was typed before
   const hist = useRef({ i: -1 });
-  const [chipTick, setChipTick] = useState(0);
-  useEffect(() => {
-    const on = (): void => setChipTick((n) => n + 1);
-    window.addEventListener('asm-input-history', on);
-    return () => window.removeEventListener('asm-input-history', on);
-  }, []);
-  const chips = useMemo(() => frequentInputs(2), [chipTick]);
   const recall = (i: number): void => {
     const list = recentInputs();
     if (i >= list.length) return;
@@ -1064,7 +1064,6 @@ export function Composer({ session: s, quick, lastAt }: { session: Session; quic
     countUse('quick pick');
     submit(o.send ?? `${o.key}. ${o.label}`);
   };
-  const showChips = !showQuick && !text && !ghost && chips.length > 0 && (live || wakeable);
   // the options may be combinable even when the text does not say so: the manager can switch to checkboxes
   const multi = !!quick && (quick.multi || severalFor === quickId);
   const pickedText = (): string => quick?.options.filter((o) => picked.includes(o.key)).map((o) => `${o.key}. ${o.label}`).join('\n') ?? '';
@@ -1241,24 +1240,22 @@ export function Composer({ session: s, quick, lastAt }: { session: Session; quic
           }
         }}
       />
-      {showChips && (
-        <div className="input-chips" role="group" aria-label="Phrases you often send">
-          {chips.map((c) => (
-            <button
-              key={c}
-              className="input-chip"
-              title={`Put "${c}" in the message box`}
-              onClick={() => {
-                countUse('chip use');
-                setText(c);
-                setTimeout(() => ref.current?.focus(), 0);
-              }}
-            >
-              {c}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="go-btns" role="group" aria-label="Quick go-ahead replies">
+        {GO_REPLIES.map((g) => (
+          <button
+            key={g.label}
+            className="btn sm go-btn"
+            title={`Sends "${g.text}"`}
+            disabled={!!ghost || (!live && !wakeable) || !!text.trim() || files.busy}
+            onClick={() => {
+              countUse(`go ${g.text}`);
+              submit(g.text);
+            }}
+          >
+            {g.label}
+          </button>
+        ))}
+      </div>
       <button className={`btn primary sm ${ghost?.sending ? 'sending' : ''}`} disabled={!ghost && ((!live && !wakeable) || !text.trim() || files.busy)} onClick={() => submit()}>Send</button>
     </div>
     </>

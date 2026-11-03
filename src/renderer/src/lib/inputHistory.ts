@@ -2,17 +2,12 @@ import { useStore } from '@/store';
 
 /**
  * What the manager typed into sessions, kept in this browser (localStorage, never sent anywhere): ↑ in an empty message
- * box brings the earlier ones back, and the short phrases typed again and again become one-click chips above the box.
+ * box brings the earlier ones back.
  * The first time it starts from the manager's direct inputs the inbox already holds.
  */
 const KEY = 'asm.inputHistory';
 const MAX_ITEMS = 300;
 const MAX_CHARS = 600;
-/** chips: short phrases only, typed at least this often */
-const CHIP_MAX_CHARS = 40;
-const CHIP_MIN_COUNT = 3;
-/** a go-ahead in any words */
-const APPROVE = /^(네|응|ㅇㅇ|예|좋아|그래|그렇게|진행|계속|해줘|해 주세요|추천대로|ok|okay|yes|go ahead)/i;
 
 interface Item {
   text: string;
@@ -86,29 +81,9 @@ export function recordInput(raw: string): void {
   // over the cap: the oldest, least repeated ones go first
   if (list.length > MAX_ITEMS) list.sort((a, b) => b.n * 1e12 + b.at - (a.n * 1e12 + a.at)).length = MAX_ITEMS;
   save(list);
-  window.dispatchEvent(new Event('asm-input-history'));
 }
 
 /** Earlier messages, newest first (↑ walks down this list). */
 export function recentInputs(): string[] {
   return [...load()].sort((a, b) => b.at - a.at).map((i) => i.text);
-}
-
-/** Short phrases typed again and again, most often first. */
-export function frequentInputs(limit = 2): string[] {
-  const out: string[] = [];
-  let approve = false;
-  const often = load()
-    .filter((i) => i.text.length <= CHIP_MAX_CHARS && i.n >= CHIP_MIN_COUNT && !i.text.includes('\n'))
-    .sort((a, b) => b.n - a.n || b.at - a.at);
-  for (const i of often) {
-    // "네, 그렇게 해 주세요." and "진행해줘" say the same: only the most used of them
-    if (APPROVE.test(i.text)) {
-      if (approve) continue;
-      approve = true;
-    }
-    out.push(i.text);
-    if (out.length >= limit) break;
-  }
-  return out;
 }
