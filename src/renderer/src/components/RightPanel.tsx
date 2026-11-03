@@ -207,8 +207,10 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
   }, [s.cwd, s.status]);
 
   // the Terminal button switches this panel's own view (chat ⇄ terminal); the Ground card keeps what it shows
-  const [termMode, setTermMode] = useState(false);
-  useEffect(() => setTermMode(false), [s.id]);
+  // it opens on the terminal for a session that has a screen; a headless one (no screen, only a log) opens on its chat
+  const startOnTerminal = hasChat && s.mode !== 'headless';
+  const [termMode, setTermMode] = useState(startOnTerminal);
+  useEffect(() => setTermMode(startOnTerminal), [s.id]);
   // (no focusTerminal here: the Ground card listens to that event and would switch to its terminal too)
   const openTerminal = (): void => setTermMode(true);
 
