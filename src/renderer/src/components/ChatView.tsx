@@ -963,6 +963,7 @@ export function Composer({ session: s, quick, lastAt }: { session: Session; quic
   const [text, setText] = useState('');
   const [picked, setPicked] = useState<string[]>([]);
   const [quickClosed, setQuickClosed] = useState<string | null>(null);
+  const [severalFor, setSeveralFor] = useState<string | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
   // a team message typed into this session by the daemon, replayed here: typed out, then "sent"
   const [ghost, setGhost] = useState<{ text: string; sending: boolean } | null>(null);
@@ -1035,6 +1036,9 @@ export function Composer({ session: s, quick, lastAt }: { session: Session; quic
     qs.length === 1 ? (ok(0) ? words.goAhead : words.dont) : qs.map((q, i) => `${i + 1}. ${q} → ${ok(i) ? yes : no}`).join('\n');
   const showQuick = !!quick && !text && !ghost && quickClosed !== quickId && (live || wakeable);
   const pickOne = (o: QuickOption): void => submit(o.send ?? `${o.key}. ${o.label}`);
+  // the options may be combinable even when the text does not say so: the manager can switch to checkboxes
+  const multi = !!quick && (quick.multi || severalFor === quickId);
+  const pickedText = (): string => quick?.options.filter((o) => picked.includes(o.key)).map((o) => `${o.key}. ${o.label}`).join('\n') ?? '';
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -1091,9 +1095,22 @@ export function Composer({ session: s, quick, lastAt }: { session: Session; quic
             </button>
           </>
         )}
-        {!quick.questions && <span className="quick-reply-title">{quick.multi ? 'Pick any' : 'Pick one'}</span>}
+        {!quick.questions && (
+          <button
+            className="quick-reply-title quick-mode"
+            title={multi ? 'Back to picking one (sent at once)' : 'Pick several: check the ones you want, then Send'}
+            disabled={quick.multi}
+            onClick={() => {
+              setPicked([]);
+              setSeveralFor(multi ? null : quickId);
+            }}
+          >
+            {multi ? 'Pick any' : 'Pick one'}
+            {!quick.multi && <span className="quick-mode-sw">{multi ? '◂ one' : 'several ▸'}</span>}
+          </button>
+        )}
         {quick.options.map((o) =>
-          quick.multi ? (
+          multi ? (
             <label key={o.key} className={`quick-opt ${picked.includes(o.key) ? 'on' : ''}`}>
               <input
                 type="checkbox"
@@ -1109,14 +1126,23 @@ export function Composer({ session: s, quick, lastAt }: { session: Session; quic
             </label>
           )
         )}
-        {quick.multi && !quick.questions && (
-          <button
-            className="btn sm primary"
-            disabled={!picked.length}
-            onClick={() => submit(quick.options.filter((o) => picked.includes(o.key)).map((o) => `${o.key}. ${o.label}`).join('\n'))}
-          >
-            Send
-          </button>
+        {multi && !quick.questions && (
+          <>
+            <button className="btn sm primary" disabled={!picked.length} onClick={() => submit(pickedText())}>
+              Send
+            </button>
+            <button
+              className="btn sm ghost"
+              disabled={!picked.length}
+              title="Put the picked ones in the message box, to add an answer to the other questions before sending"
+              onClick={() => {
+                setText(`${pickedText()}\n`);
+                setTimeout(() => ref.current?.focus(), 0);
+              }}
+            >
+              Add note…
+            </button>
+          </>
         )}
         <button
           className="btn sm ghost"
