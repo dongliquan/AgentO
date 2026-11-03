@@ -975,7 +975,7 @@ export function Composer({ session: s, quick, lastAt }: { session: Session; quic
     window.addEventListener('asm-input-history', on);
     return () => window.removeEventListener('asm-input-history', on);
   }, []);
-  const chips = useMemo(() => frequentInputs(6), [chipTick]);
+  const chips = useMemo(() => frequentInputs(2), [chipTick]);
   const recall = (i: number): void => {
     const list = recentInputs();
     if (i >= list.length) return;
@@ -1191,24 +1191,6 @@ export function Composer({ session: s, quick, lastAt }: { session: Session; quic
         <AttachmentBar items={files.items} onRemove={files.remove} />
       </div>
     )}
-    {showChips && (
-      <div className="input-chips" role="group" aria-label="Phrases you often send">
-        {chips.map((c) => (
-          <button
-            key={c}
-            className="input-chip"
-            title={`Put "${c}" in the message box`}
-            onClick={() => {
-              countUse('chip use');
-              setText(c);
-              setTimeout(() => ref.current?.focus(), 0);
-            }}
-          >
-            {c}
-          </button>
-        ))}
-      </div>
-    )}
     <div className={`chat-composer ${ghost ? 'replay' : ''}`} data-session={s.id}>
       <textarea
         ref={ref}
@@ -1259,6 +1241,24 @@ export function Composer({ session: s, quick, lastAt }: { session: Session; quic
           }
         }}
       />
+      {showChips && (
+        <div className="input-chips" role="group" aria-label="Phrases you often send">
+          {chips.map((c) => (
+            <button
+              key={c}
+              className="input-chip"
+              title={`Put "${c}" in the message box`}
+              onClick={() => {
+                countUse('chip use');
+                setText(c);
+                setTimeout(() => ref.current?.focus(), 0);
+              }}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+      )}
       <button className={`btn primary sm ${ghost?.sending ? 'sending' : ''}`} disabled={!ghost && ((!live && !wakeable) || !text.trim() || files.busy)} onClick={() => submit()}>Send</button>
     </div>
     </>

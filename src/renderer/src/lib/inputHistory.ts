@@ -11,6 +11,8 @@ const MAX_CHARS = 600;
 /** chips: short phrases only, typed at least this often */
 const CHIP_MAX_CHARS = 40;
 const CHIP_MIN_COUNT = 3;
+/** a go-ahead in any words */
+const APPROVE = /^(네|응|ㅇㅇ|예|좋아|그래|그렇게|진행|계속|해줘|해 주세요|추천대로|ok|okay|yes|go ahead)/i;
 
 interface Item {
   text: string;
@@ -93,10 +95,20 @@ export function recentInputs(): string[] {
 }
 
 /** Short phrases typed again and again, most often first. */
-export function frequentInputs(limit = 6): string[] {
-  return load()
+export function frequentInputs(limit = 2): string[] {
+  const out: string[] = [];
+  let approve = false;
+  const often = load()
     .filter((i) => i.text.length <= CHIP_MAX_CHARS && i.n >= CHIP_MIN_COUNT && !i.text.includes('\n'))
-    .sort((a, b) => b.n - a.n || b.at - a.at)
-    .slice(0, limit)
-    .map((i) => i.text);
+    .sort((a, b) => b.n - a.n || b.at - a.at);
+  for (const i of often) {
+    // "네, 그렇게 해 주세요." and "진행해줘" say the same: only the most used of them
+    if (APPROVE.test(i.text)) {
+      if (approve) continue;
+      approve = true;
+    }
+    out.push(i.text);
+    if (out.length >= limit) break;
+  }
+  return out;
 }
