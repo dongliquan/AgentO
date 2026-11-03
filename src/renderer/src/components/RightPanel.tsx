@@ -238,7 +238,8 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
           <ContextSize session={s} />
         </div>
       </div>
-      <SearchBox value={query} onChange={setQuery} count={hasChat ? hits : termLines.length} placeholder="Search this conversation" />
+      {/* it searches the chat (or the summary): in the live terminal view there is nothing for it to search */}
+      {!termMode && <SearchBox value={query} onChange={setQuery} count={hasChat ? hits : termLines.length} placeholder="Search this conversation" />}
       <div className="rp-conversation">
         {termMode ? (
           <div className="rp-term-live">
