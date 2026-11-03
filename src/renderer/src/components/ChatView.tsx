@@ -1169,7 +1169,7 @@ export function Composer({ session: s, quick, lastAt }: { session: Session; quic
         readOnly={ghost !== null}
         disabled={!live && !wakeable && !ghost}
         placeholder={live ? kbd('Message… (Ctrl+Enter to send)') : wakeable ? kbd('Message… (starts the session, Ctrl+Enter to send)') : 'Not running'}
-        title="Enter to send · Shift+Enter for a new line · paste or drop images"
+        title="Ctrl+Enter to send · Enter for a new line · paste or drop images"
         onChange={(e) => setText(e.target.value)}
         onPaste={(e) => {
           const imgs = imageFiles(e.clipboardData);

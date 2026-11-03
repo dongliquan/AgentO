@@ -1021,6 +1021,7 @@ button.tree-pc:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, t
 .rp-meta .grow { flex: 1; }
 .rp-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; overflow: hidden; }
 .rp-conversation > * { flex: 1; min-height: 0; }
+.rp-term-live { position: relative; background: var(--term-bg); }
 .rp-term-preview { margin: 0 !important; padding: 8px 10px; overflow: auto; background: var(--term-bg); color: #ccc; font-family: var(--mono); font-size: 11.5px; white-space: pre-wrap; }
 .rp-more { flex: none; border-top: 1px solid var(--border); max-height: 45%; overflow: auto; }
 .rp-more-toggle { width: 100%; text-align: left; padding: 6px 12px; font-size: 11.5px; color: var(--muted); }

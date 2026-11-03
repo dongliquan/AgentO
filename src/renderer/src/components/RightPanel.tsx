@@ -3,7 +3,7 @@ import { useDelegations } from './Delegations';
 import type { InboxItem, Routine, Session, TeamOrderTarget } from '@shared/protocol';
 import { unreadCount, useStore, type RightTab } from '@/store';
 import { requestChanged, send } from '@/client';
-import { exportSession, focusTerminal, selectAndReveal } from '@/commands';
+import { exportSession, focusTerminal } from '@/commands';
 import { AGENT_LABELS, STATUS_LABELS, projectLabel, displayTitle, roleLabel, basename, formatDateTime, formatTime, relativeTime } from '@/lib/format';
 import { RoleTag } from './RoleTag';
 import { ModelChip } from './ModelChip';
@@ -15,6 +15,7 @@ import { openFile } from '@/lib/openfile';
 import { StatusBadge } from './StatusBadge';
 import { AgentIcon } from './AgentIcon';
 import { ChatView, Composer } from './ChatView';
+import { TerminalView } from './TerminalView';
 import { screenLines } from '@/lib/screen';
 import { TeamLog } from './TeamLog';
 import { FilesPanel } from './FilesPanel';
@@ -205,8 +206,11 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
     requestChanged(s.cwd);
   }, [s.cwd, s.status]);
 
+  // the Terminal button switches this panel's own view (chat ⇄ terminal); the Ground card keeps what it shows
+  const [termMode, setTermMode] = useState(false);
+  useEffect(() => setTermMode(false), [s.id]);
   const openTerminal = (): void => {
-    selectAndReveal(s.id);
+    setTermMode(true);
     setTimeout(() => focusTerminal(s.id), 100);
   };
 
@@ -223,14 +227,24 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
           <span>{projectLabel(s.projectId, projects)}</span>
           <span className="muted">· {AGENT_LABELS[s.agent]}</span>
           <span className="grow" />
-          <button className="btn sm ghost" onClick={openTerminal}>Terminal</button>
+          <button
+            className="btn sm ghost"
+            onClick={() => (termMode ? setTermMode(false) : openTerminal())}
+            title={termMode ? 'Back to the conversation' : s.mode === 'headless' ? 'Activity log (headless: no screen)' : 'The terminal screen — type into it (answers, /mcp …)'}
+          >
+            {termMode ? (hasChat ? 'Chat' : 'Summary') : s.mode === 'headless' ? 'Log' : 'Terminal'}
+          </button>
           <ModelChip session={s} />
           <ContextSize session={s} />
         </div>
       </div>
       <SearchBox value={query} onChange={setQuery} count={hasChat ? hits : termLines.length} placeholder="Search this conversation" />
       <div className="rp-conversation">
-        {hasChat ? (
+        {termMode ? (
+          <div className="rp-term-live">
+            <TerminalView sessionId={s.id} autoFocus />
+          </div>
+        ) : hasChat ? (
           <ChatView session={s} onShowTerminal={openTerminal} query={query} onMatches={setHits} />
         ) : (
           <div className="rp-term">
