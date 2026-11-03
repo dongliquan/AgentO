@@ -58,6 +58,10 @@ export function Toolbar(): JSX.Element {
   const project = top && !top.closed ? top : undefined;
   const ids = new Set(project ? [project.id, ...projects.filter((p) => p.parentId === project.id).map((p) => p.id)] : []);
   const count = [...sessions.values()].filter((s) => ids.has(s.projectId)).length;
+  // the team-wide Head Coach belongs to no project: the breadcrumb is the whole team (all open projects), not the first project
+  const teamHead = !!sel && sel.role === 'head' && !sel.projectId;
+  const openIds = new Set(projects.filter((p) => !(p.parentId ? projects.find((x) => x.id === p.parentId)?.closed : p.closed)).map((p) => p.id));
+  const teamCount = [...sessions.values()].filter((s) => openIds.has(s.projectId)).length;
 
   return (
     <div className="toolbar">
@@ -90,6 +94,10 @@ export function Toolbar(): JSX.Element {
         ) : onTimeline ? (
           <>
             <b>Timeline</b> · finished features by project and day
+          </>
+        ) : teamHead ? (
+          <>
+            <b>Head Coach</b> › All projects › Sessions {teamCount}
           </>
         ) : project ? (
           <>

@@ -51,7 +51,8 @@ export function renderMarkdown(md: string): string {
   let i = 0;
 
   const isTableRow = (l: string): boolean => /^\s*\|.*\|\s*$/.test(l);
-  const isSep = (l: string): boolean => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(l);
+  // the delimiter row: cells of hyphens, one is enough (":-:" is a centred column), with colons for alignment
+  const isSep = (l: string): boolean => l.includes('|') && /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(l);
 
   while (i < lines.length) {
     const line = lines[i];
