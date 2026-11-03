@@ -29,6 +29,14 @@ const AUTO_HIBERNATE_MIN = Math.max(1, Number(process.env['ASM_HIBERNATE_MIN'] |
 const OSC_TITLE_RE = /\x1b\](?:0|2);([^\x07\x1b]*)(?:\x07|\x1b\\)/g;
 /** new team sessions (players, coaches) run headless unless switched off; the manager's own sessions stay in a terminal */
 const HEADLESS_DEFAULT = process.env['AGENTO_HEADLESS'] !== '0';
+/**
+ * A team player whose title says it reads, researches, documents or tests (rather than builds) starts on Sonnet: the same
+ * work for far less usage than the Opus default. Stored as its model pick (visible and changeable on its card);
+ * AGENTO_AUTO_MODEL=0 switches it off.
+ */
+const AUTO_MODEL = process.env['AGENTO_AUTO_MODEL'] !== '0';
+const LIGHT_ROLE = /조사|분석|검토|리뷰|리서치|문서|정리|기획|테스트|검증|\bQA\b|research|review|analy[sz]|audit|\bdocs?\b|\btest/i;
+const LIGHT_MODEL = 'claude-sonnet-5-5';
 
 /** a headless session's tool call waiting for the manager */
 interface PendingPermission extends PermissionRequest {
@@ -728,6 +736,7 @@ export class SessionManager extends EventEmitter {
     };
     if (opts.command) s.command = opts.command;
     if (opts.args) s.args = opts.args;
+    if (AUTO_MODEL && role === 'player' && opts.role === 'player' && opts.agent === 'claude' && !opts.command && LIGHT_ROLE.test(s.title)) s.modelPref = LIGHT_MODEL;
     // Claude: team roles run headless by default (JSON in / out, no screen); the manager's own sessions in a terminal
     if (opts.agent === 'claude' && !opts.command) s.mode = opts.mode ?? (opts.role && HEADLESS_DEFAULT ? 'headless' : 'tui');
     this.buffers.set(s.id, '');

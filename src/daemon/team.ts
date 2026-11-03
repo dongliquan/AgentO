@@ -81,6 +81,10 @@ const TRUST_SETTLE_MS = 8_000;
 const SETTLE_MS = 4_000;
 /** a rider (a note that only goes along with another message) is delivered on its own after this long */
 const RIDE_MAX_MS = 15 * 60_000;
+/** an FYI to a coach about what the manager told a player directly: it goes along with the coach's next work, or is dropped */
+const FYI_MAX_MS = 3 * 60 * 60_000;
+/** shorter direct inputs ("응", "A", "진행해줘") say nothing a coach could use */
+const FYI_MIN_CHARS = 12;
 /** how long reports to a coordinator are held so several arrive in one turn */
 const REPORT_BATCH_MS = 20_000;
 /** Messages a session may send per window — stops two sessions from bouncing messages forever. */
@@ -147,6 +151,11 @@ interface Queued {
   report?: boolean;
   /** a directive's task id (becomes the pending work's id when delivered) */
   task?: string;
+  /** a rider that is dropped, not delivered on its own, once this time passes (an FYI nobody needed) */
+  expires?: number;
+  /** a later item with the same key replaces this one (its `lines` kept) — so FYIs about one thing stay one note */
+  key?: string;
+  lines?: string[];
 }
 
 class ToolError extends Error {}
@@ -786,6 +795,7 @@ export class Team {
     if (!s || !text.trim()) return;
     const task = this.newTask(s);
     this.record(s, 'directive', { id: 'user', title: DIRECT }, text, true, task);
+    this.tellCoach(s, text, task);
     if (this.pending.has(id)) return;
     // stopped: message() queues it and wakes the session; it is tracked when delivered
     if (!this.sessions.isLive(id)) {
@@ -796,6 +806,33 @@ export class Team {
     // the composer types before it reports the note: the turn may already be running
     const p = this.pending.get(id);
     if (p && (s.status === 'working' || s.status === 'starting')) p.started = true;
+  }
+
+  /**
+   * The manager told a player something directly: its project's Coach would not know (a quarter of the manager's
+   * messages go to players). A one-line FYI rides along with the Coach's next work — no turn of its own, dropped after
+   * FYI_MAX_MS if the Coach had no work meanwhile — and later ones about the same player fold into it (last three).
+   */
+  private tellCoach(player: StoredSession, text: string, task: string | undefined): void {
+    if (player.role !== 'player' || player.agent !== 'claude') return;
+    const root = this.rootOf(player.projectId);
+    const coach = this.all().find((x) => x.role === 'head' && x.projectId === root && x.agent === 'claude');
+    if (!coach || coach.id === player.id || this.isClosed(player.projectId)) return;
+    const body = text.replace(/\[Attached image[^\]]*\]/g, '').replace(/\s+/g, ' ').trim();
+    if (body.length < FYI_MIN_CHARS || body.startsWith('/')) return;
+    const key = `fyi:${player.id}`;
+    const q = this.outbox.get(coach.id) ?? [];
+    const prev = q.find((x) => x.key === key);
+    const lines = [...(prev?.lines ?? []), `${task ? `${task} ` : ''}${clip(body, 160)}`].slice(-3);
+    const item: Queued = {
+      text: `[AgentO] FYI — the manager told "${player.title}" (${player.id.slice(0, 8)}) directly (not an order to you; no reply needed):\n${lines.map((l) => `- ${l}`).join('\n')}`,
+      ride: true,
+      wake: false,
+      expires: Date.now() + FYI_MAX_MS,
+      key,
+      lines
+    };
+    this.outbox.set(coach.id, [...q.filter((x) => x !== prev), { ...item, at: Date.now() }]);
   }
 
   /**
@@ -1174,7 +1211,11 @@ export class Team {
 
   /** Deliver queued messages to idle targets; wake stopped ones; flag ones sitting on a prompt. */
   private flush(): void {
-    for (const [id, queue] of this.outbox) {
+    for (const [id, all] of this.outbox) {
+      // FYI riders nobody needed in time are dropped — never delivered on their own
+      const now = Date.now();
+      const queue = all.filter((q) => !(q.expires !== undefined && q.expires < now));
+      if (queue.length !== all.length) this.outbox.set(id, queue);
       const t = this.sessions.get(id);
       if (!t || queue.length === 0) {
         this.outbox.delete(id);
@@ -1183,7 +1224,7 @@ export class Team {
       // a closed project keeps its queued messages until it is opened again
       if (this.isClosed(t.projectId)) continue;
       // only riders (a delegation note, a progress report): wait for something worth a turn — but not forever
-      if (queue.every((q) => q.ride) && Date.now() - Math.min(...queue.map((q) => q.at ?? 0)) < RIDE_MAX_MS) continue;
+      if (queue.every((q) => q.ride) && (queue.some((q) => q.expires !== undefined) || Date.now() - Math.min(...queue.map((q) => q.at ?? 0)) < RIDE_MAX_MS)) continue;
       // reports for a head coach / coach: wait a little for the others (players finishing close together → one turn)
       if (t.role !== 'player' && queue.every((q) => q.report || q.ride) && Date.now() - Math.min(...queue.map((q) => q.at ?? 0)) < REPORT_BATCH_MS) continue;
       if (!this.sessions.isLive(id)) {

@@ -24,6 +24,8 @@ import { kbd } from '@/lib/keys';
 import { makeScoper, ScopeCtx, toolScope, useScoper, type Scope } from '@/lib/chatScope';
 import { dayTime, displayTitle, formatDateTime, pcStyle, projectColor, relativeTime, roleLabel } from '@/lib/format';
 import { useNow } from '@/lib/hooks';
+import { frequentInputs, recentInputs, recordInput } from '@/lib/inputHistory';
+import { countUse } from '@/lib/uiUsage';
 
 /** Searchable text of a transcript entry: its text, or a tool's name, input and result. */
 function entryText(e: ChatEntry): string {
@@ -965,6 +967,26 @@ export function Composer({ session: s, quick, lastAt }: { session: Session; quic
   const [quickClosed, setQuickClosed] = useState<string | null>(null);
   const [severalFor, setSeveralFor] = useState<string | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
+  // ↑ / ↓ in the box walk through what was typed before; the phrases typed again and again show as chips
+  const hist = useRef({ i: -1 });
+  const [chipTick, setChipTick] = useState(0);
+  useEffect(() => {
+    const on = (): void => setChipTick((n) => n + 1);
+    window.addEventListener('asm-input-history', on);
+    return () => window.removeEventListener('asm-input-history', on);
+  }, []);
+  const chips = useMemo(() => frequentInputs(6), [chipTick]);
+  const recall = (i: number): void => {
+    const list = recentInputs();
+    if (i >= list.length) return;
+    hist.current.i = i;
+    setText(i < 0 ? '' : list[i]!);
+    if (i >= 0) countUse('history recall');
+    setTimeout(() => {
+      const el = ref.current;
+      if (el) el.selectionStart = el.selectionEnd = el.value.length;
+    }, 0);
+  };
   // a team message typed into this session by the daemon, replayed here: typed out, then "sent"
   const [ghost, setGhost] = useState<{ text: string; sending: boolean } | null>(null);
   const delivered = useStore((st) => st.delivered[s.id]);
@@ -1018,6 +1040,9 @@ export function Composer({ session: s, quick, lastAt }: { session: Session; quic
     const t = (override ?? text).trim();
     if (!t || files.busy || (!live && !wakeable)) return;
     const body = withAttachments(t, files.items);
+    recordInput(t);
+    countUse('send');
+    hist.current.i = -1;
     // kept in the log (Me tab), with the answer reported back
     send({ type: 'session.note', id: s.id, text: body });
     // running: typed in now by the daemon (one paste, Enter, and Enter again if it did not take); stopped: woken first
@@ -1035,7 +1060,11 @@ export function Composer({ session: s, quick, lastAt }: { session: Session; quic
   const answerAll = (qs: string[], ok: (i: number) => boolean): string =>
     qs.length === 1 ? (ok(0) ? words.goAhead : words.dont) : qs.map((q, i) => `${i + 1}. ${q} → ${ok(i) ? yes : no}`).join('\n');
   const showQuick = !!quick && !text && !ghost && quickClosed !== quickId && (live || wakeable);
-  const pickOne = (o: QuickOption): void => submit(o.send ?? `${o.key}. ${o.label}`);
+  const pickOne = (o: QuickOption): void => {
+    countUse('quick pick');
+    submit(o.send ?? `${o.key}. ${o.label}`);
+  };
+  const showChips = !showQuick && !text && !ghost && chips.length > 0 && (live || wakeable);
   // the options may be combinable even when the text does not say so: the manager can switch to checkboxes
   const multi = !!quick && (quick.multi || severalFor === quickId);
   const pickedText = (): string => quick?.options.filter((o) => picked.includes(o.key)).map((o) => `${o.key}. ${o.label}`).join('\n') ?? '';
@@ -1068,11 +1097,11 @@ export function Composer({ session: s, quick, lastAt }: { session: Session; quic
           <>
             <span className="quick-reply-title">Answer</span>
             <label className="quick-opt" title={`Send "${answerAll(quick.questions, () => true)}"`}>
-              <input type="radio" name={`quick-${s.id}`} onChange={() => submit(answerAll(quick.questions!, () => true))} />
+              <input type="radio" name={`quick-${s.id}`} onChange={() => { countUse('quick yes/no'); submit(answerAll(quick.questions!, () => true)); }} />
               <b>{yes}</b>
             </label>
             <label className="quick-opt" title={`Send "${answerAll(quick.questions, () => false)}"`}>
-              <input type="radio" name={`quick-${s.id}`} onChange={() => submit(answerAll(quick.questions!, () => false))} />
+              <input type="radio" name={`quick-${s.id}`} onChange={() => { countUse('quick yes/no'); submit(answerAll(quick.questions!, () => false)); }} />
               <b>{no}</b>
             </label>
           </>
@@ -1090,7 +1119,7 @@ export function Composer({ session: s, quick, lastAt }: { session: Session; quic
                 <span className="ellipsis">{q}</span>
               </label>
             ))}
-            <button className="btn sm primary" onClick={() => submit(answerAll(quick.questions!, (i) => picked.includes(String(i))))}>
+            <button className="btn sm primary" onClick={() => { countUse('quick yes/no'); submit(answerAll(quick.questions!, (i) => picked.includes(String(i)))); }}>
               Send
             </button>
           </>
@@ -1128,7 +1157,7 @@ export function Composer({ session: s, quick, lastAt }: { session: Session; quic
         )}
         {multi && !quick.questions && (
           <>
-            <button className="btn sm primary" disabled={!picked.length} onClick={() => submit(pickedText())}>
+            <button className="btn sm primary" disabled={!picked.length} onClick={() => { countUse('quick several'); submit(pickedText()); }}>
               Send
             </button>
             <button
@@ -1148,6 +1177,7 @@ export function Composer({ session: s, quick, lastAt }: { session: Session; quic
           className="btn sm ghost"
           title="Type your own answer"
           onClick={() => {
+            countUse('quick other');
             setQuickClosed(quickId);
             setTimeout(() => ref.current?.focus(), 0);
           }}
@@ -1161,6 +1191,24 @@ export function Composer({ session: s, quick, lastAt }: { session: Session; quic
         <AttachmentBar items={files.items} onRemove={files.remove} />
       </div>
     )}
+    {showChips && (
+      <div className="input-chips" role="group" aria-label="Phrases you often send">
+        {chips.map((c) => (
+          <button
+            key={c}
+            className="input-chip"
+            title={`Put "${c}" in the message box`}
+            onClick={() => {
+              countUse('chip use');
+              setText(c);
+              setTimeout(() => ref.current?.focus(), 0);
+            }}
+          >
+            {c}
+          </button>
+        ))}
+      </div>
+    )}
     <div className={`chat-composer ${ghost ? 'replay' : ''}`} data-session={s.id}>
       <textarea
         ref={ref}
@@ -1170,7 +1218,10 @@ export function Composer({ session: s, quick, lastAt }: { session: Session; quic
         disabled={!live && !wakeable && !ghost}
         placeholder={live ? kbd('Message… (Ctrl+Enter to send)') : wakeable ? kbd('Message… (starts the session, Ctrl+Enter to send)') : 'Not running'}
         title="Ctrl+Enter to send · Enter for a new line · paste or drop images"
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          hist.current.i = -1;
+          setText(e.target.value);
+        }}
         onPaste={(e) => {
           const imgs = imageFiles(e.clipboardData);
           if (imgs.length) {
@@ -1193,6 +1244,18 @@ export function Composer({ session: s, quick, lastAt }: { session: Session; quic
             submit();
           } else if (e.key === 'Escape' && s.status === 'working') {
             send({ type: 'session.input', id: s.id, data: '\x1b' });
+          } else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && !e.nativeEvent.isComposing) {
+            // empty box: ↑ brings the last message back, then older ones; ↓ goes forward again (a multi-line one only at its edges)
+            const el = e.currentTarget;
+            const walking = hist.current.i >= 0;
+            const oneLine = !text.includes('\n');
+            if (e.key === 'ArrowUp' && (text === '' || (walking && (oneLine || el.selectionStart === 0)))) {
+              e.preventDefault();
+              recall(hist.current.i + 1);
+            } else if (e.key === 'ArrowDown' && walking && (oneLine || el.selectionStart === text.length)) {
+              e.preventDefault();
+              recall(hist.current.i - 1);
+            }
           }
         }}
       />

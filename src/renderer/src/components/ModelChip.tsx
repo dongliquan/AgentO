@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Session } from '@shared/protocol';
 import { send } from '@/client';
+import { countUse } from '@/lib/uiUsage';
 import { askText } from '@/lib/prompt';
 import { useEscape } from '@/lib/hooks';
 
@@ -35,6 +36,7 @@ export function ModelChip({ session: s }: { session: Session }): JSX.Element | n
   const pending = !!s.modelPref && s.modelPref !== s.model;
   const text = pending ? `${now ? `${now} ` : ''}→ ${pick}` : now || pick || 'Model';
   const set = (model: string): void => {
+    countUse('model change');
     send({ type: 'session.setModel', id: s.id, model });
     setMenu(null);
   };

@@ -74,6 +74,7 @@ Ctrl+Shift+B 패널을 별도 창으로 · Ctrl+, 설정 · F2 이름 변경 · 
 | `AGENTO_HEADLESS=0` | 팀 세션도 터미널(TUI)로 시작 |
 | `AGENTO_PLAYER_MODEL` · `AGENTO_COACH_MODEL` · `AGENTO_COACH_EFFORT` | 선수·조율 역할 기본 모델·노력 수준(빈 값 = CLI 기본) |
 | `AGENTO_AUTO_FRESH=0` · `AGENTO_AUTO_FRESH_MIN` | 자동 Fresh start 끄기 · 기준 토큰 |
+| `AGENTO_AUTO_MODEL=0` | 조사·분석·검토·문서·테스트 이름의 선수를 Sonnet 으로 시작하는 것 끄기 |
 
 ## 다른 앱과의 연결
 

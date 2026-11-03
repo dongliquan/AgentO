@@ -1,6 +1,6 @@
 import type { AgentKind, Session } from '@shared/protocol';
 import { useToasts } from '@/lib/notify';
-import { readUsage, resetUsage } from '@/lib/uiUsage';
+import { countUse, readUsage, resetUsage } from '@/lib/uiUsage';
 import { showSessionTab } from '@/panels-bridge';
 import { useNewProject } from '@/components/NewProjectDialog';
 import { useStore, ZOOM_MAX, ZOOM_MIN } from '@/store';
@@ -353,6 +353,8 @@ export function runCommand(id: string): boolean {
     console.info('[command] unhandled', id);
     return false;
   }
+  // menu items, shortcuts and the palette all come through here
+  countUse(`cmd ${id}`);
   c.run();
   return true;
 }

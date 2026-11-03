@@ -3,6 +3,7 @@ import type React from 'react';
 import type { Session } from '@shared/protocol';
 import { useStore } from '@/store';
 import { send } from '@/client';
+import { countUse } from '@/lib/uiUsage';
 import { exportSession, focusTerminal, removeSession, selectAndReveal } from '@/commands';
 import { AGENT_LABELS, agentColor, basename, formatElapsed, displayTitle } from '@/lib/format';
 import { RoleTag } from './RoleTag';
@@ -315,7 +316,10 @@ function CardMenu({ session: s, x, y, onClose }: { session: Session; x: number; 
       {s.agent === 'claude' &&
         item(
           s.mode === 'headless' ? 'Run in a Terminal (screen; same conversation)' : 'Run Headless (chat only, JSON in / out; same conversation)',
-          () => send({ type: 'session.setMode', id: s.id, mode: s.mode === 'headless' ? 'tui' : 'headless' })
+          () => {
+            countUse(s.mode === 'headless' ? 'mode to terminal' : 'mode to headless');
+            send({ type: 'session.setMode', id: s.id, mode: s.mode === 'headless' ? 'tui' : 'headless' });
+          }
         )}
       {s.agent === 'claude' && s.resumeId && item('Fresh Start (handoff note → new conversation)', () => freshStart(s))}
       {s.agent === 'claude' && !!s.prevResumeIds?.length && item('Restore Earlier Conversation', () => restoreEarlier(s))}

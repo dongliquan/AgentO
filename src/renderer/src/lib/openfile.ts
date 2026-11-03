@@ -1,7 +1,9 @@
 import { useToasts } from '@/lib/notify';
+import { countUse } from '@/lib/uiUsage';
 
 /** Opens a file in its own viewer window (the same file's window comes to the front). */
 export function openFile(path: string, _cwd: string): void {
+  countUse('file open');
   window.desktop?.openFileWindow?.(path);
 }
 

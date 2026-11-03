@@ -1,5 +1,6 @@
 import type { Session } from '@shared/protocol';
 import { send } from '@/client';
+import { countUse } from '@/lib/uiUsage';
 
 /** sizes that matter: past AUTO the daemon starts the session over by itself once it has been idle a while */
 export const CONTEXT_WARN = 100_000;
@@ -53,5 +54,6 @@ The one before the last fresh start or restart is resumed (with its full context
 export function freshStart(s: Session): void {
   const size = s.context ? ` (${formatTokens(s.context)} tokens now)` : '';
   if (!window.confirm(`Fresh start "${s.title}"${size}?\n\nIt writes a handoff note, then starts over as a new conversation that reads the note first — same card, much smaller context.`)) return;
+  countUse('fresh start');
   send({ type: 'session.fresh', id: s.id });
 }
