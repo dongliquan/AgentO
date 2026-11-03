@@ -963,7 +963,7 @@ const REPLAY_SEND_MS = 700;
 const GO_REPLIES = [
   { label: 'Go', text: '진행해줘' },
   { label: 'Order', text: '순서대로 해줘' },
-  { label: 'Recommend', text: '추천대로 해줘' }
+  { label: 'Best', text: '추천대로 해줘' }
 ];
 
 /** The message box under a session's conversation — also used for terminal agents (Codex) in the Session tab. */
