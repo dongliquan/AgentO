@@ -210,6 +210,9 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
   // it opens on the terminal (a headless session shows its activity log there) whenever the session has a conversation
   const startOnTerminal = hasChat;
   const [termMode, setTermMode] = useState(startOnTerminal);
+  // the search field is folded away (the header stays two lines): the ⌕ button next to the status opens it
+  const [searchOpen, setSearchOpen] = useState(false);
+  useEffect(() => setSearchOpen(false), [s.id]);
   useEffect(() => setTermMode(startOnTerminal), [s.id]);
   // (no focusTerminal here: the Ground card listens to that event and would switch to its terminal too)
   const openTerminal = (): void => setTermMode(true);
@@ -221,6 +224,20 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
           <AgentIcon kind={s.agent} color={s.color} size={16} />
           <span className="ellipsis" style={{ flex: 1 }} title={s.title}>{displayTitle(s)}</span>
           <StatusBadge status={s.status} attention={s.attention} waitingOn={handedOut} />
+          {!termMode && (
+            <button
+              className={`icon-btn ${searchOpen || query ? 'on' : ''}`}
+              title="Search this conversation"
+              onClick={() => {
+                if (searchOpen || query) {
+                  setSearchOpen(false);
+                  setQuery('');
+                } else setSearchOpen(true);
+              }}
+            >
+              ⌕
+            </button>
+          )}
         </div>
         <div className="rp-meta">
           <RoleTag s={s} />
@@ -239,7 +256,7 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
         </div>
       </div>
       {/* it searches the chat (or the summary): in the live terminal view there is nothing for it to search */}
-      {!termMode && <SearchBox value={query} onChange={setQuery} count={hasChat ? hits : termLines.length} placeholder="Search this conversation" />}
+      {!termMode && (searchOpen || query) && <SearchBox value={query} onChange={setQuery} count={hasChat ? hits : termLines.length} placeholder="Search this conversation" autoFocus onClose={() => setSearchOpen(false)} />}
       <div className="rp-conversation">
         {termMode ? (
           <div className="rp-term-live">

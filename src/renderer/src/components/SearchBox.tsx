@@ -2,16 +2,21 @@ import { useState } from 'react';
 import { copyText } from '@/lib/search';
 
 /** Search field at the top of a right-panel tab: filters as you type, shows the match count, Esc clears. */
-export function SearchBox({ value, onChange, count, placeholder }: { value: string; onChange: (v: string) => void; count?: number; placeholder: string }): JSX.Element {
+export function SearchBox({ value, onChange, count, placeholder, autoFocus, onClose }: { value: string; onChange: (v: string) => void; count?: number; placeholder: string; autoFocus?: boolean; onClose?: () => void }): JSX.Element {
   return (
     <div className="rp-search">
       <span className="rp-search-icon">⌕</span>
       <input
         value={value}
         placeholder={placeholder}
+        autoFocus={autoFocus}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Escape') onChange('');
+          // Esc clears; on an empty field it closes a collapsible search (onClose)
+          if (e.key === 'Escape') {
+            if (value || !onClose) onChange('');
+            else onClose();
+          }
         }}
       />
       {value && count !== undefined && <span className="rp-search-count">{count}</span>}
