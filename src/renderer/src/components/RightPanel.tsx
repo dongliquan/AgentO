@@ -207,8 +207,8 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
   }, [s.cwd, s.status]);
 
   // the Terminal button switches this panel's own view (chat ⇄ terminal); the Ground card keeps what it shows
-  // it opens on the terminal for a session that has a screen; a headless one (no screen, only a log) opens on its chat
-  const startOnTerminal = hasChat && s.mode !== 'headless';
+  // it opens on the terminal (a headless session shows its activity log there) whenever the session has a conversation
+  const startOnTerminal = hasChat;
   const [termMode, setTermMode] = useState(startOnTerminal);
   useEffect(() => setTermMode(startOnTerminal), [s.id]);
   // (no focusTerminal here: the Ground card listens to that event and would switch to its terminal too)
@@ -230,9 +230,9 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
           <button
             className="btn sm ghost"
             onClick={() => (termMode ? setTermMode(false) : openTerminal())}
-            title={termMode ? 'Back to the conversation' : s.mode === 'headless' ? 'Activity log (headless: no screen)' : 'The terminal screen — type into it (answers, /mcp …)'}
+            title={termMode ? 'Back to the conversation' : s.mode === 'headless' ? 'The terminal view — a headless session has no screen, so this is its activity log' : 'The terminal screen — type into it (answers, /mcp …)'}
           >
-            {termMode ? (hasChat ? 'Chat' : 'Summary') : s.mode === 'headless' ? 'Log' : 'Terminal'}
+            {termMode ? (hasChat ? 'Chat' : 'Summary') : 'Terminal'}
           </button>
           <ModelChip session={s} />
           <ContextSize session={s} />
