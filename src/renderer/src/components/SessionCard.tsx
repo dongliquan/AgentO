@@ -198,7 +198,7 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
         {hasChat && (
           <div className="segmented sm" onPointerDown={(e) => e.stopPropagation()}>
             <button className={view === 'chat' ? 'active' : ''} onClick={() => setView('chat')}>Chat</button>
-            <button className={view === 'terminal' ? 'active' : ''} onClick={() => setView('terminal')} title={s.mode === 'headless' ? 'Activity log (headless: no screen)' : 'The terminal screen'}>{s.mode === 'headless' ? 'Log' : 'Terminal'}</button>
+            <button className={view === 'terminal' ? 'active' : ''} onClick={() => setView('terminal')} title={s.mode === 'headless' ? 'The terminal view — a headless session has no screen, so this is its activity log' : 'The terminal screen'}>Terminal</button>
           </div>
         )}
         <ContextSize session={s} />
