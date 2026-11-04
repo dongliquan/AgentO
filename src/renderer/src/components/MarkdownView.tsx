@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 
@@ -32,6 +32,13 @@ const BASE_CSS = `
 :where(.md) details { margin: 6px 0; }
 :where(.md) summary { cursor: pointer; }
 :where(.md) input[type=checkbox] { margin-right: 6px; }
+/* A document with its own <style> (doc-standard and the like) is written with fixed colours for a light page: dark
+   headings on pale bands, white table cells. In the dark theme it is drawn as that light page, then inverted (hue kept)
+   so every part is dark and readable together; pictures are turned back. */
+.md.paper { --text: #1f2328; --panel: #fff; --panel2: #f3f4f6; --border: #d0d7de; --md-code: #b3261e; --accent: #0969da;
+  /* the page colour is chosen so that, once inverted, it equals the dark panel (#282c34) */
+  background: #e3e8f2; color: #1f2328; min-height: 100vh; filter: invert(0.9) hue-rotate(180deg); }
+.md.paper img, .md.paper svg, .md.paper video, .md.paper canvas { filter: invert(1) hue-rotate(180deg); }
 `;
 
 marked.setOptions({ gfm: true, breaks: false });
@@ -68,15 +75,29 @@ function render(md: string): { html: string; css: string[] } {
   return { html: clean, css };
 }
 
+/** The app is in its dark theme (html[data-theme]); follows a change while the document is open. */
+function useDark(): boolean {
+  const read = (): boolean => document.documentElement.getAttribute('data-theme') === 'dark';
+  const [dark, setDark] = useState(read);
+  useEffect(() => {
+    const mo = new MutationObserver(() => setDark(read()));
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => mo.disconnect();
+  }, []);
+  return dark;
+}
+
 export function MarkdownView({ content }: { content: string }): JSX.Element {
   const host = useRef<HTMLDivElement>(null);
+  const dark = useDark();
 
   useEffect(() => {
     const el = host.current;
     if (!el) return;
     const root = el.shadowRoot ?? el.attachShadow({ mode: 'open' });
     const { html, css } = render(content);
-    root.innerHTML = `<style>${BASE_CSS}</style><div class="md">${html}</div>`;
+    // a styled document keeps its light look; in the dark theme it is inverted as a whole (see .paper)
+    root.innerHTML = `<style>${BASE_CSS}</style><div class="md${dark && css.length ? ' paper' : ''}">${html}</div>`;
     for (const text of css) {
       const style = document.createElement('style');
       style.textContent = text;
@@ -95,7 +116,7 @@ export function MarkdownView({ content }: { content: string }): JSX.Element {
     };
     root.addEventListener('click', onClick);
     return () => root.removeEventListener('click', onClick);
-  }, [content]);
+  }, [content, dark]);
 
   return <div ref={host} className="md-host" />;
 }
