@@ -35,7 +35,7 @@ const BASE_CSS = `
 /* A document with its own <style> (doc-standard and the like) is written with fixed colours for a light page: dark
    headings on pale bands, white table cells. In the dark theme it is drawn as that light page, then inverted (hue kept)
    so every part is dark and readable together; pictures are turned back. */
-.md.paper { --text: #1f2328; --panel: #fff; --panel2: #f3f4f6; --border: #d0d7de; --md-code: #b3261e; --accent: #0969da;
+.md.paper { --text: #1f2328; --panel: #fff; --panel2: #f3f4f6; --border: #d0d7de; --md-code: #562800; --accent: #0969da;
   /* the page colour is chosen so that, once inverted, it equals the dark panel (#282c34) */
   background: #e3e8f2; color: #1f2328; min-height: 100vh; filter: invert(0.9) hue-rotate(180deg); }
 .md.paper img, .md.paper svg, .md.paper video, .md.paper canvas { filter: invert(1) hue-rotate(180deg); }
