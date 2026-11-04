@@ -677,6 +677,20 @@ export class Team {
     return this.store.listProjects().some((p) => p.id === root && p.closed === true);
   }
 
+  /**
+   * A head coach / coach needs a closed project (it sent work to a session there, or made a player in it): it is opened
+   * again, as the manager's Open does — sessions stay stopped until they get work, which is what the delivery does.
+   * Paused routines stay paused. Only those two tool calls open a project: a session finishing while its project is
+   * being closed must not open it again.
+   */
+  private openForWork(projectId: string, why: string): void {
+    if (!this.isClosed(projectId)) return;
+    const root = this.rootOf(projectId);
+    this.store.setProjectClosed(root, false);
+    this.onProjects();
+    log.info('team: opened the closed project', root, '—', why);
+  }
+
   /** A folder a part may use: an existing project folder or a subfolder of one (it inherits the auto-trust). */
   private checkFolder(top: Project, p: string): { path: string; autoTrust: boolean } {
     if (!p.trim()) throw new ToolError('Give a folder path');
@@ -1459,6 +1473,8 @@ export class Team {
       const p = this.pending.get(caller.id);
       if (p) p.delegated = true;
     }
+    // a head coach / coach sending work into a closed project: it is opened (else the message would wait there for good)
+    if (!ride && (caller.role === 'head' || caller.role === 'coach')) this.openForWork(t.projectId, `${caller.title} sent a message to "${t.title}"`);
     this.enqueue(t.id, directive ? { text, from: caller.id, task } : ride ? { text, ride: true, report: true } : { text, report: true });
     this.record(t, directive ? 'directive' : 'report', caller, message, true, task);
     const queued = this.outbox.has(t.id);
@@ -1861,6 +1877,7 @@ export class Team {
           ? project.folders.find((f) => f.id === want || f.name === want || path.resolve(f.path) === path.resolve(want))
           : project.folders[0];
         if (!folder) throw new ToolError(project.folders.length ? `No folder "${want}" in ${project.name}.` : `${project.name} has no folders yet.`);
+        this.openForWork(project.id, 'a new player was created in it');
         // All coding goes to Claude: players created by the team are always Claude Code sessions.
         const prompt = str(args['prompt']).trim();
         const s = this.sessions.create({
