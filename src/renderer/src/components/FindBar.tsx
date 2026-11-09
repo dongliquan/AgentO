@@ -56,8 +56,18 @@ export function FindBar(): JSX.Element | null {
       return;
     }
     window.desktop.find(value, forward, again);
+    // find-in-page grabs the keyboard focus: take it back at once so the next keys are not lost
+    for (const ms of [0, 30, 120]) setTimeout(() => input.current && document.activeElement !== input.current && input.current.focus(), ms);
   };
+  /** typing searches after a short pause: a find on every key would steal the focus between letters */
+  const timer = useRef<ReturnType<typeof setTimeout>>();
+  const searchSoon = (value: string): void => {
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => search(value), value ? 250 : 0);
+  };
+  useEffect(() => () => clearTimeout(timer.current), []);
   const close = (): void => {
+    clearTimeout(timer.current);
     setOpen(false);
     last.current = '';
     setResult(null);
@@ -74,19 +84,21 @@ export function FindBar(): JSX.Element | null {
         autoFocus
         onChange={(e) => {
           setText(e.target.value);
-          if (!composing.current) search(e.target.value);
+          if (!composing.current) searchSoon(e.target.value);
         }}
         onCompositionStart={() => {
           composing.current = true;
+          clearTimeout(timer.current);
         }}
         onCompositionEnd={(e) => {
           composing.current = false;
-          search(e.currentTarget.value);
+          searchSoon(e.currentTarget.value);
         }}
         onKeyDown={(e) => {
           if (e.nativeEvent.isComposing) return;
           if (e.key === 'Enter') {
             e.preventDefault();
+            clearTimeout(timer.current);
             search(text, !e.shiftKey);
           } else if (e.key === 'Escape') close();
         }}
