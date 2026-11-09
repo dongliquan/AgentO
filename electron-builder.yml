@@ -10,6 +10,10 @@ extraResources:
   # tray + window icon at runtime (process.resourcesPath/icon.png)
   - from: build/icon.png
     to: icon.png
+  # the taskbar icon of every window (applyTaskbarIdentity): the exe's own icon is Electron's when the build skips the
+  # executable's resource editing (--dir builds with signAndEditExecutable=false)
+  - from: build/icon.ico
+    to: icon.ico
   # built-in demo workspace (the "/demo shop" order in the Orders tab)
   - from: demo/shop-team/workspace
     to: demo/shop-team/workspace

@@ -133,7 +133,8 @@ function windowIcon(): string | undefined {
  */
 function applyTaskbarIdentity(win: BrowserWindow): void {
   if (process.platform !== 'win32') return;
-  const icon = app.isPackaged ? process.execPath : iconFile('ico');
+  // the icon file first: a packaged exe built without resource editing still carries Electron's icon
+  const icon = iconFile('ico') ?? (app.isPackaged ? process.execPath : undefined);
   const relaunchCommand = app.isPackaged ? `"${process.execPath}"` : `"${process.execPath}" "${app.getAppPath()}"`;
   win.setAppDetails({
     appId: APP_ID,
