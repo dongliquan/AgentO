@@ -469,7 +469,12 @@ function registerIpc(): void {
   ipcMain.on('file.openWindow', (_e, file: string) => openFileWindow(file));
   ipcMain.handle('file.openInReadO', (_e, file: string) => (typeof file === 'string' && path.isAbsolute(file) ? openInReadO(file) : 'Not a file path'));
   ipcMain.on('find.start', (e, text: string, forward: boolean, next: boolean) => {
-    if (typeof text === 'string' && text) e.sender.findInPage(text, { forward: forward !== false, findNext: next === true });
+    if (typeof text === 'string' && text) {
+      e.sender.findInPage(text, { forward: forward !== false, findNext: next === true });
+      // find-in-page moves the keyboard focus to the page frame while the box stays document.activeElement: give the
+      // focus back to the web contents (it then goes to the focused input) once the find has settled
+      for (const ms of [0, 40, 150, 400]) setTimeout(() => !e.sender.isDestroyed() && e.sender.focus(), ms);
+    }
   });
   ipcMain.on('find.stop', (e) => e.sender.stopFindInPage('clearSelection'));
   // the file viewer's image preview (the renderer cannot read local files)
