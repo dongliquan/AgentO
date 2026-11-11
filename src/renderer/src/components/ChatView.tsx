@@ -559,7 +559,8 @@ function Tool({ tool: t, cwd, sid, ts }: { tool: ChatTool; cwd: string; sid?: st
       .filter(([k]) => k !== 'description')
       .map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
       .join('\n');
-    body = <InOut input={input || undefined} output={t.result} error={t.isError} />;
+    // a report to the manager is the thing to read: shown in full
+    body = <InOut input={input || undefined} output={t.result} error={t.isError} expanded={t.name === 'mcp__agento__report_up'} />;
   }
 
   return (
@@ -585,8 +586,8 @@ function Tool({ tool: t, cwd, sid, ts }: { tool: ChatTool; cwd: string; sid?: st
 }
 
 /** Text folded to `lines` visible lines (a long line that wraps counts too); "Show more" only when something is hidden. */
-function Collapsible({ text, lines = 2, className }: { text: string; lines?: number; className?: string }): JSX.Element {
-  const [open, setOpen] = useState(false);
+function Collapsible({ text, lines = 2, className, expanded }: { text: string; lines?: number; className?: string; expanded?: boolean }): JSX.Element {
+  const [open, setOpen] = useState(expanded === true);
   const [clipped, setClipped] = useState(false);
   const ref = useRef<HTMLPreElement>(null);
   const body = text.replace(/\s+$/, '');
@@ -656,13 +657,13 @@ function SentMessage({ text, quiet, result, to }: { text: string; quiet: boolean
   );
 }
 
-function InOut({ input, output, error }: { input?: string; output?: string; error?: boolean }): JSX.Element {
+function InOut({ input, output, error, expanded }: { input?: string; output?: string; error?: boolean; expanded?: boolean }): JSX.Element {
   return (
     <div className="chat-io">
       {input !== undefined && (
         <div className="row">
           <span className="lbl">IN</span>
-          <Collapsible className="val" text={input} lines={2} />
+          <Collapsible className="val" text={input} lines={2} expanded={expanded} />
         </div>
       )}
       {output !== undefined && output.trim() !== '' && (
