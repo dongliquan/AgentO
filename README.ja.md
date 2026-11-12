@@ -6,6 +6,14 @@
 
 > **基本の考え方:** ウィンドウを閉じてもセッションは動き続けます。セッションはバックグラウンドのデーモンが保持し、UI はいつでも接続・切断できる画面にすぎません。
 
+## スクリーンショット
+
+| ライト | ダーク |
+|:-:|:-:|
+| <img src="docs/images/split-light.png" alt="AgentO Split view, light theme" width="480"> | <img src="docs/images/split-dark.png" alt="AgentO Split view, dark theme" width="480"> |
+
+<sub>デモプロジェクトの 4 セッションを Split ビューで表示（ここでは AI エージェントの代わりに通常のシェルを使用）。ライト／ダークテーマ。</sub>
+
 ## なぜ AgentO か
 
 | AgentO なし | AgentO あり |

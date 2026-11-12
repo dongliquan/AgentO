@@ -6,6 +6,14 @@
 
 > **The key idea:** close the window and your sessions keep running. A background daemon owns every session; the UI is just a window that attaches and detaches.
 
+## Screenshots
+
+| Light | Dark |
+|:-:|:-:|
+| <img src="docs/images/split-light.png" alt="AgentO Split view, light theme" width="480"> | <img src="docs/images/split-dark.png" alt="AgentO Split view, dark theme" width="480"> |
+
+<sub>Four sessions of a demo project in the Split view (plain shell sessions stand in for AI agents here). Light and dark themes.</sub>
+
 ## Why AgentO
 
 | Without AgentO | With AgentO |

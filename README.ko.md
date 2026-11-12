@@ -6,6 +6,14 @@
 
 > **핵심 아이디어:** 창을 닫아도 세션은 계속 돕니다. 세션은 백그라운드 데몬이 소유하고, UI는 붙었다 떨어지는 화면일 뿐입니다.
 
+## 스크린샷
+
+| 라이트 | 다크 |
+|:-:|:-:|
+| <img src="docs/images/split-light.png" alt="AgentO Split view, light theme" width="480"> | <img src="docs/images/split-dark.png" alt="AgentO Split view, dark theme" width="480"> |
+
+<sub>데모 프로젝트의 세션 4개를 Split 보기로 본 화면입니다(AI 에이전트 대신 일반 셸 세션을 사용). 라이트·다크 테마.</sub>
+
 ## 왜 AgentO인가
 
 | AgentO 없이 | AgentO와 함께 |

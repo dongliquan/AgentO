@@ -6,6 +6,14 @@
 
 > **核心理念：** 关闭窗口，会话继续运行。所有会话由后台守护进程持有，界面只是可以随时连接和断开的窗口。
 
+## 截图
+
+| 浅色 | 深色 |
+|:-:|:-:|
+| <img src="docs/images/split-light.png" alt="AgentO Split view, light theme" width="480"> | <img src="docs/images/split-dark.png" alt="AgentO Split view, dark theme" width="480"> |
+
+<sub>演示项目的 4 个会话（Split 视图；这里用普通 Shell 会话代替 AI 代理）。浅色与深色主题。</sub>
+
 ## 为什么用 AgentO
 
 | 没有 AgentO | 有了 AgentO |
