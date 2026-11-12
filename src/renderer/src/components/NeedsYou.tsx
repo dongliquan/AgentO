@@ -31,12 +31,20 @@ export function openNeed(sessionId: string): void {
   useStore.getState().setRightTab('detail');
 }
 
+/** The alert's click: fly to the session's card on the Ground (the right panel stays as it is). */
+function goToCard(sessionId: string): void {
+  const st = useStore.getState();
+  // Today / Timeline have no cards: go back to the Ground first
+  if (st.viewMode === 'today' || st.viewMode === 'timeline') st.setViewMode('board');
+  selectAndReveal(sessionId);
+}
+
 const SHOWN = 4;
 
 /**
  * "Needs you" alerts, above the other toasts: one per session waiting for the manager's decision (a question in its
  * last report, or a prompt in its terminal). Unlike other alerts they stay until clicked — the click opens the
- * session's conversation to answer and clears the alert. Answering the session elsewhere clears it too.
+ * session on the Ground and clears the alert. Answering the session elsewhere clears it too.
  */
 export function NeedsYouAlerts(): JSX.Element | null {
   const needs = useNeedsIds((s) => s.list);
@@ -71,7 +79,7 @@ function NeedAlertView({ need: n, title, project, projects, now }: { need: Needs
       title={n.text}
       onClick={() => {
         dismissNeed(n.key);
-        openNeed(n.sessionId);
+        goToCard(n.sessionId);
       }}
     >
       <div className="need-top">
