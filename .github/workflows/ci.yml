@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   check:
-    runs-on: windows-latest # node-pty and better-sqlite3 are built for Electron; Windows is the primary target
+    runs-on: windows-2022 # Visual Studio 2022: npm's node-gyp 9 cannot find the VS 2026 on windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
