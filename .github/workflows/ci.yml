@@ -1,0 +1,28 @@
+# Checks on every push and pull request: type-check, production dependency audit, and the daemon smoke test
+# (a throwaway daemon with shell sessions; no AI calls, no secrets needed).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: windows-latest # node-pty and better-sqlite3 are built for Electron; Windows is the primary target
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5 # node-gyp (native modules)
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run smoke
