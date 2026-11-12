@@ -22,7 +22,12 @@ jobs:
       - uses: actions/setup-python@v5 # node-gyp (native modules)
         with:
           python-version: '3.12'
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm audit --omit=dev --audit-level=high
-      - run: npm run smoke
+      # each step goes through ci-step.sh so a failure shows its error lines on the run's summary page
+      - run: bash .github/ci-step.sh "npm ci" npm ci
+        shell: bash
+      - run: bash .github/ci-step.sh "typecheck" npm run typecheck
+        shell: bash
+      - run: bash .github/ci-step.sh "npm audit" npm audit --omit=dev --audit-level=high
+        shell: bash
+      - run: bash .github/ci-step.sh "smoke test" npm run smoke
+        shell: bash

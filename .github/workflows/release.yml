@@ -37,10 +37,14 @@ jobs:
       - uses: actions/setup-python@v5 # node-gyp (native modules)
         with:
           python-version: '3.12'
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npx electron-vite build
-      - run: npx electron-builder ${{ matrix.target }} --publish never
+      - run: bash .github/ci-step.sh "npm ci" npm ci
+        shell: bash
+      - run: bash .github/ci-step.sh "typecheck" npm run typecheck
+        shell: bash
+      - run: bash .github/ci-step.sh "vite build" npx electron-vite build
+        shell: bash
+      - run: bash .github/ci-step.sh "electron-builder" npx electron-builder ${{ matrix.target }} --publish never
+        shell: bash
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - uses: actions/upload-artifact@v4
