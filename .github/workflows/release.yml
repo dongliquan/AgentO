@@ -37,7 +37,11 @@ jobs:
       - uses: actions/setup-python@v5 # node-gyp (native modules)
         with:
           python-version: '3.12'
-      - run: bash .github/ci-step.sh "npm ci" npm ci
+      # --ignore-scripts: npm would compile better-sqlite3 and node-pty for plain Node with its own node-gyp 9, which
+      # fails on the runners' newer Visual Studio and is not needed. The Electron builds come from install-app-deps.
+      - run: bash .github/ci-step.sh "npm ci" npm ci --ignore-scripts
+        shell: bash
+      - run: bash .github/ci-step.sh "native modules for Electron" npx electron-builder install-app-deps
         shell: bash
       - run: bash .github/ci-step.sh "typecheck" npm run typecheck
         shell: bash
