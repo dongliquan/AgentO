@@ -1,7 +1,7 @@
 import type { ITheme } from '@xterm/xterm';
 
 /**
- * Theme as in the shared theme spec (docs/xo-common-spec.md ch. 3, manager's correction #T48 on 2026-10-29):
+ * Theme as in the shared theme spec:
  * light or dark, default light, no OS following. Applied as `<html data-theme>` plus ReadO's
  * `body.theme-light|theme-dark`. The main process keeps the choice on disk (src/main/theme.ts) and tells the
  * other windows; localStorage xo.theme is a copy (and where the choice came from before).

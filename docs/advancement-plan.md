@@ -117,7 +117,7 @@ hr { border: 0; margin: 2.2em 0 }   /* 선 없이 여백만 — 챕터 구분은
 **관련 코드**: `src/daemon/memory.ts` · `src/daemon/team.ts` · `src/daemon/store.ts` · `src/shared/protocol.ts` · `src/renderer/src/components/FilesPanel.tsx`
 **읽는 사람**: AgentO 를 이어서 개발하는 사람. 근거 데이터는 2026-10-23 `usage.report`(7일 102M 토큰: 선수 86% · 코치 14%)
 
-<div class="warn">C(프로젝트 메모리)·B(일 식별자)·A(이벤트 채널, headless 세션)·E(세션 홀더 — 데몬 재시작에도 세션 유지)·F(스모크 스위트 `npm run smoke` / `smoke:ui`)·G(Today 홈, Ctrl+5)가 구현됐다(2026-10-26). D(로컬 모델)만 보류. 데몬 변경은 데몬 재시작 뒤 적용된다. 세부는 CLAUDE.md 의 같은 날짜 항목.</div>
+<div class="warn">C(프로젝트 메모리)·B(일 식별자)·A(이벤트 채널, headless 세션)·E(세션 홀더 — 데몬 재시작에도 세션 유지)·F(스모크 스위트 `npm run smoke` / `smoke:ui`)·G(Today 홈, Ctrl+5)가 구현됐다(2026-10-26). D(로컬 모델)만 보류. 데몬 변경은 데몬 재시작 뒤 적용된다.</div>
 
 <a id="toc"></a>
 

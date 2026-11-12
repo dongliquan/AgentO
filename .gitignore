@@ -12,3 +12,6 @@ out-test*
 dist-ui/
 dist-b/
 dist-c/
+
+# local working notes (not published)
+CLAUDE.md

@@ -1,89 +1,174 @@
+<p align="right"><b>English</b> · <a href="README.ko.md">한국어</a> · <a href="README.zh.md">中文</a> · <a href="README.ja.md">日本語</a></p>
+
 # AgentO
 
-여러 AI 에이전트 CLI 세션(Claude Code · Codex · Gemini CLI · Ollama · 셸)을 하나의 보드(Ground)에서 관리하는 데스크톱 앱(Windows · macOS).
-감독(사용자)이 지시하면 Head Coach · Coach · 선수 세션이 나눠 일하고 보고한다.
+**One board for all your AI coding agents.** AgentO is a desktop app (Windows · macOS) that runs Claude Code, Codex, Gemini CLI, Ollama and plain shells side by side, and lets you manage them like a small team.
 
-- **UI를 닫아도 세션은 계속 돈다.** 세션은 백그라운드 데몬과 세션별 홀더 프로세스가 소유하고, UI는 붙었다 떨어지는 화면일 뿐이다. 데몬만 다시 띄워도 세션은 유지된다.
-- **구독 로그인(CLI) 방식만 쓴다.** API 키 방식은 쓰지 않는다.
-- 설계 문서는 [docs/](docs/), 작업 메모는 [CLAUDE.md](CLAUDE.md).
+> **The key idea:** close the window and your sessions keep running. A background daemon owns every session; the UI is just a window that attaches and detaches.
 
-## 주요 기능
+## Why AgentO
 
-| 영역 | 내용 |
+| Without AgentO | With AgentO |
 |---|---|
-| Ground | 세션 카드를 놓는 캔버스. 프로젝트·파트 영역, 지시·보고 연결선(흐르는 점선), 선택 카드로 이동·확대, 미니맵, Focus 보기 |
-| 보기 | Ground · Split · Tabs · Timeline(끝난 기능 기록) · Today(지금 필요한 것 모아 보기) |
-| 팀 | Head Coach(팀 전체, 하나) → 프로젝트 Coach → 파트 Coach(선택) → 선수. 지시는 `#T` 작업 번호로 추적, 보고는 자동으로 지시한 쪽에 돌아감 |
-| 대화 | Claude·Codex 대화 기록을 카드에서 바로 보기, 도구 호출·팀 메시지·첨부 이미지·파일 링크, 질문·권한 요청 카드 |
-| 오른쪽 패널 | Session · Files · Manager(지시) · Inbox(알림) · Logs(팀 대화) · Web(Gemini, ChatGPT) |
-| 프로젝트 메모리 | 프로젝트마다 결정·규칙·지도를 한 파일로 두고 Claude 세션 시작 때 주입 |
-| 루틴 | 반복 지시(N분마다 · 매일 HH:MM), UI를 닫아도 데몬이 실행 |
-| 토큰 관리 | 대화가 커지면 인수인계 메모로 새 대화 시작(Fresh start), 모델 선택, 사용량 리포트 |
-| 저장 | 프로젝트를 `.agento` 파일로 저장·열기, Claude Code 세션 가져오기 |
-| 파일 | Markdown · JSON · CSV · 이미지 뷰어를 파일별 새 창으로, 변경 파일 표시 |
+| One terminal tab per agent, easy to lose track | Every session is a card on one canvas (the **Ground**) |
+| Close the terminal, lose the session | Close the UI, sessions keep working; reopen and everything is back |
+| You relay messages between agents by hand | Agents send tasks and reports to each other; you only give orders |
+| Long chats quietly burn tokens | Chat size is shown; **Fresh start** hands off to a new chat with a summary |
+| No record of what got done | Timeline, daily report and per-task numbers (`#T12`) |
 
-## 구조
+Sessions are driven through each tool's **CLI with your own subscription login**. AgentO never asks for an API key.
 
-```
-src/
-  daemon/    백그라운드 데몬 — WebSocket·MCP 서버, SQLite, 팀·루틴·사용량. holder.ts 는 세션 하나를 소유하는 분리 프로세스(데몬이 없어도 CLI 를 계속 돌림)
-  main/      Electron 메인 — 창, 메뉴, 트레이, 데몬 기동·연결, 딥링크, IPC
-  preload/   window.desktop 브리지
-  renderer/  React + zustand + xterm UI
-  shared/    protocol.ts(클라이언트↔데몬 메시지, 단일 진실), 레이아웃·평문 변환 등 공용 코드
-tests/smoke/ 데몬 스모크(npm run smoke), UI 스모크(npm run smoke:ui)
-docs/        설계 문서
+## How it works
+
+```mermaid
+flowchart LR
+  UI["AgentO window<br/>(Electron UI)<br/>close it any time"] <-->|WebSocket| D["Daemon<br/>SQLite · team tools (MCP)<br/>routines · usage"]
+  D --> H1["Holder"] --> A1["claude"]
+  D --> H2["Holder"] --> A2["codex"]
+  D --> H3["Holder"] --> A3["shell"]
 ```
 
-- 데이터 폴더는 `%APPDATA%\AgentO` (macOS: `~/Library/Application Support/AgentO`): `daemon.json`(port · token · pid), `asm.db`, `logs/`, `holders/`, `team/`(Head Coach·Coach 작업 폴더, 프로젝트 메모리), `attachments/`, `handoff/`.
-- UI는 `daemon.json` 을 읽어 `ws://127.0.0.1:<port>` 에 붙는다. 데몬은 데이터 폴더마다 하나만 실행된다.
-- 팀 세션은 같은 포트의 HTTP MCP(`/mcp/<sessionId>`, Bearer 토큰)로 서로에게 지시·보고한다. 역할마다 보이는 도구와 권한이 다르다.
-- 창 닫기 = 트레이로 숨김. File › "종료(세션 유지)" 는 UI만 종료, "모든 세션 중지 후 종료"는 데몬까지 내린다.
-- 팀 세션(선수·Coach)은 기본이 headless(`claude -p` 이벤트 스트림), New Chat 은 터미널(TUI). 카드 메뉴에서 바꿀 수 있다.
+Each session lives in its own small **holder** process, so even restarting the daemon does not stop your agents.
 
-## 설치·실행
+## The team model
 
-필요: Node.js(LTS), Claude Code 등 쓸 CLI(`claude`, `codex`, `gemini`, `ollama` 는 PATH 에서 자동 감지, Agents › Connections 에서 설치·로그인 상태 확인).
+You are the **Manager**. Give an order, and the sessions split the work and report back.
+
+```mermaid
+flowchart TD
+  M["You — Manager"] -->|order| HC["Head Coach<br/>(optional, all projects)"]
+  HC --> C1["Coach<br/>Project A"]
+  HC --> C2["Coach<br/>Project B"]
+  C1 --> P1["Player"]
+  C1 --> P2["Player"]
+  C2 --> P3["Player"]
+  P1 -.->|report| C1
+  C1 -.->|report| M
+```
+
+| Role | What it does |
+|---|---|
+| **Manager** (you) | Gives orders, answers questions, decides |
+| **Head Coach** | Optional. Routes an order to the right project |
+| **Coach** | One per project. Splits work, sends it to players, collects results |
+| **Player** | Does the actual coding. A Coach does not edit files |
+| **Reviewer** | A Codex session that cross-checks finished work (added to each new project) |
+
+Every order gets a task number (`#T12`) that follows it through the reports, so you can see what is done and what is waiting.
+
+## Features
+
+| Area | What you get |
+|---|---|
+| **Ground** | Canvas of session cards, project/part areas, animated order and report lines, minimap, focus mode |
+| **Views** | Ground · Split · Tabs · Timeline (finished features) · Today (what needs you now) |
+| **Chat** | Read Claude/Codex chats on the card: tool calls, team messages, images, file links, question and permission cards |
+| **Right panel** | Session · Files · Manager · Inbox · Logs · Web (Gemini, ChatGPT) |
+| **Project memory** | One file per project (decisions, rules, map) injected into Claude sessions at start |
+| **Routines** | Recurring orders (every N minutes, daily at HH:MM); run even when the UI is closed |
+| **Token control** | Chat-size chips, automatic Fresh start, model picker, usage report |
+| **Needs you** | Questions and prompts that wait for your decision are gathered in one alert |
+| **Save / import** | Save a project as a `.agento` file; import existing Claude Code sessions |
+| **Files** | Markdown, JSON, CSV and image viewers, each in its own window |
+
+## Supported agents
+
+| Agent | Terminal | Chat view | Team member | Fresh start / usage report |
+|---|:-:|:-:|:-:|:-:|
+| Claude Code | ✅ | ✅ | ✅ | ✅ |
+| Codex | ✅ | ✅ | ✅ | — |
+| Gemini CLI | ✅ | — | — | — |
+| Ollama | ✅ | — | — | — |
+| Shell | ✅ | — | — | — |
+
+Gemini CLI ended personal-plan support, so it is terminal-only here.
+
+## Quick start
+
+**Requirements:** Node.js 22 (LTS), and the CLIs you want to use (`claude`, `codex`, `gemini`, `ollama`; found on your `PATH`). On Windows, native modules need Visual Studio Build Tools and Python.
 
 ```bash
-npm install          # node-pty, better-sqlite3 네이티브 빌드 (Windows: VS Build Tools + Python 필요)
-npm run dev          # Electron + Vite dev (렌더러 포트 47820)
-npm run typecheck
-npm run build
-npm run smoke        # 일회용 데몬으로 24개 확인 (AI 호출 없음)
-npm run dist:win     # NSIS 설치본 + 포터블 exe → dist/ (서명 없음)
-npm run dist:mac     # dmg + zip (macOS 에서 실행)
+git clone https://github.com/dongliquan/AgentO.git
+cd AgentO
+npm install        # builds node-pty and better-sqlite3 for Electron
+npm run dev        # starts the app
 ```
 
-Windows 에서 VS Code · Claude Code 안에서 실행하면 `ELECTRON_RUN_AS_NODE`, `NoDefaultCurrentDirectoryInExePath` 가 상속되어 Electron·node-pty 빌드가 실패한다. `start-dev.cmd` 가 둘 다 해제한다.
-태그 `v*` 를 push 하면 `.github/workflows/release.yml` 이 Windows·macOS 를 빌드한다.
+Then:
 
-## 단축키
+1. Open **Agents › Connections** and make sure Claude Code is installed and signed in.
+2. Click **+** next to *Projects* and create a project (a folder on your disk).
+3. Click **+** on the folder to start a session, or use **Manager** to give an order.
+4. Close the window, then reopen it from the tray. The sessions are still running.
 
-Ctrl+N 새 세션 · Ctrl+P 빠른 열기 · Ctrl+Shift+P 명령 팔레트 · Ctrl+B 사이드바 · Ctrl+F 찾기 ·
-Ctrl+1~5 Ground/Split/Tabs/Timeline/Today · Ctrl+= / − / 0 확대·축소·100% · Ctrl+Shift+0 전체 맞춤 ·
-Ctrl+Shift+B 패널을 별도 창으로 · Ctrl+, 설정 · F2 이름 변경 · F11 Focus 보기 · Ctrl+Shift+W 입력 대기 세션으로
-
-## 환경 변수
-
-| 변수 | 뜻 |
+| Command | Purpose |
 |---|---|
-| `AGENTO_DATA_DIR` | 데이터 폴더 (구 `ASM_DATA_DIR`) |
-| `ASM_PORT` | 데몬 포트(기본 47831) |
-| `ASM_HIBERNATE_MIN` | 자동 절전 대기 분(기본 30) |
-| `AGENTO_HEADLESS=0` | 팀 세션도 터미널(TUI)로 시작 |
-| `AGENTO_PLAYER_MODEL` · `AGENTO_COACH_MODEL` · `AGENTO_COACH_EFFORT` | 선수·조율 역할 기본 모델·노력 수준(빈 값 = CLI 기본) |
-| `AGENTO_AUTO_FRESH=0` · `AGENTO_AUTO_FRESH_MIN` | 자동 Fresh start 끄기 · 기준 토큰 |
-| `AGENTO_AUTO_MODEL=0` | 조사·분석·검토·문서·테스트 이름의 선수를 Sonnet 으로 시작하는 것 끄기 |
+| `npm run dev` | Run in development mode |
+| `npm run typecheck` | Type-check main and renderer |
+| `npm run smoke` | Start a throwaway daemon and run checks (no AI calls) |
+| `npm run dist:win` | Windows installer + portable exe → `dist/` (unsigned) |
+| `npm run dist:mac` | macOS dmg + zip (run on a Mac) |
 
-## 다른 앱과의 연결
+Pushing a tag like `v1.0.0` builds Windows and macOS packages via GitHub Actions.
 
-- `agento://dispatch?kind=commit|push&repo=…` 딥링크로 다른 앱(예: 파일 뷰어 ReadO)이 커밋·푸시 지시를 보낼 수 있다(확인 창을 거쳐 열린 프로젝트에만).
-- 파일 우클릭 › Open in ReadO 로 ReadO 가 설치돼 있으면 거기서 연다.
+## Where your data lives
 
-## 알려진 한계
+| Item | Location |
+|---|---|
+| Data folder | `%APPDATA%\AgentO` (macOS: `~/Library/Application Support/AgentO`) |
+| Database, logs | `asm.db`, `logs/` |
+| Project memory, team folders | `team/` |
+| Pasted images | `attachments/` |
 
-- Gemini CLI 는 개인 요금제 지원 종료로 터미널 보기만 된다. Codex 는 대화 보기는 되지만 Fresh start·토큰 리포트는 Claude 만.
-- 코드 서명이 없어 Windows 에서 SmartScreen 경고가 뜬다.
-- 사용량은 로컬 대화 기록(토큰)만 계산한다. 구독 한도 %는 알 수 없다.
-- 자동 업데이트, 세션 체인(A 끝나면 B 시작)은 아직 없다.
+The daemon listens on `127.0.0.1` only, and every connection needs a random token stored in the data folder.
+
+## Keyboard shortcuts
+
+| Keys | Action |
+|---|---|
+| Ctrl+N | New session |
+| Ctrl+P · Ctrl+Shift+P | Quick open · Command palette |
+| Ctrl+1 … 5 | Ground · Split · Tabs · Timeline · Today |
+| Ctrl+F | Find |
+| Ctrl+B | Toggle sidebar |
+| Ctrl+Shift+B | Panels in a separate window |
+| Ctrl+Shift+W | Jump to a session waiting for input |
+| F2 · F11 | Rename · Focus view |
+
+## Settings (environment variables)
+
+| Variable | Meaning |
+|---|---|
+| `AGENTO_DATA_DIR` | Use a different data folder |
+| `ASM_PORT` | Daemon port (default 47831) |
+| `ASM_HIBERNATE_MIN` | Minutes before an idle session sleeps (default 30) |
+| `AGENTO_HEADLESS=0` | Start team sessions in a terminal instead of headless |
+| `AGENTO_PLAYER_MODEL` · `AGENTO_COACH_MODEL` | Default model for players / coaches |
+| `AGENTO_AUTO_FRESH=0` | Turn off automatic Fresh start |
+
+## Project layout
+
+| Folder | Content |
+|---|---|
+| `src/daemon/` | Background daemon: WebSocket + MCP server, SQLite, team, routines, usage; `holder.ts` owns one session |
+| `src/main/` | Electron main: windows, menu, tray, daemon start, deep links |
+| `src/preload/` | Safe bridge between main and UI |
+| `src/renderer/` | React + zustand + xterm UI |
+| `src/shared/` | Message protocol and shared helpers |
+| `tests/smoke/` | Daemon and UI smoke tests |
+| `docs/` | Design notes |
+
+## Known limits
+
+- Builds are not code-signed yet: Windows SmartScreen will warn, and macOS needs a manual open.
+- Usage numbers come from local chat logs; your subscription's remaining quota is not visible.
+- No auto-update and no "run B when A finishes" chains yet.
+- Team features were tried mainly with Claude Code; Codex and Gemini coach setups are less tested.
+
+## Security
+
+Windows, macOS, and the CLIs you connect are trusted to act on your files. Agents run with the permissions you give them: review permission prompts, and use *Trust this folder* only for folders you control. Please report vulnerabilities privately through GitHub's *Report a vulnerability* button instead of a public issue.
+
+## License
+
+[MIT](LICENSE) © dongliquan

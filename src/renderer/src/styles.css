@@ -22,7 +22,7 @@
   --role-manager: #0969da;
   --role-coach: #bf3989;
   --err: #cf222e;
-  /* xO common tokens (docs/xo-common-spec.md 3.4): the shared names, as aliases of ours or new */
+  /* shared token names, as aliases of ours or new */
   --panel-2: var(--panel2);
   --text-dim: var(--muted);
   --text-mute: #8b9098;
