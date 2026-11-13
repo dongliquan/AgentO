@@ -6,6 +6,24 @@
 
 > **基本の考え方:** ウィンドウを閉じてもセッションは動き続けます。セッションはバックグラウンドのデーモンが保持し、UI はいつでも接続・切断できる画面にすぎません。
 
+## ダウンロード
+
+**[Releases](https://github.com/dongliquan/AgentO/releases/latest)** から最新ビルドを入手してください。実行したい CLI（Claude Code、Codex など）は別途インストールしてログインしておく必要があります。
+
+| プラットフォーム | ファイル |
+|---|---|
+| Windows（インストーラー） | `AgentO-<バージョン>-win-x64-setup.exe` |
+| Windows（インストール不要） | `AgentO-<バージョン>-win-x64-portable.exe` |
+| macOS、Apple Silicon | `AgentO-<バージョン>-mac-arm64.dmg` |
+| macOS、Intel | `AgentO-<バージョン>-mac-x64.dmg` |
+
+**まだコード署名がないため、初回起動時に警告が表示されます：**
+
+- **Windows:** SmartScreen が「Windows によって PC が保護されました」と表示します。**詳細情報 → 実行**をクリックしてください。
+- **macOS:** アプリを右クリックして**開く**を選び、もう一度**開く**を押します。または `xattr -dr com.apple.quarantine /Applications/AgentO.app` を実行します。
+
+ソースからビルドする場合は[クイックスタート](#クイックスタート)を参照してください。
+
 ## スクリーンショット
 
 | ライト | ダーク |

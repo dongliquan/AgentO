@@ -6,6 +6,24 @@
 
 > **핵심 아이디어:** 창을 닫아도 세션은 계속 돕니다. 세션은 백그라운드 데몬이 소유하고, UI는 붙었다 떨어지는 화면일 뿐입니다.
 
+## 다운로드
+
+**[Releases](https://github.com/dongliquan/AgentO/releases/latest)** 에서 최신 빌드를 받으세요. 실행할 CLI(Claude Code, Codex 등)는 따로 설치·로그인해 두어야 합니다.
+
+| 플랫폼 | 파일 |
+|---|---|
+| Windows (설치본) | `AgentO-<버전>-win-x64-setup.exe` |
+| Windows (설치 없이) | `AgentO-<버전>-win-x64-portable.exe` |
+| macOS, Apple Silicon | `AgentO-<버전>-mac-arm64.dmg` |
+| macOS, Intel | `AgentO-<버전>-mac-x64.dmg` |
+
+**아직 코드 서명이 없어서 처음 실행할 때 경고가 뜹니다:**
+
+- **Windows:** SmartScreen이 "Windows의 PC 보호"를 띄웁니다. **추가 정보 → 실행**을 누르세요.
+- **macOS:** 앱을 우클릭해 **열기**를 선택하고 한 번 더 **열기**를 누르세요. 또는 `xattr -dr com.apple.quarantine /Applications/AgentO.app` 를 실행하세요.
+
+소스에서 직접 빌드하려면 [빠른 시작](#빠른-시작)을 보세요.
+
 ## 스크린샷
 
 | 라이트 | 다크 |

@@ -6,6 +6,24 @@
 
 > **The key idea:** close the window and your sessions keep running. A background daemon owns every session; the UI is just a window that attaches and detaches.
 
+## Download
+
+Get the latest build from **[Releases](https://github.com/dongliquan/AgentO/releases/latest)**. You still need the CLIs you want to run (Claude Code, Codex, …) installed and signed in.
+
+| Platform | File |
+|---|---|
+| Windows (installer) | `AgentO-<version>-win-x64-setup.exe` |
+| Windows (no install) | `AgentO-<version>-win-x64-portable.exe` |
+| macOS, Apple Silicon | `AgentO-<version>-mac-arm64.dmg` |
+| macOS, Intel | `AgentO-<version>-mac-x64.dmg` |
+
+**The builds are not code-signed yet, so the first launch shows a warning:**
+
+- **Windows:** SmartScreen says "Windows protected your PC". Click **More info → Run anyway**.
+- **macOS:** Right-click the app, choose **Open**, then **Open** again. Or run `xattr -dr com.apple.quarantine /Applications/AgentO.app`.
+
+To build from source instead, see [Quick start](#quick-start).
+
 ## Screenshots
 
 | Light | Dark |

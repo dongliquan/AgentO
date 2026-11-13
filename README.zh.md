@@ -6,6 +6,24 @@
 
 > **核心理念：** 关闭窗口，会话继续运行。所有会话由后台守护进程持有，界面只是可以随时连接和断开的窗口。
 
+## 下载
+
+请从 **[Releases](https://github.com/dongliquan/AgentO/releases/latest)** 下载最新版本。要运行的 CLI（Claude Code、Codex 等）仍需自行安装并登录。
+
+| 平台 | 文件 |
+|---|---|
+| Windows（安装包） | `AgentO-<版本>-win-x64-setup.exe` |
+| Windows（免安装） | `AgentO-<版本>-win-x64-portable.exe` |
+| macOS，Apple Silicon | `AgentO-<版本>-mac-arm64.dmg` |
+| macOS，Intel | `AgentO-<版本>-mac-x64.dmg` |
+
+**目前尚未做代码签名，首次启动会出现警告：**
+
+- **Windows：** SmartScreen 提示“Windows 已保护你的电脑”，点击**更多信息 → 仍要运行**。
+- **macOS：** 右键点击应用选择**打开**，再点一次**打开**；或运行 `xattr -dr com.apple.quarantine /Applications/AgentO.app`。
+
+如需从源码构建，请见[快速开始](#快速开始)。
+
 ## 截图
 
 | 浅色 | 深色 |
