@@ -23,7 +23,7 @@ jobs:
         include:
           - os: windows-2022 # Visual Studio 2022 (node-gyp 9 does not know the VS 2026 on windows-latest)
             target: --win
-          - os: macos-14 # Apple Silicon
+          - os: macos-latest # Apple Silicon (macos-14 failed with "configuration not supported")
             target: --mac --arm64
           - os: macos-15-intel # Intel (macos-13 runners are retired)
             target: --mac --x64
