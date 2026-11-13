@@ -19,7 +19,7 @@
 
 **아직 코드 서명이 없어서 처음 실행할 때 경고가 뜹니다:**
 
-- **Windows:** SmartScreen이 "Windows의 PC 보호"를 띄웁니다. **추가 정보 → 실행**을 누르세요.
+- **Windows:** SmartScreen이 "Windows의 PC 보호"를 띄웁니다. **추가 정보 → 실행**을 누르거나, 내려받은 파일 우클릭 → 속성 → **차단 해제**를 체크하세요(PowerShell: `Unblock-File <파일>`).
 - **macOS:** 앱을 우클릭해 **열기**를 선택하고 한 번 더 **열기**를 누르세요. 또는 `xattr -dr com.apple.quarantine /Applications/AgentO.app` 를 실행하세요.
 
 소스에서 직접 빌드하려면 [빠른 시작](#빠른-시작)을 보세요.

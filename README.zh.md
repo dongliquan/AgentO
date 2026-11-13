@@ -19,7 +19,7 @@
 
 **目前尚未做代码签名，首次启动会出现警告：**
 
-- **Windows：** SmartScreen 提示“Windows 已保护你的电脑”，点击**更多信息 → 仍要运行**。
+- **Windows：** SmartScreen 提示“Windows 已保护你的电脑”，点击**更多信息 → 仍要运行**，或右键下载的文件 → 属性 → 勾选**解除锁定**（PowerShell：`Unblock-File <文件>`）。
 - **macOS：** 右键点击应用选择**打开**，再点一次**打开**；或运行 `xattr -dr com.apple.quarantine /Applications/AgentO.app`。
 
 如需从源码构建，请见[快速开始](#快速开始)。

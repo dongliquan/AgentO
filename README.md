@@ -19,7 +19,7 @@ Get the latest build from **[Releases](https://github.com/dongliquan/AgentO/rele
 
 **The builds are not code-signed yet, so the first launch shows a warning:**
 
-- **Windows:** SmartScreen says "Windows protected your PC". Click **More info → Run anyway**.
+- **Windows:** SmartScreen says "Windows protected your PC". Click **More info → Run anyway**, or right-click the downloaded file → Properties → tick **Unblock** (PowerShell: `Unblock-File <file>`).
 - **macOS:** Right-click the app, choose **Open**, then **Open** again. Or run `xattr -dr com.apple.quarantine /Applications/AgentO.app`.
 
 To build from source instead, see [Quick start](#quick-start).
