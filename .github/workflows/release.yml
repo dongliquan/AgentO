@@ -36,7 +36,7 @@ jobs:
           cache: npm
       - uses: actions/setup-python@v5 # node-gyp (native modules)
         with:
-          python-version: '3.12'
+          python-version: '3.11' # node-gyp 9 needs distutils, which Python 3.12 removed
       # --ignore-scripts: npm would compile better-sqlite3 and node-pty for plain Node with its own node-gyp 9, which
       # fails on the runners' newer Visual Studio and is not needed. The Electron builds come from install-app-deps.
       - run: bash .github/ci-step.sh "npm ci" npm ci --ignore-scripts
