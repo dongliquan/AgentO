@@ -32,6 +32,13 @@ const oneLine = (text: string, max = 100): string => {
   return first.length > max ? `${first.slice(0, max - 1)}…` : first;
 };
 
+/** Timeline and Today have no cards: go back to the Ground, then fly to the session's card. */
+function openOnGround(id: string): void {
+  const st = useStore.getState();
+  if (st.viewMode === 'today' || st.viewMode === 'timeline') st.setViewMode('board');
+  selectAndReveal(id);
+}
+
 export function ProjectNow({ projectId }: { projectId: string }): JSX.Element | null {
   const sessions = useStore((st) => st.sessions);
   const projects = useStore((st) => st.projects);
@@ -103,7 +110,7 @@ export function ProjectNow({ projectId }: { projectId: string }): JSX.Element | 
       </div>
       <ul className="now-rows">
         {rows.map((r) => (
-          <li key={r.s.id} className={`now-row ${r.state}`} onClick={() => selectAndReveal(r.s.id)} title={`Open ${displayTitle(r.s)}`}>
+          <li key={r.s.id} className={`now-row ${r.state}`} onClick={() => openOnGround(r.s.id)} title={`Show ${displayTitle(r.s)} on the Ground`}>
             <span className={`now-dot ${r.state}`} />
             <span className="now-name ellipsis">
               {r.s.role !== 'player' && <span className="now-role">{roleLabel(r.s)}</span>}
