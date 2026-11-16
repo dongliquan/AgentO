@@ -23,7 +23,7 @@ export interface NeedsYou {
 
 // the end of a report that asks the manager for something; generic closings ("새 주문이 있으면 말씀해 주세요",
 // "완료 보고가 오면 전달하겠습니다") don't count
-const ASKS = /\?|까요|할지|할까|정해\s?주세요|골라\s?주세요|선택해\s?주세요|알려\s?주(?:세요|시면|십시오)|말씀해\s?주(?:세요|시면)|확인해\s?주(?:세요|시면)|결정\s?(?:대기|해\s?주|이\s?필요|이\s?나면|해야)|어느\s?쪽|괜찮을까|should i|shall i|which (?:one|option)|let me know|please (?:confirm|decide|choose)|do you want|if you want me to|want me to/i;
+const ASKS = /\?|까요|할지|할까|정해\s?주세요|골라\s?주세요|선택해\s?주세요|알려\s?주(?:세요|시면|십시오)|말씀해\s?주(?:세요|시면)|확인해\s?주(?:세요|시면)|결정\s?(?:대기|해\s?주|이\s?필요|이\s?나면|해야)|어느\s?쪽|괜찮을까|should i|shall i|which (?:one|option)|let me know|please (?:confirm|decide|choose)|do you want|if you want me to|want me to|(?:답|답변|결정|확인|승인)(?:을|이)?\s?기다(?:립니다|리고|려)|waiting for your (?:answer|reply|decision|go-ahead)/i;
 // optional offers and closings: "다른 이름을 원하시면 말씀해 주세요", "고칠 점이 있으면 알려 주세요", "필요하시면 말씀해 주세요"
 const OPTIONAL = /(?:있으면|있으시면|원하시면|필요하면|필요하시면|필요해지면|생기면|안\s?보이면|문제가\s?있으면|이의가\s?있으면)\s*(?:언제든\s*)?(?:알려|말씀|다시\s?꺼내)[^.?!\n]{0,12}/g;
 const GENERIC = /(새\s?(?:주문|지시|요청)|다른\s?(?:주문|지시|일)|추가로\s?필요).{0,20}(있으면|있으시면)|if you (?:have|need) anything/i;
@@ -37,6 +37,22 @@ export function askingTail(text: string): string | null {
   const t = tail.join('\n\n');
   if (!t || !ASKS.test(t.replace(OPTIONAL, ''))) return null;
   return t.length > 600 ? `…${t.slice(-600)}` : t;
+}
+
+/**
+ * The questions inside an answer's asking tail, one per line (up to 5): shown apart from the report so that two or
+ * three decisions asked at once are not lost in the explanation. Empty when the answer asks nothing.
+ */
+export function askedLines(text: string): string[] {
+  const tail = askingTail(text);
+  if (!tail) return [];
+  const out: string[] = [];
+  for (const raw of tail.split(/\n+|(?<=[.?!。？])\s+/)) {
+    const line = raw.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, '').replace(/\*\*|__|`/g, '').trim();
+    if (line.length < 6 || !ASKS.test(line.replace(OPTIONAL, ''))) continue;
+    out.push(line.length > 240 ? `${line.slice(0, 237)}…` : line);
+  }
+  return out.slice(-5);
 }
 
 /** Conversation sizes that call for a fresh start (players do the work and grow faster than coordinators). */

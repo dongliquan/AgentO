@@ -26,6 +26,7 @@ import { dayTime, displayTitle, formatDateTime, pcStyle, projectColor, relativeT
 import { useNow } from '@/lib/hooks';
 import { recentInputs, recordInput } from '@/lib/inputHistory';
 import { countUse } from '@/lib/uiUsage';
+import { askedLines } from '@/lib/needsYou';
 
 /** Searchable text of a transcript entry: its text, or a tool's name, input and result. */
 function entryText(e: ChatEntry): string {
@@ -167,6 +168,16 @@ export function ChatView({
   const working = s.status === 'working' || s.status === 'starting';
   // the answer ends with a question and options: quick-reply buttons instead of typing (not while it works or asks the TUI)
   const quick = useMemo(() => (working ? null : quickReplyOf(all)), [all, working]);
+  // what the last answer asks the manager, apart from its report (not when quick-reply buttons already offer the answer)
+  const asked = useMemo(() => {
+    if (working || quick) return [];
+    for (let i = all.length - 1; i >= 0; i--) {
+      const e = all[i]!;
+      if (e.kind === 'user') return [];
+      if (e.kind === 'assistant' && e.text?.trim()) return askedLines(e.text);
+    }
+    return [];
+  }, [all, working, quick]);
   // A numbered choice (permission / trust prompt) is only visible in the TUI, so sniff the terminal tail.
   // only while waiting: a choice prompt can be on screen (no subscription otherwise)
   const tail = useBuffer(s.id, s.status === 'waiting')?.slice(-6000);
@@ -257,6 +268,16 @@ export function ChatView({
       {/* a small monitor at the top right: the work this coordinator handed out */}
       {s.role !== 'player' && <DelegationStrip id={s.id} />}
       {s.permission ? <PermissionCard session={s} onShowTerminal={onShowTerminal} /> : choice && <WaitingBar session={s} tail={tail ?? ''} onShowTerminal={onShowTerminal} />}
+      {asked.length > 0 && !s.permission && !choice && (
+        <div className="asked-bar" role="note" aria-label="Waiting for your answer">
+          <span className="asked-title">Waiting for your answer</span>
+          <ol>
+            {asked.map((q) => (
+              <li key={q}>{q}</li>
+            ))}
+          </ol>
+        </div>
+      )}
       {/* the old-answer note: in the Session tab / Focus view, not on every Ground card (cards pass a limit) */}
       <Composer session={s} quick={quick} lastAt={working || limit !== undefined ? undefined : lastAnswerAt(all)} />
     </div>
