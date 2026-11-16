@@ -47,10 +47,14 @@ export function askedLines(text: string): string[] {
   const tail = askingTail(text);
   if (!tail) return [];
   const out: string[] = [];
-  for (const raw of tail.split(/\n+|(?<=[.?!。？])\s+/)) {
+  const push = (line: string): void => {
+    if (line.length >= 6 && ASKS.test(line.replace(OPTIONAL, ''))) out.push(line.length > 240 ? `${line.slice(0, 237)}…` : line);
+  };
+  for (const raw of tail.split(/\n+/)) {
     const line = raw.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, '').replace(/\*\*|__|`/g, '').trim();
-    if (line.length < 6 || !ASKS.test(line.replace(OPTIONAL, ''))) continue;
-    out.push(line.length > 240 ? `${line.slice(0, 237)}…` : line);
+    // a list item is kept whole (its context is part of the question); a long line is cut into its sentences
+    if (line.length <= 200) push(line);
+    else for (const sentence of line.split(/(?<=[.?!。？])\s+/)) push(sentence.trim());
   }
   return out.slice(-5);
 }

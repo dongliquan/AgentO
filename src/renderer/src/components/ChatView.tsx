@@ -137,10 +137,22 @@ export function ChatView({
   // the asking lines leave the answer's own bubble so the same sentence is not shown twice
   const asked = useMemo(() => {
     if (working || quick) return null;
+    let spoken = false;
     for (let i = all.length - 1; i >= 0; i--) {
       const e = all[i]!;
       if (e.kind === 'user') return null;
-      if (e.kind === 'assistant' && e.text?.trim()) return askedSplit(e);
+      if (e.kind === 'assistant' && e.text?.trim() && !spoken) {
+        spoken = true;
+        const own = askedSplit(e);
+        if (own) return own;
+      }
+      // the session closed its turn with a one-line note and put the questions in its report_up (to the manager or
+      // its coach): they are asked there, not in the note
+      if (e.kind === 'tool' && e.tool?.name === 'mcp__agento__report_up') {
+        const msg = typeof e.tool.input['message'] === 'string' ? (e.tool.input['message'] as string) : '';
+        const lines = askedLines(msg);
+        if (lines.length) return { id: '', at: e.ts, lines, rest: '' };
+      }
     }
     return null;
   }, [all, working, quick]);
