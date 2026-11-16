@@ -55,6 +55,8 @@ export function askedLines(text: string): string[] {
   return out.slice(-5);
 }
 
+const QUESTION_MAX_AGE_MS = 3 * 86_400_000;
+
 /** Conversation sizes that call for a fresh start (players do the work and grow faster than coordinators). */
 const CONTEXT_WARN = 225_000;
 const CONTEXT_WARN_COORD = 150_000;
@@ -78,6 +80,22 @@ let seen: Set<string> = (() => {
     return new Set();
   }
 })();
+// Before 2026-11-16 a click on an alert marked the question "dealt with" for good, so questions nobody answered vanished
+// from the card badge, Inbox and project status. Those clicks only meant "seen": keep the toast hidden, show the rest.
+try {
+  if (localStorage.getItem('asm.needsYou.migrated') !== '1') {
+    const old = [...dismissed].filter((k) => !k.startsWith('c:'));
+    if (old.length) {
+      seen = new Set([...seen, ...old]);
+      dismissed = new Set([...dismissed].filter((k) => k.startsWith('c:')));
+      localStorage.setItem(SEEN_KEY, JSON.stringify([...seen].slice(-500)));
+      localStorage.setItem(KEY, JSON.stringify([...dismissed]));
+    }
+    localStorage.setItem('asm.needsYou.migrated', '1');
+  }
+} catch {
+  /* not kept */
+}
 export function seeNeed(key: string): void {
   seen = new Set(seen).add(key);
   try {
@@ -153,6 +171,8 @@ export function computeNeeds(sessions: Map<string, Session>, inbox: InboxItem[],
     const r = lastReport.get(s.id);
     // answered (the manager wrote to it since), busy again, or dealt with
     if (!r || gone.has(r.id) || (lastFromUser.get(s.id) ?? 0) > r.createdAt || s.status === 'working' || s.status === 'starting') continue;
+    // a question from days ago is not "waiting" any more (the work moved on)
+    if (Date.now() - r.createdAt > QUESTION_MAX_AGE_MS) continue;
     const tail = tailOf(r);
     if (tail) out.push({ sessionId: s.id, kind: 'question', text: tail, at: r.createdAt, itemId: r.id, key: r.id });
   }
