@@ -81,6 +81,16 @@ const START_SETTLE_MS = 5_000;
 const TRUST_SETTLE_MS = 8_000;
 /** Waiting must hold this long before a directed session counts as finished (status flips on output pauses). */
 const SETTLE_MS = 4_000;
+/** Autopilot: a Coach resting this long with nothing out is told to carry on; limits so it cannot spin */
+const AUTOPILOT_SETTLE_MS = 15_000;
+const AUTOPILOT_MAX_PER_HOUR = 6;
+const AUTOPILOT_MAX_IDLE = 2;
+const AUTOPILOT_RULES =
+  '[AgentO Autopilot] The manager is away; the work on this project goes on without them.\n' +
+  '- Do not stop to ask the manager. When a decision is open, choose the option you recommend, do it, and record it with `update_memory` (section Decisions, one line: what and why). Say it in your next `report_up` as "Assumed: …" with directive=false — do not wait for an answer.\n' +
+  '- Only what nobody but the manager can do (credentials, passwords, access to production, destructive or irreversible actions) is skipped: add one line to the memory section Open ("Manager: …") and carry on with the other work.\n' +
+  '- Keep handing the next pieces of the plan to the players, check each result before the next piece, and use the reviewer when there is one. Never end your answer with a question.\n' +
+  '- When the whole plan is finished and checked, send one final `report_up` with the results, and end your answer with the line `AUTOPILOT DONE`.';
 /** a rider (a note that only goes along with another message) is delivered on its own after this long */
 const RIDE_MAX_MS = 15 * 60_000;
 /** an FYI to a coach about what the manager told a player directly: it goes along with the coach's next work, or is dropped */
@@ -409,6 +419,10 @@ export class Team {
   private fresh = new Map<string, { file: string; at: number; why: 'manual' | 'auto'; timer: NodeJS.Timeout | null; started: boolean }>();
   /** messages waiting until their target is idle */
   private outbox = new Map<string, Queued[]>();
+  /* autopilot (memory only): the Coach's settle timer, the last team traffic per project, the run's bookkeeping */
+  private apTimers = new Map<string, NodeJS.Timeout>();
+  private apActive = new Map<string, number>();
+  private apRun = new Map<string, { at: number; idle: number; window: number[] }>();
   /** targets the user was already told about (sitting on a prompt) */
   private attention = new Set<string>();
   /** targets we already tried to resume for queued messages */
@@ -453,6 +467,8 @@ export class Team {
       this.coachOf(s.projectId) !== undefined ||
       this.all().some((h) => h.role === 'head' && h.projectId === this.rootOf(s.projectId));
     this.restore();
+    // a daemon that restarted while a Coach was resting: no status event comes, so look every 2 minutes
+    setInterval(() => this.autopilotSweep(), 2 * 60_000).unref();
     setInterval(() => {
       this.flush();
       this.persist();
@@ -1211,6 +1227,7 @@ export class Team {
   private record(target: StoredSession, kind: 'directive' | 'report', from: { id: string; title: string }, message: string, read = true, task?: string): string {
     const text = `${from.title} → ${target.title}: ${clip(message.trim(), LOG_TEXT_MAX)}`;
     const item = this.store.addInbox(target.id, kind, text, read, from.id, Date.now(), task);
+    this.apActive.set(this.rootOf(target.projectId), Date.now());
     this.onInbox();
     return item.id;
   }
@@ -1339,7 +1356,110 @@ export class Team {
     this.director.set(targetId, from);
   }
 
+  /* ---------- autopilot ---------- */
+
+  /** Switch a project's autopilot on or off (the Coach is told the rules when it goes on). */
+  setAutopilot(projectId: string, on: boolean): void {
+    const root = this.project(projectId);
+    if (!root || root.parentId) throw new Error('Autopilot belongs to a whole project');
+    const coach = this.all().find((x) => x.role === 'head' && x.projectId === root.id);
+    if (on) {
+      if (!coach) throw new Error('The project has no Coach yet');
+      if (coach.agent !== 'claude') throw new Error('Autopilot needs a Claude Coach');
+      if (this.isClosed(root.id)) throw new Error('Open the project first');
+      const now = Date.now();
+      this.store.setAutopilot(root.id, { on: true, since: now, continues: 0, lastAt: now, note: 'Switched on' });
+      this.apRun.set(root.id, { at: 0, idle: 0, window: [] });
+      this.apActive.set(root.id, now);
+      this.enqueue(coach.id, { text: `${AUTOPILOT_RULES}\nAutopilot is on now: carry on with the plan.`, wake: true });
+    } else {
+      const cur = root.autopilot;
+      this.store.setAutopilot(root.id, cur ? { ...cur, on: false, lastAt: Date.now(), note: 'Switched off' } : null);
+    }
+    this.onProjects();
+  }
+
+  private autopilotStop(root: Project, coach: StoredSession, note: string): void {
+    const cur = root.autopilot;
+    this.store.setAutopilot(root.id, cur ? { ...cur, on: false, lastAt: Date.now(), note } : null);
+    this.store.addInbox(coach.id, 'waiting', `${root.name} — Autopilot off: ${note}`);
+    this.onInbox();
+    this.onProjects();
+    log.info('team: autopilot off', root.name, note);
+  }
+
+  /** A Coach that rests with autopilot on is looked at after a short settle (a new turn cancels it). */
+  private autopilotWatch(s: Session): void {
+    if (s.role !== 'head' || !s.projectId) return;
+    const prev = this.apTimers.get(s.id);
+    if (s.status !== 'waiting') {
+      if (prev) {
+        clearTimeout(prev);
+        this.apTimers.delete(s.id);
+      }
+      return;
+    }
+    if (!this.project(s.projectId)?.autopilot?.on) return;
+    if (prev) clearTimeout(prev);
+    this.apTimers.set(
+      s.id,
+      setTimeout(() => {
+        this.apTimers.delete(s.id);
+        this.autopilotCheck(s.id);
+      }, AUTOPILOT_SETTLE_MS)
+    );
+  }
+
+  private autopilotSweep(): void {
+    for (const s of this.all()) if (s.role === 'head' && s.projectId && s.status === 'waiting' && !this.apTimers.has(s.id)) this.autopilotWatch(s);
+  }
+
+  private autopilotCheck(coachId: string): void {
+    const coach = this.sessions.get(coachId);
+    const root = coach ? this.project(coach.projectId) : undefined;
+    const ap = root?.autopilot;
+    if (!coach || !root || !ap?.on || coach.status !== 'waiting') return;
+    // closed, paused by the usage limit, or stuck on a prompt: not a pause to act on
+    if (this.isClosed(root.id) || this.limited(coach) || this.needsAttention(coach)) return;
+    // work is out, or something is on its way to the Coach: its results come back by themselves
+    const mine = this.all().filter((m) => m.id !== coach.id && this.rootOf(m.projectId) === root.id);
+    const busy = mine.some(
+      (m) => m.status === 'working' || m.status === 'starting' || this.pending.get(m.id)?.from === coach.id || (this.outbox.get(m.id) ?? []).some((q) => q.from === coach.id)
+    );
+    if (busy || (this.outbox.get(coach.id) ?? []).length > 0) return;
+    if (/AUTOPILOT\s+DONE/i.test(this.lastReply(coach, 3000))) {
+      this.autopilotStop(root, coach, 'finished — the Coach reported AUTOPILOT DONE');
+      return;
+    }
+    const now = Date.now();
+    const run = this.apRun.get(root.id) ?? { at: 0, idle: 0, window: [] };
+    run.window = run.window.filter((t) => now - t < 3_600_000);
+    if (run.window.length >= AUTOPILOT_MAX_PER_HOUR) {
+      this.autopilotStop(root, coach, `paused — ${AUTOPILOT_MAX_PER_HOUR} continues in an hour (switch it on again to go on)`);
+      return;
+    }
+    // told to carry on last time, and nothing was handed out or reported since: no progress
+    if (run.at && (this.apActive.get(root.id) ?? 0) <= run.at) run.idle++;
+    else run.idle = 0;
+    if (run.idle >= AUTOPILOT_MAX_IDLE) {
+      this.autopilotStop(root, coach, `stopped — no progress after ${AUTOPILOT_MAX_IDLE} continues`);
+      return;
+    }
+    run.at = now;
+    run.window.push(now);
+    this.apRun.set(root.id, run);
+    const n = ap.continues + 1;
+    this.store.setAutopilot(root.id, { ...ap, continues: n, lastAt: now, note: `Continue #${n}` });
+    this.onProjects();
+    this.enqueue(coach.id, {
+      text: `${AUTOPILOT_RULES}\nNothing is running now. Hand out the next pieces of the plan; if everything is finished and checked, report and end with AUTOPILOT DONE.`,
+      wake: true
+    });
+    log.info('team: autopilot continue', root.name, n);
+  }
+
   private onStatus(s: Session): void {
+    this.autopilotWatch(s);
     // it runs again (started by hand, or a wake that took): the crash-loop guard lets go
     if (s.status === 'waiting' && this.wakeStopped.delete(s.id)) this.wakes.delete(s.id);
     // a (re)started CLI draws its UI first; give it a moment before typing into it

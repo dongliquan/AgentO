@@ -33,6 +33,22 @@ export interface AgentDef {
  * A project (one piece of work, e.g. "Shop") or, when parentId is set, a part of one (planning, development, QA).
  * Head coaches belong to a top-level project; coaches and players to a part (or to a project without parts).
  */
+/**
+ * Autopilot: the project goes on without the manager — its Coach decides open questions itself (and records them),
+ * is told to carry on when it stops with work left, and the run ends with `AUTOPILOT DONE`, a pause, or no progress.
+ */
+export interface AutopilotState {
+  on: boolean;
+  /** when it was switched on */
+  since: number;
+  /** how many times the Coach was told to carry on (since it was switched on) */
+  continues: number;
+  /** the last time it was told to carry on, or finished */
+  lastAt?: number;
+  /** why it is off (finished / paused / no progress), or the last thing it did */
+  note?: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -46,6 +62,8 @@ export interface Project {
   color?: string;
   /** a top-level project's memory file (team/memory/<id>.md): the short shared note its sessions get at start */
   memory?: string;
+  /** a top-level project's autopilot (see AutopilotState) */
+  autopilot?: AutopilotState;
 }
 
 /** Project colors, handed out in order to new projects (readable on the light and the dark theme). */
@@ -295,6 +313,7 @@ export type ClientMessage =
   | { type: 'project.close'; id: string }
   | { type: 'project.open'; id: string }
   | { type: 'project.setColor'; id: string; color: string }
+  | { type: 'project.autopilot'; id: string; on: boolean }
   | { type: 'project.rename'; id: string; name: string }
   /** Tasks: mark one of the manager's orders (its directive record id) done, or open again */
   | { type: 'order.done'; id: string; done: boolean }

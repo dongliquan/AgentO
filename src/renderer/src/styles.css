@@ -1521,6 +1521,15 @@ button.tl-hash { cursor: pointer; }
 .tl-head { cursor: pointer; }
 .now-board { margin: 4px 0 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); overflow: hidden; font-size: 12px; }
 .now-next { padding: 6px 10px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--muted) 8%, var(--panel)); }
+.now-next { display: flex; align-items: center; gap: 10px; }
+.now-next-text { flex: 1; min-width: 0; }
+.ap-switch { flex: none; display: inline-flex; align-items: center; gap: 6px; max-width: 46%; padding: 2px 8px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); color: var(--muted); font-size: 11px; cursor: pointer; }
+.ap-switch:hover { border-color: var(--accent); }
+.ap-switch.on { color: var(--ok); border-color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, var(--panel)); }
+.ap-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); opacity: 0.6; }
+.ap-switch.on .ap-dot { background: var(--ok); opacity: 1; animation: dot-beat 1.1s ease-in-out infinite; }
+.ap-status { min-width: 0; font-weight: 400; }
+@media (prefers-reduced-motion: reduce) { .ap-switch.on .ap-dot { animation: none; } }
 .now-next b { margin-right: 6px; font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
 .now-next.you { background: color-mix(in srgb, var(--warn) 14%, var(--panel)); }
 .now-next.stuck { background: color-mix(in srgb, var(--err) 12%, var(--panel)); }
@@ -1716,3 +1725,12 @@ button.tl-all { color: var(--accent); border-color: var(--border); }
 .deleg-card-head .deleg-x { flex: none; width: auto; margin-left: auto; padding: 0 4px; border-radius: 4px; color: var(--muted); opacity: 0; line-height: 1.2; }
 .deleg-card:hover .deleg-x { opacity: 1; }
 .deleg-card-head .deleg-x:hover { background: var(--panel2); color: var(--text); }
+
+.away-card { margin: 0 0 10px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 6px; background: var(--panel); font-size: 12px; }
+.away-head { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+.away-sum b { font-weight: 700; }
+.away-sum b.warn { color: var(--warn); }
+.away-body { padding: 6px 10px 8px; max-height: 40vh; overflow-y: auto; }
+.away-block + .away-block { margin-top: 8px; }
+.away-block h4 { margin: 0 0 3px; font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.away-line { display: flex; align-items: center; gap: 8px; padding: 2px 0; }

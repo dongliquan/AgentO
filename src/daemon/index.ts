@@ -601,6 +601,9 @@ async function main(): Promise<void> {
         store.setProjectColor(msg.id, msg.color);
         broadcast({ type: 'projects', projects: store.listProjects() });
         return;
+      case 'project.autopilot':
+        team.setAutopilot(msg.id, msg.on);
+        return;
       case 'project.open': {
         // sessions stay stopped until they get work (a delivery wakes them); paused routines stay paused
         store.setProjectClosed(msg.id, false);

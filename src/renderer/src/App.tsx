@@ -10,6 +10,7 @@ import { NewProjectDialog } from '@/components/NewProjectDialog';
 import { FileRefMenu } from '@/components/FileRefMenu';
 import { ProjectColorMenu } from '@/components/ProjectColorMenu';
 import { NeedsYouWatcher } from '@/components/NeedsYou';
+import { AwayWatcher } from '@/components/AwayCard';
 import { DelegationWatcher } from '@/components/Delegations';
 import { PathMenu } from '@/components/PathMenu';
 import { DispatchDialog } from '@/components/DispatchDialog';
@@ -220,6 +221,7 @@ export function App(): JSX.Element {
       <FileRefMenu />
       <ProjectColorMenu />
       <NeedsYouWatcher />
+      <AwayWatcher />
       <DelegationWatcher />
       <PathMenu />
       <DispatchDialog />

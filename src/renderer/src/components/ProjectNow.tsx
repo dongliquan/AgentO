@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
-import type { InboxItem, Session } from '@shared/protocol';
+import type { InboxItem, Project, Session } from '@shared/protocol';
 import { useStore } from '@/store';
 import { selectAndReveal } from '@/commands';
+import { send } from '@/client';
 import { useOpenInbox } from '@/lib/closed';
 import { useNow } from '@/lib/hooks';
 import { displayTitle, relativeTime, rootProject, roleLabel } from '@/lib/format';
@@ -101,12 +102,16 @@ export function ProjectNow({ projectId }: { projectId: string }): JSX.Element | 
     return { rows, next };
   }, [sessions, projects, inbox, needs, byCoach, projectId, now]);
 
+  const project = projects.find((p) => p.id === projectId);
   if (rows.length === 0) return null;
   const tone = next.startsWith('You:') ? 'you' : next.startsWith('Stuck') ? 'stuck' : next.startsWith('Working') ? 'working' : 'idle';
   return (
     <div className="now-board" aria-label="Project status">
       <div className={`now-next ${tone}`}>
-        <b>Now</b> {next}
+        <span className="now-next-text">
+          <b>Now</b> {next}
+        </span>
+        {project && <AutopilotSwitch project={project} now={now} />}
       </div>
       <ul className="now-rows">
         {rows.map((r) => (
@@ -124,5 +129,36 @@ export function ProjectNow({ projectId }: { projectId: string }): JSX.Element | 
         ))}
       </ul>
     </div>
+  );
+}
+
+/** Autopilot: the Coach decides open questions itself and is told to carry on while the manager is away. */
+function AutopilotSwitch({ project, now }: { project: Project; now: number }): JSX.Element {
+  const ap = project.autopilot;
+  const on = ap?.on === true;
+  const toggle = (): void => {
+    if (on) {
+      send({ type: 'project.autopilot', id: project.id, on: false });
+      return;
+    }
+    const ok = window.confirm(
+      `Switch Autopilot on for "${project.name}"?
+
+The Coach decides open questions itself (recommended option, written to the project memory) and is told to carry on while you are away. It stops by itself when the plan is finished, after ${6} continues in an hour, or after 2 continues without progress.
+
+Tokens keep being used until then.`
+    );
+    if (ok) send({ type: 'project.autopilot', id: project.id, on: true });
+  };
+  const status = on
+    ? `on${ap?.continues ? ` · continued ${ap.continues}×` : ''}${ap?.lastAt ? ` · ${relativeTime(ap.lastAt, now)}` : ''}`
+    : ap?.note
+      ? `off — ${ap.note}`
+      : 'off';
+  return (
+    <button className={`ap-switch ${on ? 'on' : ''}`} onClick={toggle} title={on ? 'Autopilot is on: click to switch it off' : 'Autopilot: let the Coach keep the project going while you are away'}>
+      <i className="ap-dot" />
+      Autopilot <span className="ap-status ellipsis">{status}</span>
+    </button>
   );
 }

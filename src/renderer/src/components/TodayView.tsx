@@ -10,6 +10,7 @@ import { useNeedsIds, openNeed } from './NeedsYou';
 import { useDelegations } from './Delegations';
 import { useFlow } from './OrderFlow';
 import { useReport, useTodos, saveTodos, newTodo } from './DailyReport';
+import { AwayCard } from './AwayCard';
 
 const NEED_LABEL = { prompt: 'Prompt', question: 'Question', context: 'Large chat' } as const;
 
@@ -85,6 +86,7 @@ export function TodayView(): JSX.Element {
           Report
         </button>
       </div>
+      <AwayCard />
       <div className="today-grid">
         <section className="today-card needs">
           <h3>Needs you <span className="count">{needs.length}</span></h3>
