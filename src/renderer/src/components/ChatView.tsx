@@ -1372,6 +1372,15 @@ function AskedBar({ session: s, lines, at }: { session: Session; lines: string[]
     }
     return best?.id;
   });
+  // the session it handed work to last (within 3 hours before the answer): what a question without a name is about
+  const lastTarget = useStore((st) => {
+    let best: { id: string; t: number } | undefined;
+    for (const it of st.inbox) {
+      if (it.kind !== 'directive' || it.fromId !== s.id || it.sessionId === s.id || it.createdAt > at + 60_000 || it.createdAt < at - 3 * 3_600_000) continue;
+      if (!best || it.createdAt > best.t) best = { id: it.sessionId, t: it.createdAt };
+    }
+    return best?.id;
+  });
   const others = useMemo(
     () => [...sessions.values()].filter((o) => o.id !== s.id && displayTitle(o).length >= 2).sort((x, y) => displayTitle(y).length - displayTitle(x).length),
     [sessions, s.id]
@@ -1381,11 +1390,11 @@ function AskedBar({ session: s, lines, at }: { session: Session; lines: string[]
       <span className="asked-title">Waiting for your answer{lines.length > 1 ? ` · ${lines.length}` : ''}</span>
       <ol>
         {lines.map((q) => {
-          // the number the session wrote itself; else the latest piece of work, but only for a single question (with
-          // several it would be a guess that looks certain)
-          const tid = /#T\d+/.exec(q)?.[0] ?? (lines.length === 1 ? current : undefined);
+          // the number the session wrote itself, else the latest piece of work (the manager prefers a number to none)
+          const tid = /#T\d+/.exec(q)?.[0] ?? current;
           const text = q.replace(/^#T\d+\s*[·:–-]?\s*/, '');
-          const about = others.filter((o) => q.includes(displayTitle(o))).slice(0, 2);
+          let about = others.filter((o) => q.includes(displayTitle(o))).slice(0, 2);
+          if (!about.length && lastTarget) about = others.filter((o) => o.id === lastTarget);
           return (
             <li key={q}>
               {tid && <span className="task-id chat-task" title="The piece of work this question belongs to">{tid}</span>}
