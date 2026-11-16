@@ -4,7 +4,7 @@ import { useStore } from '@/store';
 import { send } from '@/client';
 import { selectAndReveal } from '@/commands';
 import { displayTitle, pcStyle, projectColor, projectLabel, relativeTime } from '@/lib/format';
-import { dismissNeed, useNeedsYou, type NeedsYou } from '@/lib/needsYou';
+import { dismissNeed, seeNeed, useNeedsYou, useSeenNeeds, type NeedsYou } from '@/lib/needsYou';
 import { useNow } from '@/lib/hooks';
 
 /**
@@ -51,18 +51,21 @@ export function NeedsYouAlerts(): JSX.Element | null {
   const sessions = useStore((s) => s.sessions);
   const projects = useStore((s) => s.projects);
   const now = useNow(30000);
+  const seen = useSeenNeeds();
   const [all, setAll] = useState(false);
-  if (needs.length === 0) return null;
-  const shown = all ? needs : needs.slice(0, SHOWN);
+  // a clicked alert goes away; the session stays marked (card badge, Inbox, tree) until the manager answers it
+  const fresh = needs.filter((n) => !seen.has(n.key));
+  if (fresh.length === 0) return null;
+  const shown = all ? fresh : fresh.slice(0, SHOWN);
   return (
     <>
       {shown.map((n) => {
         const s = sessions.get(n.sessionId);
         return <NeedAlert key={n.key} need={n} title={s ? displayTitle(s) : '(deleted session)'} project={s?.projectId ?? ''} projects={projects} now={now} />;
       })}
-      {needs.length > SHOWN && (
+      {fresh.length > SHOWN && (
         <button className="need-more" onClick={() => setAll(!all)}>
-          {all ? 'Show fewer' : `+${needs.length - SHOWN} more waiting for you`}
+          {all ? 'Show fewer' : `+${fresh.length - SHOWN} more waiting for you`}
         </button>
       )}
     </>
@@ -78,7 +81,7 @@ function NeedAlertView({ need: n, title, project, projects, now }: { need: Needs
       className={`toast need-alert ${n.kind}`}
       title={n.text}
       onClick={() => {
-        dismissNeed(n.key);
+        seeNeed(n.key);
         goToCard(n.sessionId);
       }}
     >

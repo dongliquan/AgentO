@@ -13,6 +13,7 @@ import { pcStyle, projectColor } from '@/lib/format';
 import { useColorMenu } from './ProjectColorMenu';
 import { AgentPicker } from './AgentPicker';
 import { AgentIcon } from './AgentIcon';
+import { useNeedsIds } from './NeedsYou';
 
 
 interface PickerState {
@@ -477,7 +478,8 @@ function aggregateStatus(list: Session[]): { state: AggState; text: string } {
  */
 function SessionIcon({ s }: { s: Session }): JSX.Element {
   const st = statusClass(s);
-  const needs = s.permission !== undefined || (s.status === 'waiting' && s.attention === true);
+  const asked = useNeedsIds((n) => n.ids.has(s.id));
+  const needs = s.permission !== undefined || (s.status === 'waiting' && s.attention === true) || asked;
   const badge = s.status === 'working' || s.status === 'starting' ? 'working' : needs ? 'needs' : st === 'limit' ? 'limit' : s.status === 'error' ? 'error' : null;
   const off = s.status === 'hibernated' || s.status === 'done';
   return (

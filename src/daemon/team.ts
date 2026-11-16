@@ -14,6 +14,7 @@
  * automatic report with its last reply (the user's orders are reported to the inbox).
  */
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AgentKind, ChatEntry, Project, Session, SessionRole, TeamOrderTarget } from '@shared/protocol';
@@ -267,6 +268,8 @@ ${scope}
 - Every message that reaches you costs a turn that re-reads your whole conversation, so: give a player its related
   tasks in one message, not one by one; for a small task whose result you will not review, send it with
   \`directive=false\` and ask the player to \`report_up\` only if it is blocked — then no completion report wakes you.
+- If the project folder is the empty default one under \`~/AgentO Projects/\` and the real location of the work
+  exists (the manager named it, or a player created it), call \`set_project_folder\` so the Files tab shows it.
 - Do not do the implementation yourself.
 - Instructions must be self-contained: goal, files/scope, constraints, and what "done" means.
 - When a session finishes what you sent, you get an "[AgentO] … finished" message with its last reply — no need to poll.
@@ -1614,6 +1617,31 @@ export class Team {
         }
         const project = this.store.listProjects().find((p) => !p.parentId && p.name === name);
         return JSON.stringify({ project_id: project?.id ?? '', name, head_coach_id: head.id, head_coach: head.title, folders: project?.folders.map((f) => f.path) ?? [] });
+      }
+    },
+    {
+      name: 'set_project_folder',
+      description:
+        'Head coach only. The project was started without a folder, so it has the empty default one under ' +
+        "~/AgentO Projects/. Once the real working folder exists, point the project at it (an existing absolute path). " +
+        'Only that empty default folder is replaced; sessions already running keep their working folder.',
+      inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+      roles: ['head'],
+      run: (caller, args) => {
+        const top = this.project(caller.projectId);
+        if (!top) throw new ToolError('No project.');
+        const full = path.resolve(str(args['path']));
+        if (!fs.existsSync(full) || !fs.statSync(full).isDirectory()) throw new ToolError(`${full} does not exist`);
+        if (top.folders.some((f) => path.resolve(f.path).toLowerCase() === full.toLowerCase())) return `${full} is already a project folder.`;
+        const defRoot = path.join(os.homedir(), 'AgentO Projects').toLowerCase() + path.sep;
+        const empty = (d: string): boolean => {
+          try { return fs.readdirSync(d).length === 0; } catch { return false; }
+        };
+        const def = top.folders.find((f) => path.resolve(f.path).toLowerCase().startsWith(defRoot) && empty(f.path));
+        if (!def) throw new ToolError('The project has no empty default folder to replace. Ask the manager to change the folder in the Files tab.');
+        this.store.updateFolder(def.id, full, path.basename(full) || full);
+        this.onProjects();
+        return `Project folder changed from ${def.path} to ${full}.`;
       }
     },
     {

@@ -53,6 +53,32 @@ let dismissed: Set<string> = (() => {
   }
 })();
 const subs = new Set<() => void>();
+/* alerts already looked at (clicked): the toast goes away, the session stays marked until the manager answers it */
+const SEEN_KEY = 'asm.needsYou.seen';
+let seen: Set<string> = (() => {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) ?? '[]') as string[]);
+  } catch {
+    return new Set();
+  }
+})();
+export function seeNeed(key: string): void {
+  seen = new Set(seen).add(key);
+  try {
+    localStorage.setItem(SEEN_KEY, JSON.stringify([...seen].slice(-500)));
+  } catch {
+    /* not kept */
+  }
+  subs.forEach((f) => f());
+}
+export const useSeenNeeds = (): Set<string> =>
+  useSyncExternalStore(
+    (f) => {
+      subs.add(f);
+      return () => subs.delete(f);
+    },
+    () => seen
+  );
 export function dismissNeed(key: string): void {
   dismissed = new Set(dismissed).add(key);
   try {
