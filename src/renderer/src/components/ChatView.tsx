@@ -1381,7 +1381,10 @@ function AskedBar({ session: s, lines, at }: { session: Session; lines: string[]
       <span className="asked-title">Waiting for your answer{lines.length > 1 ? ` · ${lines.length}` : ''}</span>
       <ol>
         {lines.map((q) => {
-          const tid = /#T\d+/.exec(q)?.[0] ?? current;
+          // the number the session wrote itself; else the latest piece of work, but only for a single question (with
+          // several it would be a guess that looks certain)
+          const tid = /#T\d+/.exec(q)?.[0] ?? (lines.length === 1 ? current : undefined);
+          const text = q.replace(/^#T\d+\s*[·:–-]?\s*/, '');
           const about = others.filter((o) => q.includes(displayTitle(o))).slice(0, 2);
           return (
             <li key={q}>
@@ -1391,7 +1394,7 @@ function AskedBar({ session: s, lines, at }: { session: Session; lines: string[]
                   → {displayTitle(o)}
                 </button>
               ))}{' '}
-              {q}
+              {text}
             </li>
           );
         })}

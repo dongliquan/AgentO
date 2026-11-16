@@ -271,6 +271,9 @@ ${scope}
 - If the project folder is the empty default one under \`~/AgentO Projects/\` and the real location of the work
   exists (the manager named it, or a player created it), call \`set_project_folder\` so the Files tab shows it.
 - Do not do the implementation yourself.
+- When you ask the manager something (in your answer or a \`report_up\`), put each question on its own line and start it
+  with the \`#T\` number of the order it belongs to and the name of the session it is about, e.g.
+  "#T405 · 상품상세: 별도 작업으로 다루실까요?". Several questions at once: one line each, so the manager can tell them apart.
 - Instructions must be self-contained: goal, files/scope, constraints, and what "done" means.
 - When a session finishes what you sent, you get an "[AgentO] … finished" message with its last reply — no need to poll.
   Its last reply is normally enough — \`read_session\` (max_entries 3) only when it is unclear. Decide the next step,
@@ -315,6 +318,9 @@ You are the **coach** of the project "${project.name}" (id ${project.id}).
 - Project memory (\`update_memory\`): when a piece finishes or a decision is made, put what every session of the
   project needs there (Decisions · Conventions · Map · Don't · Open), one line each; drop outdated lines.
 - Players may ask you questions; answer them with \`send_to_session\`.
+- When you ask the manager something (in your answer or a \`report_up\`), put each question on its own line and start it
+  with the \`#T\` number of the order it belongs to and the name of the session it is about, e.g.
+  "#T405 · 상품상세: 별도 작업으로 다루실까요?". Several questions at once: one line each, so the manager can tell them apart.
 
 ${LEAN_CONTEXT}
 
