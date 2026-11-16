@@ -136,26 +136,33 @@ export function ChatView({
   // what the last answer asks the manager, apart from its report (not when quick-reply buttons already offer the answer);
   // the asking lines leave the answer's own bubble so the same sentence is not shown twice
   const asked = useMemo(() => {
-    if (working || quick) return null;
+    if (quick) return null;
     let spoken = false;
+    // the manager answered (or sent something) and the session has not said anything since: the questions stay as a
+    // folded "asked earlier" line until it speaks again
+    let replied: string | undefined;
     for (let i = all.length - 1; i >= 0; i--) {
       const e = all[i]!;
-      if (e.kind === 'user') return null;
+      if (e.kind === 'user') {
+        if (replied !== undefined || spoken) return null;
+        replied = (e.text ?? '').trim() || '(sent)';
+        continue;
+      }
       if (e.kind === 'assistant' && e.text?.trim() && !spoken) {
         spoken = true;
         const own = askedSplit(e);
-        if (own) return own;
+        if (own) return replied === undefined ? own : { ...own, id: '', replied };
       }
       // the session closed its turn with a one-line note and put the questions in its report_up (to the manager or
       // its coach): they are asked there, not in the note
       if (e.kind === 'tool' && e.tool?.name === 'mcp__agento__report_up') {
         const msg = typeof e.tool.input['message'] === 'string' ? (e.tool.input['message'] as string) : '';
         const lines = askedLines(msg);
-        if (lines.length) return { id: '', at: e.ts, lines, rest: '' };
+        if (lines.length) return { id: '', at: e.ts, lines, rest: '', ...(replied !== undefined ? { replied } : {}) };
       }
     }
     return null;
-  }, [all, working, quick]);
+  }, [all, quick]);
   const view = useMemo(() => (asked ? all.map((e) => (e.id === asked.id ? { ...e, text: asked.rest } : e)) : all), [all, asked]);
   const found = useMemo(
     () =>
@@ -283,7 +290,7 @@ export function ChatView({
       {/* a small monitor at the top right: the work this coordinator handed out */}
       {s.role !== 'player' && <DelegationStrip id={s.id} />}
       {s.permission ? <PermissionCard session={s} onShowTerminal={onShowTerminal} /> : choice && <WaitingBar session={s} tail={tail ?? ''} onShowTerminal={onShowTerminal} />}
-      {asked && !s.permission && !choice && !(s.role === 'player' && s.status === 'hibernated') && <AskedBar session={s} lines={asked.lines} at={asked.at} />}
+      {asked && (!working || asked.replied !== undefined) && !s.permission && !choice && !(s.role === 'player' && s.status === 'hibernated') && <AskedBar session={s} lines={asked.lines} at={asked.at} replied={asked.replied} />}
       {/* the old-answer note: in the Session tab / Focus view, not on every Ground card (cards pass a limit) */}
       <Composer session={s} quick={quick} lastAt={working || limit !== undefined ? undefined : lastAnswerAt(all)} />
     </div>
@@ -1361,7 +1368,15 @@ function ScopeTag({ scope }: { scope: Scope }): JSX.Element {
 }
 
 /** The asking lines of an answer, and the answer without them (whole lines only; kept as is if nothing else would be left). */
-function askedSplit(e: ChatEntry): { id: string; at: number; lines: string[]; rest: string } | null {
+interface Asked {
+  id: string;
+  at: number;
+  lines: string[];
+  rest: string;
+  /** what the manager sent after these were asked (the questions stay folded until the session speaks again) */
+  replied?: string;
+}
+function askedSplit(e: ChatEntry): Asked | null {
   const lines = askedLines(e.text ?? '');
   if (!lines.length) return null;
   const plainOf = (l: string): string => l.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, '').replace(/\*\*|__|`/g, '').trim();
@@ -1373,7 +1388,7 @@ function askedSplit(e: ChatEntry): { id: string; at: number; lines: string[]; re
  * What the session waits on, apart from its report: one numbered line per question, each with the piece of work (#T)
  * it belongs to and the session it is about (named in the question) so several questions asked at once can be told apart.
  */
-function AskedBar({ session: s, lines, at }: { session: Session; lines: string[]; at: number }): JSX.Element {
+function AskedBar({ session: s, lines, at, replied }: { session: Session; lines: string[]; at: number; replied?: string }): JSX.Element {
   const sessions = useStore((st) => st.sessions);
   const projects = useStore((st) => st.projects);
   const inbox = useStore((st) => st.inbox);
@@ -1383,9 +1398,7 @@ function AskedBar({ session: s, lines, at }: { session: Session; lines: string[]
     () => [...sessions.values()].filter((o) => o.id !== s.id && displayTitle(o).length >= 2).sort((x, y) => displayTitle(y).length - displayTitle(x).length),
     [sessions, s.id]
   );
-  return (
-    <div className="asked-bar" role="note" aria-label="Waiting for your answer">
-      <span className="asked-title">{s.role === 'player' ? 'Question for the coach' : 'Waiting for your answer'}{lines.length > 1 ? ` · ${lines.length}` : ''}</span>
+  const list = (
       <ol>
         {lines.map((q, qi) => {
           // the number the session wrote itself, else the one the question was found to belong to
@@ -1407,6 +1420,21 @@ function AskedBar({ session: s, lines, at }: { session: Session; lines: string[]
           );
         })}
       </ol>
+  );
+  if (replied !== undefined) {
+    return (
+      <details className="asked-bar earlier" aria-label="Asked earlier">
+        <summary>
+          <span className="asked-title">Asked earlier{lines.length > 1 ? ` · ${lines.length}` : ''}</span> — you replied: <i>{replied.length > 80 ? `${replied.slice(0, 79)}…` : replied}</i>
+        </summary>
+        {list}
+      </details>
+    );
+  }
+  return (
+    <div className="asked-bar" role="note" aria-label="Waiting for your answer">
+      <span className="asked-title">{s.role === 'player' ? 'Question for the coach' : 'Waiting for your answer'}{lines.length > 1 ? ` · ${lines.length}` : ''}</span>
+      {list}
     </div>
   );
 }
