@@ -271,7 +271,7 @@ export function ChatView({
       {/* a small monitor at the top right: the work this coordinator handed out */}
       {s.role !== 'player' && <DelegationStrip id={s.id} />}
       {s.permission ? <PermissionCard session={s} onShowTerminal={onShowTerminal} /> : choice && <WaitingBar session={s} tail={tail ?? ''} onShowTerminal={onShowTerminal} />}
-      {asked && !s.permission && !choice && <AskedBar session={s} lines={asked.lines} at={asked.at} />}
+      {asked && !s.permission && !choice && !(s.role === 'player' && s.status === 'hibernated') && <AskedBar session={s} lines={asked.lines} at={asked.at} />}
       {/* the old-answer note: in the Session tab / Focus view, not on every Ground card (cards pass a limit) */}
       <Composer session={s} quick={quick} lastAt={working || limit !== undefined ? undefined : lastAnswerAt(all)} />
     </div>
@@ -1373,7 +1373,7 @@ function AskedBar({ session: s, lines, at }: { session: Session; lines: string[]
   );
   return (
     <div className="asked-bar" role="note" aria-label="Waiting for your answer">
-      <span className="asked-title">Waiting for your answer{lines.length > 1 ? ` · ${lines.length}` : ''}</span>
+      <span className="asked-title">{s.role === 'player' ? 'Question for the coach' : 'Waiting for your answer'}{lines.length > 1 ? ` · ${lines.length}` : ''}</span>
       <ol>
         {lines.map((q, qi) => {
           // the number the session wrote itself, else the one the question was found to belong to

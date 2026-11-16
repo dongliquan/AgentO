@@ -17,6 +17,7 @@ import { SearchBox } from './SearchBox';
 import { useFlow } from './OrderFlow';
 import { copyPath } from './PathMenu';
 import { useReport } from './DailyReport';
+import { ProjectNow } from './ProjectNow';
 
 const PERIODS = [
   { id: '7d', label: '7 days', ms: 7 * 86_400_000 },
@@ -230,6 +231,7 @@ function ProjectLanes({ t, selected, onSelect, now, only, onToggle, onAll, log, 
         <span className="grow" />
         <DailySummarySwitch projectId={t.id} name={t.name} />
       </div>
+      <ProjectNow projectId={t.id} />
       <div className="tl-legend">
         {picked.length > 0 && (
           <button className="tl-legend-item tl-all" onClick={onAll} title="Show every session again">All sessions</button>
