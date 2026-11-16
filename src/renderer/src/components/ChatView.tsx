@@ -129,12 +129,27 @@ export function ChatView({
   const scoper = useMemo(() => (isHead ? makeScoper(s, sessions, projects, all) : null), [isHead, s.id, s.projectId, sessions, projects, all]);
   const hasTeam = useMemo(() => [...src.values()].includes('team'), [src]);
   const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
+  const working = s.status === 'working' || s.status === 'starting';
+  // the answer ends with a question and options: quick-reply buttons instead of typing (not while it works or asks the TUI)
+  const quick = useMemo(() => (working ? null : quickReplyOf(all)), [all, working]);
+  // what the last answer asks the manager, apart from its report (not when quick-reply buttons already offer the answer);
+  // the asking lines leave the answer's own bubble so the same sentence is not shown twice
+  const asked = useMemo(() => {
+    if (working || quick) return null;
+    for (let i = all.length - 1; i >= 0; i--) {
+      const e = all[i]!;
+      if (e.kind === 'user') return null;
+      if (e.kind === 'assistant' && e.text?.trim()) return askedSplit(e);
+    }
+    return null;
+  }, [all, working, quick]);
+  const view = useMemo(() => (asked ? all.map((e) => (e.id === asked.id ? { ...e, text: asked.rest } : e)) : all), [all, asked]);
   const found = useMemo(
     () =>
       searching
-        ? all.filter((e) => matches(query, entryText(e)))
-        : all,
-    [all, query, searching]
+        ? view.filter((e) => matches(query, entryText(e)))
+        : view,
+    [view, query, searching]
   );
   const pageSize = limit ?? CHAT_PAGE_SIZE;
   const cap = !searching ? pageSize + extra : Infinity;
@@ -165,19 +180,6 @@ export function ChatView({
     }
     return out;
   }, [entries]);
-  const working = s.status === 'working' || s.status === 'starting';
-  // the answer ends with a question and options: quick-reply buttons instead of typing (not while it works or asks the TUI)
-  const quick = useMemo(() => (working ? null : quickReplyOf(all)), [all, working]);
-  // what the last answer asks the manager, apart from its report (not when quick-reply buttons already offer the answer)
-  const asked = useMemo(() => {
-    if (working || quick) return [];
-    for (let i = all.length - 1; i >= 0; i--) {
-      const e = all[i]!;
-      if (e.kind === 'user') return [];
-      if (e.kind === 'assistant' && e.text?.trim()) return askedLines(e.text);
-    }
-    return [];
-  }, [all, working, quick]);
   // A numbered choice (permission / trust prompt) is only visible in the TUI, so sniff the terminal tail.
   // only while waiting: a choice prompt can be on screen (no subscription otherwise)
   const tail = useBuffer(s.id, s.status === 'waiting')?.slice(-6000);
@@ -268,16 +270,7 @@ export function ChatView({
       {/* a small monitor at the top right: the work this coordinator handed out */}
       {s.role !== 'player' && <DelegationStrip id={s.id} />}
       {s.permission ? <PermissionCard session={s} onShowTerminal={onShowTerminal} /> : choice && <WaitingBar session={s} tail={tail ?? ''} onShowTerminal={onShowTerminal} />}
-      {asked.length > 0 && !s.permission && !choice && (
-        <div className="asked-bar" role="note" aria-label="Waiting for your answer">
-          <span className="asked-title">Waiting for your answer</span>
-          <ol>
-            {asked.map((q) => (
-              <li key={q}>{q}</li>
-            ))}
-          </ol>
-        </div>
-      )}
+      {asked && !s.permission && !choice && <AskedBar session={s} lines={asked.lines} at={asked.at} />}
       {/* the old-answer note: in the Session tab / Focus view, not on every Ground card (cards pass a limit) */}
       <Composer session={s} quick={quick} lastAt={working || limit !== undefined ? undefined : lastAnswerAt(all)} />
     </div>
@@ -1352,6 +1345,59 @@ function TeamBubble({ msg, turn }: { msg: TeamMessage; turn: string }): JSX.Elem
 /** Project (Head Coach) or part (Coach) a message is about. */
 function ScopeTag({ scope }: { scope: Scope }): JSX.Element {
   return <span className="scope-tag" style={pcStyle(scope.color)} title={scope.name}>{scope.name}</span>;
+}
+
+/** The asking lines of an answer, and the answer without them (whole lines only; kept as is if nothing else would be left). */
+function askedSplit(e: ChatEntry): { id: string; at: number; lines: string[]; rest: string } | null {
+  const lines = askedLines(e.text ?? '');
+  if (!lines.length) return null;
+  const plainOf = (l: string): string => l.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, '').replace(/\*\*|__|`/g, '').trim();
+  const rest = (e.text ?? '').split('\n').filter((l) => !lines.includes(plainOf(l))).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return { id: e.id, at: e.ts, lines, rest: rest || (e.text ?? '') };
+}
+
+/**
+ * What the session waits on, apart from its report: one numbered line per question, each with the piece of work (#T)
+ * it belongs to and the session it is about (named in the question) so several questions asked at once can be told apart.
+ */
+function AskedBar({ session: s, lines, at }: { session: Session; lines: string[]; at: number }): JSX.Element {
+  const sessions = useStore((st) => st.sessions);
+  const projects = useStore((st) => st.projects);
+  // the piece of work this conversation is on: the latest numbered record of the session before the answer
+  const current = useStore((st) => {
+    let best: { id: string; t: number } | undefined;
+    for (const it of st.inbox) {
+      if (it.sessionId !== s.id || !it.taskId || it.createdAt > at + 60_000) continue;
+      if (!best || it.createdAt > best.t) best = { id: it.taskId, t: it.createdAt };
+    }
+    return best?.id;
+  });
+  const others = useMemo(
+    () => [...sessions.values()].filter((o) => o.id !== s.id && displayTitle(o).length >= 2).sort((x, y) => displayTitle(y).length - displayTitle(x).length),
+    [sessions, s.id]
+  );
+  return (
+    <div className="asked-bar" role="note" aria-label="Waiting for your answer">
+      <span className="asked-title">Waiting for your answer{lines.length > 1 ? ` · ${lines.length}` : ''}</span>
+      <ol>
+        {lines.map((q) => {
+          const tid = /#T\d+/.exec(q)?.[0] ?? current;
+          const about = others.filter((o) => q.includes(displayTitle(o))).slice(0, 2);
+          return (
+            <li key={q}>
+              {tid && <span className="task-id chat-task" title="The piece of work this question belongs to">{tid}</span>}
+              {about.map((o) => (
+                <button key={o.id} className="chat-target" style={pcStyle(projectColor(o.projectId, projects))} onClick={() => selectAndReveal(o.id)} title={`Open ${displayTitle(o)}`}>
+                  → {displayTitle(o)}
+                </button>
+              ))}{' '}
+              {q}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
 }
 
 /**
