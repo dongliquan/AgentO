@@ -27,6 +27,7 @@ import { arrangeTeam } from '@shared/layout';
 import { plainTerminalLines } from '@shared/plaintext';
 import { LIMIT_RE, PROMPT_RE, limitResetText } from '@shared/prompts';
 import { findCodexRollout, readCodex } from './codex';
+import { Ledger } from './ledger';
 import { MEMORY_MODES_HELP, MEMORY_SECTIONS, MEMORY_TOOL_DESCRIPTION, ensureMemory, memorySystemPrompt, updateMemory, type MemoryMode, type MemorySection } from './memory';
 import { AUTO_MIN_GAP_MS, AUTO_FRESH, AUTO_IDLE_MS, AUTO_MIN_CONTEXT, AUTO_MIN_CONTEXT_COORD, HANDOFF_CONTINUE, HANDOFF_REQUEST, conversationStart, handoffDir, handoffPath, AUTO_OVERSIZE_FACTOR, AUTO_OVERSIZE_IDLE_MS, AUTO_MANAGER_QUIET_MS, HANDOFF_MARK } from './freshstart';
 
@@ -369,6 +370,8 @@ export class Team {
   private wakeStopped = new Set<string>();
   /** sessions that were sent a directive, keyed by target */
   private pending = new Map<string, Pending>();
+  /** every piece of work handed out (#T) and the state the daemon saw it in */
+  readonly ledger: Ledger;
   /** stopped sessions the user just typed into (note() before message()): their queued message is tracked like an order */
   private directNext = new Set<string>();
   /** who received the latest order (a routine remembers them to skip a run while they are still on the last one) */
@@ -467,6 +470,7 @@ export class Team {
       // a player with a coach or head coach above it: they hear about it, the user gets their reports instead
       this.coachOf(s.projectId) !== undefined ||
       this.all().some((h) => h.role === 'head' && h.projectId === this.rootOf(s.projectId));
+    this.ledger = new Ledger(store);
     this.restore();
     // a daemon that restarted while a Coach was resting: no status event comes, so look every 2 minutes
     setInterval(() => this.autopilotSweep(), 2 * 60_000).unref();
@@ -651,6 +655,40 @@ export class Team {
     return this.pending.get(sessionId)?.task;
   }
 
+  /* ---------- task ledger ---------- */
+
+  /** The ledger project key of a session's work: its top-level project ('' for the team head coach). */
+  private ledgerProject(sessionId: string): string {
+    const s = this.sessions.get(sessionId);
+    return s ? this.rootProject(s.projectId)?.id ?? '' : '';
+  }
+
+  /** A task was handed to `target` (by a session or 'user'). */
+  private openTask(task: string, from: string, target: StoredSession, text: string): void {
+    const projectId = this.rootProject(target.projectId)?.id ?? '';
+    const body = text.replace(/^\s*\[[^\]\n]{0,160}\]\s*/, '').replace(/\*\*|`/g, '');
+    const first = body.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
+    const parentTask = from !== 'user' ? this.taskOf(from) : undefined;
+    this.ledger.open({
+      id: task,
+      projectId,
+      from,
+      to: target.id,
+      summary: first.length > 140 ? `${first.slice(0, 139)}…` : first,
+      createdAt: Date.now(),
+      ...(parentTask ? { parent: Ledger.key(this.ledgerProject(from), parentTask) } : {})
+    });
+  }
+
+  private taskState(sessionId: string, task: string | undefined, state: Parameters<Ledger['set']>[2], note?: string): void {
+    this.ledger.set(this.ledgerProject(sessionId), task, state, note);
+  }
+
+  /** The session got an answer / new work: what it was asking is settled. */
+  private answered(sessionId: string): void {
+    for (const r of this.ledger.openOf(sessionId)) if (r.state === 'asking') this.ledger.set(r.projectId, r.id, 'reported', 'answered');
+  }
+
   /** The top-level project a project id belongs to (a part's project; a project is its own; none for the team head). */
   private rootProject(id: string): Project | undefined {
     const p = this.project(id);
@@ -683,6 +721,7 @@ export class Team {
    * (the user's code) and the CLIs' conversation files are never touched.
    */
   forgetProject(projectIds: string[], sessionIds: string[]): void {
+    for (const id of projectIds) this.ledger.forgetProject(id);
     for (const id of sessionIds) {
       this.outbox.delete(id);
       this.pending.delete(id);
@@ -864,6 +903,8 @@ export class Team {
     const s = this.sessions.get(id);
     if (!s || !text.trim()) return;
     const task = this.newTask(s);
+    this.openTask(task, 'user', s, text);
+    this.answered(id);
     this.record(s, 'directive', { id: 'user', title: DIRECT }, text, true, task);
     this.tellCoach(s, text, task);
     if (this.pending.has(id)) return;
@@ -1384,6 +1425,8 @@ export class Team {
     const st = this.sessions.get(targetId)?.status;
     this.pending.set(targetId, { from, ...(also.length ? { also } : {}), at: Date.now(), started: st === 'working' || st === 'starting', timer: null, ...(task ? { task } : {}) });
     this.director.set(targetId, from);
+    this.answered(targetId);
+    if (task && (st === 'working' || st === 'starting')) this.taskState(targetId, task, 'working');
   }
 
   /* ---------- autopilot ---------- */
@@ -1498,6 +1541,7 @@ export class Team {
     if (s.status === 'waiting') setTimeout(() => this.flush(), 200);
     if (!p) return;
     if (s.status === 'working' || s.status === 'starting') {
+      if (!p.started) this.taskState(s.id, p.task, 'working');
       p.started = true;
       if (p.timer) clearTimeout(p.timer);
       p.timer = null;
@@ -1528,6 +1572,7 @@ export class Team {
             ? `${s.title} — paused by Claude's usage limit (resets ${reset}) while working on ${who}; it continues by itself`
             : `${s.title} — stuck on a prompt while working on ${who}: answer it in its Terminal`
         );
+        this.taskState(s.id, p.task, 'blocked', reset ? `usage limit, resets ${reset}` : 'stuck on a prompt in its terminal');
         this.onInbox();
       }
       return;
@@ -1549,6 +1594,7 @@ export class Team {
         p.blocked = true;
         p.started = false;
         this.store.addInbox(s.id, 'waiting', `${s.title} — did not take the message (a dialog or prompt in its Terminal?): open it, close the dialog, and send again`);
+        this.taskState(s.id, p.task, 'blocked', 'the session did not take the message');
         this.onInbox();
       }
       return;
@@ -1558,6 +1604,8 @@ export class Team {
     const reply = this.lastReply(s, 1500);
     // a coach's turn usually ends after delegating, so it "replied"; a player's turn is the work itself
     const state = s.status !== 'waiting' ? `stopped (${s.status})` : s.role === 'player' ? 'finished' : 'replied';
+    if (s.status !== 'waiting') this.taskState(s.id, p.task, 'blocked', `the session stopped (${s.status})`);
+    else this.taskState(s.id, p.task, state === 'replied' && p.delegated ? 'handed' : 'reported');
     if (p.from === 'user') {
       // a coordinator that just handed the work on has no result yet: recorded as "handed on" (shown faintly, no alert)
       const shown = state === 'replied' && p.delegated ? 'handed on' : state;
@@ -1628,6 +1676,10 @@ export class Team {
     this.checkRate(caller);
     const task = directive ? this.newTask(t) : this.taskOf(caller.id);
     const text = `[Message from ${this.label(caller.id)}${task ? ` — ${task}` : ''}]\n${message.trim()}`;
+    if (directive && task) {
+      this.openTask(task, caller.id, t, message);
+      this.answered(t.id);
+    }
     if (directive) {
       const p = this.pending.get(caller.id);
       if (p) p.delegated = true;
@@ -1672,6 +1724,8 @@ export class Team {
     const projectName = (id: string): string => this.store.listProjects().find((p) => p.id === id)?.name ?? id;
     for (const r of recipients) {
       const tid = this.newTask(r);
+      this.openTask(tid, 'user', r, message);
+      this.answered(r.id);
       let text = `[Order from ${USER}${via ? ` — ${via}` : ''} — ${tid}]\n${message.trim()}`;
       if (target.kind === 'projects') {
         // the same order went to the other projects: each works on its own side; the manager joins the reports
@@ -2003,11 +2057,19 @@ export class Team {
         'Report progress or ask a question to whoever gave you your latest order or directive (the manager — the ' +
         'user — or a session). Without one: a player → its coach (or the head coach, or the manager), a coach → the ' +
         'head coach (or the manager), the head coach → the manager.',
-      inputSchema: { type: 'object', properties: { message: { type: 'string' } }, required: ['message'] },
+      inputSchema: {
+        type: 'object',
+        properties: {
+          message: { type: 'string' },
+          needs_answer: { type: 'boolean', description: 'true when you cannot go on without an answer to a question in this message' }
+        },
+        required: ['message']
+      },
       roles: ['head', 'coach', 'player'],
       run: (caller, args) => {
         const message = str(args['message']).trim();
         if (!message) throw new ToolError('message is empty');
+        if (args['needs_answer'] === true) this.taskState(caller.id, this.taskOf(caller.id), 'asking', message.split('\n').find((l) => l.trim())?.slice(0, 200));
         const d = this.director.get(caller.id);
         const byRole = (): StoredSession | undefined =>
           caller.role === 'player'
@@ -2076,6 +2138,7 @@ export class Team {
         const stored = this.sessions.get(s.id);
         if (prompt && stored) {
           const task = this.newTask(stored);
+          this.openTask(task, caller.id, stored, prompt);
           this.record(stored, 'directive', caller, prompt, true, task);
           this.trackDirective(stored.id, caller.id, task);
         }

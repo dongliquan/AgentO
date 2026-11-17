@@ -16,3 +16,4 @@ dist-c/
 # local working notes (not published)
 CLAUDE.md
 .ci-step.log
+dist-d/

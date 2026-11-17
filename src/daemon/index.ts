@@ -339,6 +339,7 @@ async function main(): Promise<void> {
   );
   sessions.launchExtras = (s) => team.launchExtras(s);
   sessions.launchEnv = (s) => team.launchEnv(s);
+  team.ledger.onChange = (changed) => broadcast({ type: 'ledger.delta', upsert: changed });
   team.onDelivered = (sessionId, text) => broadcast({ type: 'team.delivered', sessionId, text });
   team.onProjects = () => broadcast({ type: 'projects', projects: store.listProjects() });
   /** Orders › New project, and the team head coach's create_project tool: project + folders + head coach + the brief as its first order */
@@ -845,6 +846,7 @@ async function main(): Promise<void> {
           usage: collectUsage(),
           agents,
           routines: routines.list(),
+          ledger: team.ledger.list(),
           doneOrders: store.listDoneOrders(),
           taskOrders: store.listTaskOrders()
         });

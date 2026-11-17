@@ -220,6 +220,39 @@ export interface UsageInfo {
   tokens?: number;
 }
 
+/**
+ * The task ledger: one record per piece of work ("#T12") the daemon handed to a session, with the state the daemon
+ * itself saw (not guessed from the text of a report).
+ *  queued    sent, not typed into the session yet (it is busy, stopped or waking up)
+ *  working   the session started on it
+ *  handed    a coordinator's turn ended after it passed the work on (the result comes with the sub-tasks)
+ *  reported  the session finished and its last reply went to whoever sent it
+ *  asking    the session asked its sender a question (report_up with needs_answer) and waits for the answer
+ *  blocked   stuck on a prompt / usage limit, or the session never took the message
+ */
+export type TaskState = 'queued' | 'working' | 'handed' | 'reported' | 'asking' | 'blocked';
+export interface TaskRec {
+  /** unique: "<project or 'team'>/#T12" */
+  key: string;
+  /** "#T12" */
+  id: string;
+  /** top-level project id the number belongs to ('' for the team head coach's counter) */
+  projectId: string;
+  /** sender: a session id, or 'user' */
+  from: string;
+  /** the session that has the work */
+  to: string;
+  /** the first line of what was asked */
+  summary: string;
+  /** the task the sender was working on when it handed this one out (a sub-task of it) */
+  parent?: string;
+  createdAt: number;
+  state: TaskState;
+  stateAt: number;
+  /** why it is blocked / what it asks */
+  note?: string;
+}
+
 export interface InboxItem {
   id: string;
   sessionId: string;
@@ -402,7 +435,7 @@ export interface FsEntry {
 }
 
 export type ServerMessage =
-  | { type: 'welcome'; daemonPid: number; version: string; projects: Project[]; sessions: Session[]; inbox: InboxItem[]; usage: UsageInfo[]; agents: AgentDef[]; routines: Routine[]; doneOrders: Record<string, number>; taskOrders: string[] }
+  | { type: 'welcome'; daemonPid: number; version: string; projects: Project[]; sessions: Session[]; inbox: InboxItem[]; usage: UsageInfo[]; agents: AgentDef[]; routines: Routine[]; ledger: TaskRec[]; doneOrders: Record<string, number>; taskOrders: string[] }
   /** Tasks: the manager's orders marked done (order record id → when) and the ones added as tasks explicitly */
   | { type: 'orders.done'; done: Record<string, number>; tasks: string[] }
   | { type: 'usage.report'; report: UsageReport }
@@ -428,6 +461,8 @@ export type ServerMessage =
   | { type: 'inbox'; items: InboxItem[] }
   /** what changed since the last inbox message: new or changed rows (read flag), and rows that dropped out */
   | { type: 'inbox.delta'; upsert: InboxItem[]; remove: string[] }
+  /** task ledger rows that were added or changed */
+  | { type: 'ledger.delta'; upsert: TaskRec[] }
   | { type: 'usage'; usage: UsageInfo[] }
   | { type: 'fs.list.result'; path: string; entries: FsEntry[] }
   | { type: 'fs.read.result'; path: string; content: string; truncated: boolean }

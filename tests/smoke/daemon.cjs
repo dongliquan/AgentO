@@ -187,6 +187,10 @@ async function main() {
   const rec = await c.waitFor((m) => m.type === 'inbox.delta' && m.upsert.some((i) => i.sessionId === sid && i.kind === 'directive'), 10000);
   const directive = rec?.upsert.find((i) => i.sessionId === sid && i.kind === 'directive');
   check('order recorded with a task id', !!directive?.taskId, directive?.taskId ?? 'none');
+  // the task ledger holds it, in a state the daemon saw (not guessed from text)
+  const led = await c.waitFor((m) => m.type === 'ledger.delta' && m.upsert.some((r) => r.id === directive?.taskId && r.to === sid), 5000);
+  const taskRec = led?.upsert.find((r) => r.id === directive?.taskId);
+  check('order is in the task ledger', !!taskRec && ['queued', 'working', 'reported'].includes(taskRec.state), taskRec ? `${taskRec.id} ${taskRec.state}` : 'none');
 
   // ---------- MCP ----------
   const list = await mcp(info, sid, 'tools/list', {});

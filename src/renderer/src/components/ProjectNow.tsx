@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { InboxItem, Project, Session } from '@shared/protocol';
+import type { InboxItem, Project, Session, TaskRec, TaskState } from '@shared/protocol';
 import { useStore } from '@/store';
 import { selectAndReveal } from '@/commands';
 import { send } from '@/client';
@@ -46,6 +46,7 @@ export function ProjectNow({ projectId }: { projectId: string }): JSX.Element | 
   const inbox = useOpenInbox();
   const needs = useNeedsIds((st) => st.list);
   const byCoach = useDelegations((st) => st.byCoach);
+  const ledger = useStore((st) => st.ledger);
   const now = useNow(30_000);
 
   const { rows, next } = useMemo(() => {
@@ -63,6 +64,10 @@ export function ProjectNow({ projectId }: { projectId: string }): JSX.Element | 
     }
     const asks = new Map<string, number>();
     for (const n of needs) if (n.kind === 'question') asks.set(n.sessionId, (asks.get(n.sessionId) ?? 0) + 1);
+    // the daemon's own record of a question (report_up needs_answer) counts without any guessing from the words
+    const asked = new Set<string>();
+    for (const r of ledger.values()) if (r.state === 'asking' && r.projectId === projectId) asked.add(r.to);
+    for (const id of asked) if (!asks.get(id)) asks.set(id, 1);
 
     const rows: Row[] = mine.map((s) => {
       const order = lastIn.get(s.id);
@@ -100,7 +105,9 @@ export function ProjectNow({ projectId }: { projectId: string }): JSX.Element | 
             ? `Waiting on ${waiting.map((r) => r.detail).join('; ')}`
             : 'Nothing is waiting — every session is idle';
     return { rows, next };
-  }, [sessions, projects, inbox, needs, byCoach, projectId, now]);
+  }, [sessions, projects, inbox, needs, byCoach, ledger, projectId, now]);
+
+  const tasks = useMemo(() => openTasks(ledger, projectId, now), [ledger, projectId, now]);
 
   const project = projects.find((p) => p.id === projectId);
   if (rows.length === 0) return null;
@@ -128,8 +135,41 @@ export function ProjectNow({ projectId }: { projectId: string }): JSX.Element | 
           </li>
         ))}
       </ul>
+      {tasks.length > 0 && (
+        <div className="now-tasks" aria-label="Open tasks">
+          <h5>Tasks <span className="muted">{tasks.length} open</span></h5>
+          <ul className="now-rows">
+            {tasks.map((t) => (
+              <li key={t.key} className={`now-row task ${TASK_TONE[t.state]}`} onClick={() => openOnGround(t.to)} title={t.note || t.summary}>
+                <span className={`now-dot ${TASK_TONE[t.state]}`} />
+                <span className="task-id chat-task">{t.id}</span>
+                <span className="now-name ellipsis">{sessions.get(t.to) ? displayTitle(sessions.get(t.to)!) : t.to.slice(0, 8)}</span>
+                <span className={`now-state ${TASK_TONE[t.state]}`}>{TASK_LABEL[t.state]}</span>
+                <span className="now-detail ellipsis">
+                  {t.from === 'user' ? '' : `from ${sessions.get(t.from) ? displayTitle(sessions.get(t.from)!) : t.from.slice(0, 8)} · `}
+                  {t.state === 'asking' || t.state === 'blocked' ? t.note || t.summary : t.summary}
+                </span>
+                <span className="now-at">{relativeTime(t.stateAt, now)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
+}
+
+const TASK_LABEL: Record<TaskState, string> = { queued: 'Queued', working: 'Working', handed: 'Handed on', reported: 'Reported', asking: 'Asking', blocked: 'Blocked' };
+const TASK_TONE: Record<TaskState, State> = { queued: 'queued', working: 'working', handed: 'waiting', reported: 'done', asking: 'you', blocked: 'stuck' };
+const TASK_RANK: Record<TaskState, number> = { asking: 0, blocked: 1, working: 2, queued: 3, handed: 4, reported: 5 };
+/** a task nobody touched for this long is old news, whatever state it was left in */
+const TASK_STALE_MS = 7 * 86_400_000;
+
+/** The ledger's open tasks of a project: waiting for an answer first, then stuck, working, queued, handed on. */
+function openTasks(ledger: Map<string, TaskRec>, projectId: string, now: number): TaskRec[] {
+  return [...ledger.values()]
+    .filter((r) => r.projectId === projectId && r.state !== 'reported' && now - r.stateAt < TASK_STALE_MS)
+    .sort((a, b) => TASK_RANK[a.state] - TASK_RANK[b.state] || b.stateAt - a.stateAt);
 }
 
 /** Autopilot: the Coach decides open questions itself and is told to carry on while the manager is away. */
