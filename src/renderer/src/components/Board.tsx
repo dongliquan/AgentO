@@ -306,7 +306,7 @@ export function Board(): JSX.Element {
     >
       <div className="board-canvas" style={{ transform: `translate(${snap(panX)}px, ${snap(panY)}px) scale(${zoom})` }}>
         <GroundGroups layout={groups} />
-        <GroundLinks layout={groups} />
+        {team && <GroundLinks layout={groups} />}
         {list.filter((s) => !groups.hidden.has(s.id)).map((s) => (
           <SessionCard key={s.id} session={s} layout="board" zoom={zoom} selected={selectedId === s.id} />
         ))}

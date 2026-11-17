@@ -53,6 +53,34 @@ export interface Rect {
  * and its players, PLAYERS_PER_ROW to a row. The Ground stays roughly square and every part reads as one block.
  * Returns the new rectangle of every session it places.
  */
+export function arrangeSimple(sessions: Session[], projects: Project[]): Map<string, Rect> {
+  const out = new Map<string, Rect>();
+  const P = CARD_PORTRAIT;
+  const rootOf = (projectId: string): string => projects.find((p) => p.id === projectId)?.parentId ?? projectId;
+  const order = (a: Session, b: Session): number => (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER) || a.createdAt - b.createdAt;
+  // one block per project, in the sidebar's order; sessions of its parts are part of it; the rest go last
+  const roots = [...projects.filter((p) => !p.parentId).map((p) => p.id)];
+  const groups = new Map<string, Session[]>();
+  for (const s of [...sessions].sort(order)) {
+    const r = rootOf(s.projectId);
+    const key = roots.includes(r) ? r : '';
+    groups.set(key, [...(groups.get(key) ?? []), s]);
+  }
+  let y = 0;
+  for (const key of [...roots, '']) {
+    const members = groups.get(key);
+    if (!members?.length) continue;
+    // cards in rows of PLAYERS_PER_ROW, every card the same tall size — a plain grid, no team columns or corridors
+    members.forEach((s, i) => {
+      const col = i % PLAYERS_PER_ROW;
+      const row = Math.floor(i / PLAYERS_PER_ROW);
+      out.set(s.id, { x: col * (P.w + GAP_X), y: y + row * (P.h + GAP_ROW), w: P.w, h: P.h });
+    });
+    y += Math.ceil(members.length / PLAYERS_PER_ROW) * (P.h + GAP_ROW) + PART_GAP;
+  }
+  return out;
+}
+
 export function arrangeTeam(sessions: Session[], projects: Project[]): Map<string, Rect> {
   const out = new Map<string, Rect>();
   // a part's own order (drag and drop in the tree) first, then creation time

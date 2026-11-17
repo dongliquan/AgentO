@@ -154,10 +154,14 @@ function TeamToggle(): JSX.Element {
   const team = useTeamMode((t) => t.team);
   const set = useTeamMode((t) => t.set);
   const title = team
-    ? 'Team mode is on (Head Coach, Coach, Manager, Inbox, Logs, Timeline) — click for plain sessions'
-    : 'Plain sessions — click to turn on team mode (Head Coach, Coach, Manager, Inbox, Logs, Timeline)';
+    ? 'Team mode is on (Head Coach, Coach, Manager, Activity, History) — click for plain sessions. The Ground is laid out again.'
+    : 'Plain sessions — click to turn on team mode (Head Coach, Coach, Manager, Activity, History). The Ground is laid out again.';
   return (
-    <button className={`icon-btn layout-toggle team-toggle ${team ? 'active' : ''}`} title={title} aria-label={title} aria-pressed={team} onClick={() => set(!team)}>
+    <button className={`icon-btn layout-toggle team-toggle ${team ? 'active' : ''}`} title={title} aria-label={title} aria-pressed={team} onClick={() => {
+        set(!team);
+        // the Ground has a layout for each mode: lay the cards out again for the one now on
+        autoArrange();
+      }}>
       {/* two small people */}
       <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
         <circle cx="5.5" cy="5.5" r="2" fill="none" stroke="currentColor" />

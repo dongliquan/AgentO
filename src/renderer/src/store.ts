@@ -4,7 +4,8 @@ import type { AgentConnection, ClaudeSessionInfo, FsEntry, InboxItem, Project, R
 import type { AgentDefEx } from '@shared/extra';
 import { emitTerm } from '@/lib/termbus';
 import { appendBuffer, dropBuffer, setBuffer } from '@/lib/buffers';
-import { arrangeTeam } from '@shared/layout';
+import { arrangeSimple, arrangeTeam } from '@shared/layout';
+import { isTeamMode } from '@/lib/teamMode';
 import { closedSessionIds, openSessions } from '@/lib/closedIds';
 import { applyChatSnapshot, applyChatUpsert, dropChat } from '@/lib/chat';
 import { useActivitySub } from '@/lib/activitySub';
@@ -457,7 +458,9 @@ export const useStore = create<AppState>((set, get) => ({
     const sessions = new Map(get().sessions);
     // closed projects keep their layout for when they are opened again
     const projects = get().projects.filter((p) => !p.closed && !get().projects.some((x) => x.id === p.parentId && x.closed));
-    for (const [id, r] of arrangeTeam(openSessions(sessions, get().projects), projects)) {
+    // plain sessions: a plain grid by project; team mode: the team layout (Head Coach, Coaches, corridors)
+    const placed = isTeamMode() ? arrangeTeam(openSessions(sessions, get().projects), projects) : arrangeSimple(openSessions(sessions, get().projects), projects);
+    for (const [id, r] of placed) {
       const cur = sessions.get(id);
       if (cur) sessions.set(id, { ...cur, ...r });
     }

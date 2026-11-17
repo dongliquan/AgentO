@@ -4,6 +4,7 @@ import type { Project, Session } from '@shared/protocol';
 import { useStore } from '@/store';
 import { send } from '@/client';
 import { startDrag } from '@/lib/drag';
+import { teamOnly, useTeamMode } from '@/lib/teamMode';
 import { groupLayout, shownRect, type GroupLayout } from '@/lib/groups';
 import { pcStyle, projectColor, statusClass, statusLabel } from '@/lib/format';
 
@@ -28,7 +29,8 @@ function GroundGroupsImpl({ layout }: { layout: GroupLayout }): JSX.Element {
   const collapsed = useStore((s) => s.collapsedGroups);
   const toggle = useStore((s) => s.toggleGroup);
 
-  const all = [...sessions.values()];
+  const team = useTeamMode((t) => t.team);
+  const all = [...sessions.values()].filter((s) => team || !teamOnly(s));
   const tops = projects.filter((p) => !p.parentId && !p.closed);
   const partsOf = (id: string): Project[] => projects.filter((p) => p.parentId === id);
   const frame = (members: Session[], pad: number, label: number) => {
@@ -133,8 +135,9 @@ export function useGroupLayout(): GroupLayout {
   const sessions = useStore((s) => s.sessions);
   const projects = useStore((s) => s.projects);
   const collapsed = useStore((s) => s.collapsedGroups);
+  const team = useTeamMode((t) => t.team);
   // memoized: the same object while nothing changed, so the memoized frames and links skip pan / zoom renders
-  return useMemo(() => groupLayout([...sessions.values()], projects, new Set(collapsed)), [sessions, projects, collapsed]);
+  return useMemo(() => groupLayout([...sessions.values()].filter((s) => team || !teamOnly(s)), projects, new Set(collapsed)), [sessions, projects, collapsed, team]);
 }
 
 /** Re-renders only when its own props change — not on every pan / zoom frame of the Ground. */
