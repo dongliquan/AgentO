@@ -5,15 +5,12 @@ import { runCommand, selectAndReveal, zoomBy } from '@/commands';
 import { activeHeadCoach } from '@/lib/activeProject';
 import { openNotification } from '@/lib/notify';
 import { Toasts } from '@/components/Toasts';
-import { OrderFlowDialog } from '@/components/OrderFlow';
 import { NewProjectDialog } from '@/components/NewProjectDialog';
 import { FileRefMenu } from '@/components/FileRefMenu';
 import { ProjectColorMenu } from '@/components/ProjectColorMenu';
 import { NeedsYouWatcher } from '@/components/NeedsYou';
 import { useLastInfoRequests } from '@/lib/lastInfo';
-import { useTeamMode } from '@/lib/teamMode';
 import { AwayWatcher } from '@/components/AwayCard';
-import { DelegationWatcher } from '@/components/Delegations';
 import { PathMenu } from '@/components/PathMenu';
 import { DispatchDialog } from '@/components/DispatchDialog';
 import { reconnectClient } from '@/client';
@@ -22,7 +19,6 @@ import { Sidebar } from '@/components/Sidebar';
 import { Board } from '@/components/Board';
 import { SplitView } from '@/components/SplitView';
 import { TabView } from '@/components/TabView';
-import { TimelineView } from '@/components/TimelineView';
 import { TodayView } from '@/components/TodayView';
 import { RightPanel, SecondPanel, useFollowSelection } from '@/components/RightPanel';
 import { StatusBar } from '@/components/StatusBar';
@@ -114,7 +110,7 @@ function handleKey(e: KeyboardEvent): void {
     runCommand('view.tabs');
   } else if (k === '4') {
     e.preventDefault();
-    runCommand('view.timeline');
+    runCommand('view.today');
   } else if (k === '5') {
     e.preventDefault();
     runCommand('view.today');
@@ -133,11 +129,6 @@ function handleKey(e: KeyboardEvent): void {
 export function App(): JSX.Element {
   useFollowSelection();
   useLastInfoRequests();
-  const teamMode = useTeamMode((t) => t.team);
-  // team mode turned off while the Timeline is up: the Timeline belongs to it, go to Today
-  useEffect(() => {
-    if (!teamMode && useStore.getState().viewMode === 'timeline') useStore.getState().setViewMode('today');
-  }, [teamMode]);
   // the first start: what to call you, then the agent setup when Claude Code is not ready yet
   useEffect(() => {
     void firstRun();
@@ -195,7 +186,6 @@ export function App(): JSX.Element {
   if (focusMode) center = <FocusView />;
   else if (viewMode === 'split') center = <SplitView />;
   else if (viewMode === 'tabs') center = <TabView />;
-  else if (viewMode === 'timeline' && teamMode) center = <TimelineView />;
   else if (viewMode === 'today') center = <TodayView />;
   else center = <Board />;
 
@@ -222,13 +212,11 @@ export function App(): JSX.Element {
       <UsageDialog />
       <FindBar />
       <Toasts />
-      <OrderFlowDialog />
       <NewProjectDialog />
       <FileRefMenu />
       <ProjectColorMenu />
       <NeedsYouWatcher />
       <AwayWatcher />
-      <DelegationWatcher />
       <PathMenu />
       <DispatchDialog />
       <PromptDialog />

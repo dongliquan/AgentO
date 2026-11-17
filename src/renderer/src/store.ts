@@ -4,17 +4,15 @@ import type { AgentConnection, ClaudeSessionInfo, FsEntry, InboxItem, Project, R
 import type { AgentDefEx } from '@shared/extra';
 import { emitTerm } from '@/lib/termbus';
 import { appendBuffer, dropBuffer, setBuffer } from '@/lib/buffers';
-import { arrangeSimple, arrangeTeam } from '@shared/layout';
-import { isTeamMode } from '@/lib/teamMode';
+import { arrangeSimple } from '@shared/layout';
 import { closedSessionIds, openSessions } from '@/lib/closedIds';
 import { applyChatSnapshot, applyChatUpsert, dropChat } from '@/lib/chat';
-import { useActivitySub } from '@/lib/activitySub';
 
 export const ZOOM_MIN = 0.2;
 export const ZOOM_MAX = 2.5;
-export type ViewMode = 'board' | 'split' | 'tabs' | 'timeline' | 'today';
+export type ViewMode = 'board' | 'split' | 'tabs' | 'today';
 /** orders: the Manager tab (conversation + order box) */
-export type RightTab = 'detail' | 'files' | 'inbox' | 'orders' | 'log' | 'web';
+export type RightTab = 'detail' | 'files' | 'inbox' | 'web';
 /** projects: the left sidebar's tree · inbox: also opens the right panel's Inbox tab */
 export type ActivityView = 'projects' | 'inbox';
 
@@ -208,7 +206,7 @@ export const useStore = create<AppState>((set, get) => ({
   rightOpen: readFlag('asm.rightOpen', true),
   panelsDetached: false,
   collapsedGroups: readList('asm.collapsedGroups'),
-  rightTab: 'orders',
+  rightTab: 'detail',
   activity: 'projects',
   paletteOpen: false,
   paletteMode: 'quick',
@@ -425,11 +423,7 @@ export const useStore = create<AppState>((set, get) => ({
     }
     set({ collapsedGroups: next });
   },
-  // 'log' (the team's log) is a view of the Activity tab, which is the 'inbox' tab
-  setRightTab: (t) => {
-    if (t === 'log') useActivitySub.getState().set('log');
-    set({ rightTab: t === 'log' ? 'inbox' : t, rightOpen: true });
-  },
+  setRightTab: (t) => set({ rightTab: t, rightOpen: true }),
   setActivity: (a) => {
     const patch: Partial<AppState> = { activity: a };
     if (a === 'inbox') {
@@ -458,8 +452,7 @@ export const useStore = create<AppState>((set, get) => ({
     const sessions = new Map(get().sessions);
     // closed projects keep their layout for when they are opened again
     const projects = get().projects.filter((p) => !p.closed && !get().projects.some((x) => x.id === p.parentId && x.closed));
-    // plain sessions: a plain grid by project; team mode: the team layout (Head Coach, Coaches, corridors)
-    const placed = isTeamMode() ? arrangeTeam(openSessions(sessions, get().projects), projects) : arrangeSimple(openSessions(sessions, get().projects), projects);
+    const placed = arrangeSimple(openSessions(sessions, get().projects), projects);
     for (const [id, r] of placed) {
       const cur = sessions.get(id);
       if (cur) sessions.set(id, { ...cur, ...r });

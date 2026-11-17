@@ -7,7 +7,6 @@ import { countUse } from '@/lib/uiUsage';
 import { exportSession, focusTerminal, removeSession, selectAndReveal } from '@/commands';
 import { AGENT_LABELS, agentColor, basename, formatElapsed, displayTitle, rootProject } from '@/lib/format';
 import { RoleTag } from './RoleTag';
-import { DelegationChip, useDelegations } from './Delegations';
 import { ModelChip } from './ModelChip';
 import { useNeedsIds } from './NeedsYou';
 import { lastLines } from '@/lib/ansi';
@@ -143,7 +142,6 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
     });
   };
 
-  const handedOut = useDelegations((st) => st.byCoach.get(s.id)?.length ?? 0);
   const showTerminal = layout !== 'board' || zoom >= 0.6;
   // status and role show in the header only (badge, tag); the card border stays plain
   const cls = ['card', layout === 'board' ? '' : layout, selected ? 'selected' : '']
@@ -174,7 +172,6 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
       <div className="card-header" onPointerDown={onHeaderDown} onDoubleClick={() => { select(s.id); setFocusMode(true); }} title="Double-click for Focus view (rename: F2 or the ⋯ menu)">
         <AgentIcon kind={s.agent} color={s.color} size={16} />
         <RoleTag s={s} />
-        {s.role !== 'player' && <DelegationChip id={s.id} />}
         {editing ? (
           <input
             className="title-input"
@@ -203,7 +200,7 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
         )}
         <ContextSize session={s} />
         {needsYou && <span className="needs-badge" title="Waiting for your decision — answer in its chat">Needs you</span>}
-        <StatusBadge status={s.status} attention={s.attention} compact={s.w < 300} waitingOn={handedOut} />
+        <StatusBadge status={s.status} attention={s.attention} compact={s.w < 300} />
         <button
           className="card-menu-btn"
           title="Menu"

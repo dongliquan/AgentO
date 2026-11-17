@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useStore, type ViewMode } from '@/store';
 import { autoArrange, fitAll, newSessionFor, newProject, runCommand } from '@/commands';
 import { kbd } from '@/lib/keys';
-import { useTeamMode } from '@/lib/teamMode';
 import { getThemePref, onThemeChange, setThemePref, type ThemePref } from '@/lib/theme';
 
 /** the three ways to lay out the live sessions; Timeline (a record of finished work) stands apart from them */
@@ -37,10 +36,9 @@ function PopOutIcon({ open }: { open: boolean }): JSX.Element {
 export function Toolbar(): JSX.Element {
   const viewMode = useStore((s) => s.viewMode);
   const focusMode = useStore((s) => s.focusMode);
-  const onTimeline = viewMode === 'timeline';
   const onToday = viewMode === 'today';
   /** a record / overview page, not a session layout: the layout tools hide */
-  const onPage = onTimeline || onToday;
+  const onPage = onToday;
   const setViewMode = useStore((s) => s.setViewMode);
   const projects = useStore((s) => s.projects);
   const selectedId = useStore((s) => s.selectedId);
@@ -59,10 +57,6 @@ export function Toolbar(): JSX.Element {
   const project = top && !top.closed ? top : undefined;
   const ids = new Set(project ? [project.id, ...projects.filter((p) => p.parentId === project.id).map((p) => p.id)] : []);
   const count = [...sessions.values()].filter((s) => ids.has(s.projectId)).length;
-  // the team-wide Head Coach belongs to no project: the breadcrumb is the whole team (all open projects), not the first project
-  const teamHead = !!sel && sel.role === 'head' && !sel.projectId;
-  const openIds = new Set(projects.filter((p) => !(p.parentId ? projects.find((x) => x.id === p.parentId)?.closed : p.closed)).map((p) => p.id));
-  const teamCount = [...sessions.values()].filter((s) => openIds.has(s.projectId)).length;
 
   return (
     <div className="toolbar">
@@ -80,7 +74,7 @@ export function Toolbar(): JSX.Element {
       </div>
       <span className="toolbar-sep" />
       <div className="segmented">
-        <button className={onToday || onTimeline ? 'active' : ''} onClick={() => setViewMode('today')} title={kbd('Today — what needs you, who is working, what got done, your to-dos (Ctrl+5)')}>
+        <button className={onToday ? 'active' : ''} onClick={() => setViewMode('today')} title={kbd('Today — what needs you, who is working, what got done, your to-dos (Ctrl+5)')}>
           Today
         </button>
       </div>
@@ -88,14 +82,6 @@ export function Toolbar(): JSX.Element {
         {onToday ? (
           <>
             <b>Today</b> · needs you, working, done, to do
-          </>
-        ) : onTimeline ? (
-          <>
-            <b>Timeline</b> · finished features by project and day
-          </>
-        ) : teamHead ? (
-          <>
-            <b>Head Coach</b> › All projects › Sessions {teamCount}
           </>
         ) : project ? (
           <>
@@ -137,7 +123,6 @@ export function Toolbar(): JSX.Element {
       >
         <PopOutIcon open={detached} />
       </button>
-      <TeamToggle />
       <ThemeToggle />
     </div>
   );
@@ -149,30 +134,6 @@ const THEME_LABEL: Record<ThemePref, string> = { light: 'Light', dark: 'Dark' };
  * Light ⇄ dark, as in the shared theme spec (manager's correction #T48): an icon button only — the icon shows the
  * current theme (sun = light, moon = dark), the name is in the tooltip. Also View › Theme.
  */
-/** Team mode on/off: the Head Coach / Coach layers and their screens. Off = plain sessions. */
-function TeamToggle(): JSX.Element {
-  const team = useTeamMode((t) => t.team);
-  const set = useTeamMode((t) => t.set);
-  const title = team
-    ? 'Team mode is on (Head Coach, Coach, Manager, Activity, History) — click for plain sessions. The Ground is laid out again.'
-    : 'Plain sessions — click to turn on team mode (Head Coach, Coach, Manager, Activity, History). The Ground is laid out again.';
-  return (
-    <button className={`icon-btn layout-toggle team-toggle ${team ? 'active' : ''}`} title={title} aria-label={title} aria-pressed={team} onClick={() => {
-        set(!team);
-        // the Ground has a layout for each mode: lay the cards out again for the one now on
-        autoArrange();
-      }}>
-      {/* two small people */}
-      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-        <circle cx="5.5" cy="5.5" r="2" fill="none" stroke="currentColor" />
-        <path d="M2 13c0-2.2 1.6-3.5 3.5-3.5S9 10.8 9 13" fill="none" stroke="currentColor" strokeLinecap="round" />
-        <circle cx="11" cy="6" r="1.7" fill="none" stroke="currentColor" />
-        <path d="M10.3 9.6c.3-.1.5-.1.7-.1 1.7 0 3 1.1 3 3.1" fill="none" stroke="currentColor" strokeLinecap="round" />
-      </svg>
-    </button>
-  );
-}
-
 function ThemeToggle(): JSX.Element {
   const [pref, setPref] = useState(getThemePref());
   useEffect(() => onThemeChange(() => setPref(getThemePref())), []);

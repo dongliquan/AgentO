@@ -1,7 +1,6 @@
 import type { InboxItem, Project, Session } from '@shared/protocol';
 import { useStore } from '@/store';
 import { closedProjectIds, closedSessionIds, openSessions } from './closedIds';
-import { buildThreads, type LogNode } from './threads';
 
 export { closedProjectIds, closedSessionIds, openSessions };
 
@@ -40,17 +39,6 @@ function openInboxFor(inbox: InboxItem[], closed: Set<string>): InboxItem[] {
   return inboxVal;
 }
 
-let threadsKey: InboxItem[] | null = null;
-let threadsVal: LogNode[] = [];
-/** The order threads of an inbox (oldest first), built once per inbox. Do not mutate — copy before reversing. */
-export function threadsOf(inbox: InboxItem[]): LogNode[] {
-  if (threadsKey !== inbox) {
-    threadsKey = inbox;
-    threadsVal = buildThreads(inbox);
-  }
-  return threadsVal;
-}
-
 export function useClosedSessionIds(): Set<string> {
   const sessions = useStore((s) => s.sessions);
   const projects = useStore((s) => s.projects);
@@ -63,7 +51,3 @@ export function useOpenInbox(): InboxItem[] {
   return openInboxFor(inbox, useClosedSessionIds());
 }
 
-/** Threads of the open inbox, shared by every panel (Orders, Tasks, Log, chips). */
-export function useOpenThreads(): LogNode[] {
-  return threadsOf(useOpenInbox());
-}

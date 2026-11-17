@@ -1,6 +1,5 @@
 import { useDraft } from '@/lib/draft';
 import { parseTeamMessages, type TeamMessage } from '@/lib/teamMessage';
-import { DelegationStrip } from './Delegations';
 import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ChatEntry, ChatTool, PermissionScope, Project, Session } from '@shared/protocol';
 import { useStore } from '@/store';
@@ -9,8 +8,6 @@ import { useCallName } from '@/lib/nick';
 import { send } from '@/client';
 import { useChats } from '@/lib/chat';
 import { renderMarkdown } from '@/lib/markdown';
-import { teamMessageKind } from '@/lib/msgKind';
-import { MsgTag } from './MsgTag';
 import { openFile } from '@/lib/openfile';
 import { lastLines } from '@/lib/ansi';
 import { screenLines } from '@/lib/screen';
@@ -22,7 +19,6 @@ import { getBuffer, useBuffer } from '@/lib/buffers';
 import { restoreEarlier } from './ContextSize';
 import { quickReplyOf, type QuickOption, type QuickReply } from '@/lib/quickReply';
 import { kbd } from '@/lib/keys';
-import { makeScoper, ScopeCtx, toolScope, useScoper, type Scope } from '@/lib/chatScope';
 import { dayTime, displayTitle, formatDateTime, pcStyle, projectColor, relativeTime, roleLabel } from '@/lib/format';
 import { useNow } from '@/lib/hooks';
 import { recentInputs, recordInput } from '@/lib/inputHistory';
@@ -123,12 +119,6 @@ export function ChatView({
   const searching = query.trim() !== '';
   const [extra, setExtra] = useState(0);
   const src = useMemo(() => sources(all), [all]);
-  // the Head Coach's chat labels each message with its project, a Coach's with its part (other chats do not watch the
-  // sessions: every status change replaces that map)
-  const isHead = s.role === 'head';
-  const sessions = useStore((st) => (isHead ? st.sessions : NO_SESSIONS));
-  const projects = useStore((st) => (isHead ? st.projects : NO_PROJECTS));
-  const scoper = useMemo(() => (isHead ? makeScoper(s, sessions, projects, all) : null), [isHead, s.id, s.projectId, sessions, projects, all]);
   const hasTeam = useMemo(() => [...src.values()].includes('team'), [src]);
   const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
   const working = s.status === 'working' || s.status === 'starting';
@@ -217,7 +207,6 @@ export function ChatView({
 
   return (
     <div className="chat" data-cwd={s.cwd} onPointerDown={(e) => e.stopPropagation()} onWheel={(e) => { if (!e.ctrlKey) e.stopPropagation(); }}>
-      <ScopeCtx.Provider value={scoper}>
       <div
         className="chat-scroll"
         ref={scroller}
@@ -287,9 +276,6 @@ export function ChatView({
         {working && <WorkingLine entries={all} cwd={s.cwd} />}
         </div>
       </div>
-      </ScopeCtx.Provider>
-      {/* a small monitor at the top right: the work this coordinator handed out */}
-      {s.role !== 'player' && <DelegationStrip id={s.id} />}
       {s.permission ? <PermissionCard session={s} onShowTerminal={onShowTerminal} /> : choice && <WaitingBar session={s} tail={tail ?? ''} onShowTerminal={onShowTerminal} />}
       {asked && (!working || asked.replied !== undefined) && !s.permission && !choice && !(s.role === 'player' && s.status === 'hibernated') && <AskedBar session={s} lines={asked.lines} at={asked.at} replied={asked.replied} />}
       {/* the old-answer note: in the Session tab / Focus view, not on every Ground card (cards pass a limit) */}
@@ -376,7 +362,7 @@ function EntryView({ entry: e, cwd, sid, time, since }: { entry: ChatEntry; cwd:
   const stamp = time ? <div className="chat-clock">{time}</div> : null;
   if (e.kind === 'user') {
     const team = e.text ? parseTeamMessages(e.text) : null;
-    if (team) return <>{team.map((t, i) => <TeamBubble key={i} msg={t} turn={e.id} />)}</>;
+    if (team) return <>{team.map((t, i) => <TeamBubble key={i} msg={t} />)}</>;
     // a long paste is recorded inside <pasted_content> tags: show just the text
     const raw = e.text?.replace(/<\/?pasted_content\b[^>]*>/g, '').trim() ?? '';
     // images attached here are sent as paths: shown as thumbnails instead of the path list ("[Image #1]" is Claude
@@ -387,7 +373,7 @@ function EntryView({ entry: e, cwd, sid, time, since }: { entry: ChatEntry; cwd:
       <>
         {stamp}
         <div className="chat-user">
-          <TurnMeta id={e.id} sid={sid} text={text} ts={e.ts} />
+          <TurnMeta sid={sid} text={text} ts={e.ts} />
           {text && <CopyButton text={text} />}
           {images.length > 0 || e.images ? <ChatImages listed={images} entry={e} sid={sid} cwd={cwd} /> : null}
           {text && <div className="chat-user-text">{text}</div>}
@@ -538,8 +524,6 @@ const WAITING_MSG = /^Queued for /;
 
 function Tool({ tool: t, cwd, sid, ts }: { tool: ChatTool; cwd: string; sid?: string; ts?: number }): JSX.Element {
   const { title, detail } = toolSummary(t, cwd);
-  const sc = useScoper();
-  const scope = sc ? toolScope(t, sc) : null;
   const targetRef = useStore((st) => {
     const to = targetSession(t, st.sessions);
     return to ? `${to.id}\u0001${to.title}\u0001${projectColor(to.projectId, st.projects)}` : null;
@@ -606,12 +590,11 @@ function Tool({ tool: t, cwd, sid, ts }: { tool: ChatTool; cwd: string; sid?: st
           <b>{title}</b>
           {target && (
             <button className="chat-target" style={targetColor ? pcStyle(targetColor) : undefined} onClick={() => targetId && selectAndReveal(targetId)} title={`Open ${target}`}>
-              <span className="seg">→ {scope ? `${scope.name} › ${target}` : target}</span>
+              <span className="seg">→ {target}</span>
             </button>
           )}
           {taskId && <span className="task-id chat-task" title="The piece of work AgentO numbered when this was sent">{taskId}</span>}
           {undelivered && <span className="chat-undelivered" title="Queued: the session is busy or stopped, so it gets this when it is idle">⏳ waiting</span>}
-          {scope && !target && <ScopeTag scope={scope} />}
           {detail && <span className="chat-tool-detail" title={detail}>{detail}</span>}
         </div>
         {body}
@@ -1307,9 +1290,6 @@ export function Composer({ session: s, quick, lastAt }: { session: Session; quic
   );
 }
 
-const NO_SESSIONS = new Map<string, Session>();
-const NO_PROJECTS: Project[] = [];
-
 /** How a sender shows on a team bubble: chip class, name, role, chip color — one string (cheap to compare). */
 function senderView(x: Session | undefined, projects: Project[]): string {
   if (!x) return '';
@@ -1318,9 +1298,8 @@ function senderView(x: Session | undefined, projects: Project[]): string {
 }
 
 /** A message from the team (another session, the manager's order, an AgentO notice) — sender chip + body. */
-function TeamBubble({ msg, turn }: { msg: TeamMessage; turn: string }): JSX.Element {
+function TeamBubble({ msg }: { msg: TeamMessage }): JSX.Element {
   const [open, setOpen] = useState(false);
-  const sc = useScoper();
   // the sender as it is named now ("Head Coach · Shop" (head coach) → Shop · Coach), when the session still exists —
   // selected as one string, so a status change of the sender does not re-render the bubble
   // (a notice such as "X finished" is from AgentO, but it is about a session: that session is shown as its origin)
@@ -1335,9 +1314,6 @@ function TeamBubble({ msg, turn }: { msg: TeamMessage; turn: string }): JSX.Elem
     const id = refId;
     return id ? (st.sessions.get(id) ?? (id.length < 36 ? [...st.sessions.values()].find((x) => x.id.startsWith(id)) : undefined))?.id : undefined;
   });
-  // a session's message: its own project/part; a notice: the session it is about; an order: what the turn touched
-  const own = refId && sc ? sc.ofSession(refId) : null;
-  const scopes = own ? [own] : msg.kind === 'session' ? [] : sc?.turns.get(turn) ?? [];
   const long = msg.body.length > 600;
   const roleClass = senderClass ?? (msg.kind === 'order' ? 'manager' : msg.kind === 'notice' ? 'notice' : msg.role?.includes('head') ? 'head' : msg.role?.includes('coach') ? 'coach' : 'player');
   const me = useCallName();
@@ -1345,22 +1321,15 @@ function TeamBubble({ msg, turn }: { msg: TeamMessage; turn: string }): JSX.Elem
   const role = msg.kind === 'notice' ? undefined : senderRole ?? msg.role;
   const origin = { ...(senderId ? { onClick: () => selectAndReveal(senderId), title: `Open ${from}` } : {}) };
   return (
-    <div className={`chat-team ${msg.kind} ${['task', 'order'].includes(teamMessageKind(msg)) ? 'instruction' : ''}`}>
+    <div className={`chat-team ${msg.kind}`}>
       <div className="chat-team-head">
-        {own && senderName ? (
-          // one label for where it came from: project/part › session
-          <button className="chat-target" style={pcStyle(own.color)} {...origin}>
-            <span className="seg">{own.name} › {from}</span>
-          </button>
-        ) : (
+        {(
           <span className={`team-chip ${roleClass} ${senderId ? 'link' : ''}`} style={senderColor ? pcStyle(senderColor) : undefined} {...origin}>
             {from}
           </span>
         )}
-        <MsgTag kind={teamMessageKind(msg)} {...(msg.taskId ? { taskId: msg.taskId } : {})} />
         {role && role !== from && <span className="muted">{role}</span>}
         {msg.via && <span className="muted">{msg.via}</span>}
-        {scopes.filter((x) => !(own && senderName && x.name === own.name)).map((x) => <ScopeTag key={x.name} scope={x} />)}
         <span className="grow" />
         <CopyButton text={msg.body} />
       </div>
@@ -1370,11 +1339,6 @@ function TeamBubble({ msg, turn }: { msg: TeamMessage; turn: string }): JSX.Elem
       )}
     </div>
   );
-}
-
-/** Project (Head Coach) or part (Coach) a message is about. */
-function ScopeTag({ scope }: { scope: Scope }): JSX.Element {
-  return <span className="scope-tag" style={pcStyle(scope.color)} title={scope.name}>{scope.name}</span>;
 }
 
 /** The asking lines of an answer, and the answer without them (whole lines only; kept as is if nothing else would be left). */
@@ -1453,8 +1417,7 @@ function AskedBar({ session: s, lines, at, replied }: { session: Session; lines:
  * Above the user's own turn: the number AgentO gave it (the inbox record of that direct input — same session, the text
  * in it, nearest in time) at the left, and the projects/parts it went to (in a Head Coach or Coach chat) at the right.
  */
-function TurnMeta({ id, sid, text, ts }: { id: string; sid?: string; text: string; ts: number }): JSX.Element | null {
-  const list = useScoper()?.turns.get(id);
+function TurnMeta({ sid, text, ts }: { sid?: string; text: string; ts: number }): JSX.Element | null {
   const taskId = useStore((st) => {
     if (!sid) return undefined;
     const first = text.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
@@ -1467,11 +1430,10 @@ function TurnMeta({ id, sid, text, ts }: { id: string; sid?: string; text: strin
     }
     return best?.id;
   });
-  if (!taskId && !list?.length) return null;
+  if (!taskId) return null;
   return (
     <div className="chat-user-scopes">
       {taskId && <span className="task-id chat-task chat-user-task" title="The piece of work AgentO numbered when this was sent">{taskId}</span>}
-      {list?.map((x) => <ScopeTag key={x.name} scope={x} />)}
     </div>
   );
 }

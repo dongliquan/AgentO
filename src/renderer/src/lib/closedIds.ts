@@ -1,5 +1,4 @@
 import type { Project, Session } from '@shared/protocol';
-import { hiddenInSimple } from './teamMode';
 
 /** Ids of closed projects and of their parts. */
 export function closedProjectIds(projects: Project[]): Set<string> {
@@ -19,6 +18,6 @@ export function closedSessionIds(sessions: Iterable<Session>, projects: Project[
 /** Sessions of open projects (plus team-wide ones without a project). */
 export function openSessions(sessions: Map<string, Session>, projects: Project[]): Session[] {
   const closed = closedProjectIds(projects);
-  const all = [...sessions.values()].filter((s) => !hiddenInSimple(s));
+  const all = [...sessions.values()];
   return closed.size ? all.filter((s) => !closed.has(s.projectId)) : all;
 }

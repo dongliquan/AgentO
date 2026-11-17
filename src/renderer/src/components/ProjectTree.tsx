@@ -3,13 +3,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { useExpanded } from './FileTree';
 import type { AgentKind, Folder, Project, Session } from '@shared/protocol';
 import { useStore } from '@/store';
-import { teamOnly, useTeamMode } from '@/lib/teamMode';
 import { send } from '@/client';
-import { organizeTeam, removeSession, renameProject, renameSession, saveProject, selectAndReveal } from '@/commands';
+import { removeSession, renameProject, renameSession, saveProject, selectAndReveal } from '@/commands';
 import { askText } from '@/lib/prompt';
 import { AGENT_LABELS, displayTitle, statusClass, statusLabel } from '@/lib/format';
-import { RoleTag } from './RoleTag';
-import { DelegationChip } from './Delegations';
 import { pcStyle, projectColor } from '@/lib/format';
 import { useColorMenu } from './ProjectColorMenu';
 import { AgentPicker } from './AgentPicker';
@@ -30,7 +27,6 @@ const COACH_KINDS: AgentKind[] = ['claude', 'codex', 'gemini'];
 export function ProjectTree(): JSX.Element {
   const projects = useStore((s) => s.projects);
   const sessions = useStore((s) => s.sessions);
-  const team = useTeamMode((t) => t.team);
   const [expanded, toggle] = useExpanded();
 
   const [picker, setPicker] = useState<PickerState | null>(null);
@@ -50,16 +46,14 @@ export function ProjectTree(): JSX.Element {
   const sessionsByProject = useMemo(() => {
     const m = new Map<string, Session[]>();
     for (const s of sessions.values()) {
-      if (s.role === 'head' || (!team && teamOnly(s))) continue;
       const arr = m.get(s.projectId) ?? [];
       arr.push(s);
       m.set(s.projectId, arr);
     }
     const key = (s: Session): number => s.order ?? Number.MAX_SAFE_INTEGER;
-    for (const arr of m.values()) arr.sort((a, b) => Number(b.role === 'coach') - Number(a.role === 'coach') || key(a) - key(b) || a.createdAt - b.createdAt);
+    for (const arr of m.values()) arr.sort((a, b) => key(a) - key(b) || a.createdAt - b.createdAt);
     return m;
-  }, [sessions, team]);
-  const heads = useMemo(() => [...sessions.values()].filter((s) => s.role === 'head' && team), [sessions, team]);
+  }, [sessions]);
   const tops = projects.filter((p) => !p.parentId && !p.closed);
   const closedTops = projects.filter((p) => !p.parentId && p.closed);
   const partsOf = (id: string): Project[] => projects.filter((p) => p.parentId === id);
@@ -82,12 +76,10 @@ export function ProjectTree(): JSX.Element {
     const open = expanded.has(`p:${p.id}`);
     const parts = isPart ? [] : partsOf(p.id);
     const own = sessionsByProject.get(p.id) ?? [];
-    const total = own.length + parts.reduce((n, x) => n + (sessionsByProject.get(x.id)?.length ?? 0), 0) + (isPart ? 0 : heads.filter((h) => h.projectId === p.id).length);
-    const hasCoach = own.some((s) => s.role === 'coach');
-    // the project's state = its head coach's and sessions' together (parts: their own sessions)
-    const members = [...own, ...parts.flatMap((x) => sessionsByProject.get(x.id) ?? []), ...(isPart ? [] : heads.filter((h) => h.projectId === p.id))];
+    const total = own.length + parts.reduce((n, x) => n + (sessionsByProject.get(x.id)?.length ?? 0), 0) + 0;
+    // the project's state = its sessions' together (parts: their own sessions)
+    const members = [...own, ...parts.flatMap((x) => sessionsByProject.get(x.id) ?? [])];
     const agg = aggregateStatus(members);
-    const head = isPart ? undefined : heads.find((h) => h.projectId === p.id);
     const inner = depth + 14;
     const kind = isPart ? 'Part' : 'Project';
     return (
@@ -155,19 +147,6 @@ export function ProjectTree(): JSX.Element {
           >
             ›_
           </button>
-          {!hasCoach && (isPart || parts.length === 0) && (
-            <button
-              className="icon-btn hover-act"
-              title={`Add Coach (manages this ${kind.toLowerCase()}'s players)`}
-              onClick={(e) => {
-                e.stopPropagation();
-                const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                setCoachPicker({ x: r.left, y: r.bottom + 2, projectId: p.id });
-              }}
-            >
-              ⚑
-            </button>
-          )}
           <button
             className="icon-btn hover-act"
             title={isPart ? 'Add Folder to the project' : 'Add Folder'}
@@ -181,18 +160,6 @@ export function ProjectTree(): JSX.Element {
           >
             +
           </button>
-          {!isPart && (
-            <button
-              className="icon-btn hover-act"
-              title="Organize Team — the project's coach (created first if needed) sorts the sessions into parts"
-              onClick={(e) => {
-                e.stopPropagation();
-                organizeTeam(p.id);
-              }}
-            >
-              ✦
-            </button>
-          )}
           {!isPart && (
             <button
               className="icon-btn hover-act"
@@ -235,25 +202,6 @@ Not touched: your folders on disk and the Claude / Codex conversation files.`)) 
           </button>
           )}
         </div>
-        {open && !isPart &&
-          (head ? (
-            <SessionRow session={head} depth={inner} />
-          ) : (
-            <div className="tree-row tree-add-head" style={{ paddingLeft: inner }} title="Optional: the project's PM — splits orders among the parts" onClick={() => send({ type: 'head.create', projectId: p.id })}>
-              <span className="caret" />
-              <span className="label">+ Coach</span>
-              <button
-                className="btn sm ghost tree-organize"
-                title="Create the coach and have it sort this project's sessions into parts"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  organizeTeam(p.id);
-                }}
-              >
-                ✦ Organize Team
-              </button>
-            </div>
-          ))}
         {open && own.map((s) => <SessionRow key={s.id} session={s} depth={inner} />)}
         {open && parts.map((x) => renderNode(x, inner))}
         {open && isPart && own.length === 0 && <div className="tree-empty" style={{ paddingLeft: inner + 8 }}>No sessions.</div>}
@@ -428,8 +376,6 @@ ${s.cwd}`}
       <span className="label" onDoubleClick={(e) => { e.stopPropagation(); void renameSession(s.id); }}>
         {displayTitle(s)}
       </span>
-      <RoleTag s={s} />
-      {s.role !== 'player' && <DelegationChip id={s.id} />}
       <button
         className="icon-btn hover-act"
         title="Rename (F2, or double-click the name)"

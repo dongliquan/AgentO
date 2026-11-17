@@ -39,7 +39,6 @@ export function Toasts(): JSX.Element {
 
 const SESSION_OPTIONS: { id: NotifyPrefs['sessions']; label: string }[] = [
   { id: 'all', label: 'Every session' },
-  { id: 'leads', label: 'Head Coach and coaches' },
   { id: 'off', label: 'None' }
 ];
 
@@ -47,7 +46,7 @@ const SESSION_OPTIONS: { id: NotifyPrefs['sessions']; label: string }[] = [
 export function NotifyMenu(): JSX.Element {
   const prefs = useNotifyPrefs();
   const [open, setOpen] = useState(false);
-  const off = !prefs.reports && !prefs.orders && !prefs.pieces && prefs.sessions === 'off';
+  const off = prefs.sessions === 'off';
   return (
     <span className="seg click notify-seg" title="Notifications" onClick={() => setOpen((v) => !v)}>
       {off ? '🔕' : '🔔'}
@@ -56,18 +55,6 @@ export function NotifyMenu(): JSX.Element {
           <div className="notify-scrim" onClick={(e) => { e.stopPropagation(); setOpen(false); }} />
           <div className="notify-menu" onClick={(e) => e.stopPropagation()}>
             <div className="notify-head">Notify me about</div>
-            <label className="notify-row">
-              <input type="checkbox" checked={prefs.reports} onChange={(e) => prefs.set({ reports: e.target.checked })} />
-              Reports to me
-            </label>
-            <label className="notify-row">
-              <input type="checkbox" checked={prefs.orders} onChange={(e) => prefs.set({ orders: e.target.checked })} />
-              Orders done (every piece reported)
-            </label>
-            <label className="notify-row">
-              <input type="checkbox" checked={prefs.pieces} onChange={(e) => prefs.set({ pieces: e.target.checked })} />
-              Pieces of work finished or stopped
-            </label>
             <div className="notify-head">Session waiting / finished / error</div>
             {SESSION_OPTIONS.map((o) => (
               <label key={o.id} className="notify-row">
