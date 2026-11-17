@@ -1762,3 +1762,4 @@ button.tl-all { color: var(--accent); border-color: var(--border); }
 .activity-switch button { border: 1px solid var(--border); background: var(--panel); color: var(--text-dim); border-radius: 12px; padding: 2px 10px; font-size: 12px; cursor: pointer; }
 .activity-switch button.active { color: var(--text); border-color: var(--accent); background: var(--panel-2); font-weight: 600; }
 .activity-switch .count { margin-left: 6px; font-size: 10.5px; color: var(--accent); }
+.resume-long { flex: none; padding: 0 7px; border: 1px solid var(--warn, #d9822b); border-radius: 10px; color: var(--warn, #d9822b); font-size: 10.5px; line-height: 16px; }

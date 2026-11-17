@@ -13,6 +13,8 @@ import { useNow } from '@/lib/hooks';
  * one button for all of them. Read from the conversation files the daemon already keeps — nothing asks a session.
  */
 const SHOWN = 10;
+/** conversation size from which resuming is worth a second thought */
+const LONG_CONTEXT = 150_000;
 const DISMISS_KEY = 'asm.restorable.dismissed';
 
 const dismissedAt = (): number => {
@@ -90,6 +92,11 @@ export function ResumeCard(): JSX.Element | null {
                     {p && <span className="today-proj">{p.name}</span>}
                     <b className="ellipsis">{displayTitle(s)}</b>
                     <span className="grow" />
+                    {(s.context ?? 0) >= LONG_CONTEXT && (
+                      <span className="resume-long" title="A long conversation resumes slowly and mixes old and new work — after resuming, consider Fresh Start (card menu)">
+                        long · {Math.round((s.context ?? 0) / 1000)}K
+                      </span>
+                    )}
                     <span className="muted">{relativeTime(last.at, now)}</span>
                     <button
                       className="btn sm"

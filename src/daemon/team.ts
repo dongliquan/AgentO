@@ -84,6 +84,8 @@ const TRUST_SETTLE_MS = 8_000;
 const SETTLE_MS = 4_000;
 /** Autopilot: a Coach resting this long with nothing out is told to carry on; limits so it cannot spin */
 const AUTOPILOT_SETTLE_MS = 15_000;
+/** a session woken after being stopped this long is told how long it was away */
+const STOPPED_NOTE_MS = 20 * 60_000;
 const AUTOPILOT_MAX_PER_HOUR = 6;
 const AUTOPILOT_MAX_IDLE = 2;
 const AUTOPILOT_RULES =
@@ -374,6 +376,8 @@ const PLAYING_COACH_NOTE = (project: string): string =>
 export class Team {
   /** when each session was woken for queued messages lately (the crash-loop guard) */
   private wakes = new Map<string, number[]>();
+  /** when a stopped session that is being woken for a message had stopped (its first message tells it how long ago) */
+  private stoppedSince = new Map<string, number>();
   /** sessions the guard stopped waking (cleared when the session runs again) */
   private wakeStopped = new Set<string>();
   /** sessions that were sent a directive, keyed by target */
@@ -1337,6 +1341,32 @@ export class Team {
     return PROMPT_RE.test(plainTerminal(this.sessions.outputSinceInput(t.id)).slice(-1500));
   }
 
+  /**
+   * What is typed into a session: its queued messages. Several are numbered with their times (one block of text with
+   * the messages run together is easy to misread as one request), and a session that was stopped for a while is told
+   * so — it remembers the repository as it was, and branches and files may have changed since.
+   */
+  private withWakeNote(id: string, queue: Queued[]): string {
+    const since = this.stoppedSince.get(id);
+    this.stoppedSince.delete(id);
+    const parts: string[] = [];
+    const away = since ? Date.now() - since : 0;
+    if (away >= STOPPED_NOTE_MS) {
+      const h = Math.floor(away / 3_600_000);
+      const m = Math.round((away % 3_600_000) / 60_000);
+      parts.push(
+        `[AgentO] You were stopped for ${h ? `${h} h ` : ''}${m} min and are running again. The repository, branches and files may have changed meanwhile: check the current state (git status, git branch, the files in question) before you rely on what you remember.`
+      );
+    }
+    if (queue.length === 1) parts.push(queue[0]!.text);
+    else {
+      const clock = (at?: number): string => (at ? new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
+      parts.push(`[AgentO] ${queue.length} messages arrived, oldest first. Handle them in this order; each is separate.`);
+      queue.forEach((q, i) => parts.push(`--- message ${i + 1} of ${queue.length}${q.at ? ` (${clock(q.at)})` : ''} ---\n${q.text}`));
+    }
+    return parts.join('\n\n');
+  }
+
   private enqueue(targetId: string, item: Queued): void {
     const q = this.outbox.get(targetId) ?? [];
     q.push({ ...item, at: Date.now() });
@@ -1377,6 +1407,7 @@ export class Team {
             continue;
           }
           this.wakes.set(id, [...recent, Date.now()]);
+          if (t.status === 'hibernated') this.stoppedSince.set(id, t.updatedAt);
           this.resuming.add(id);
           try {
             this.sessions.resume(id);
@@ -1410,7 +1441,7 @@ export class Team {
       }
       this.attention.delete(id);
       this.outbox.delete(id);
-      const text = queue.map((q) => q.text).join('\n\n');
+      const text = this.withWakeNote(id, queue);
       // what this delivery means for the pending work — set before typing: a headless session turns "working" the
       // moment the message is sent, and that transition must find the pending entry (else it never completes)
       const before = this.pending.get(id);
