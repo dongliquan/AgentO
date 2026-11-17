@@ -58,6 +58,25 @@ export class Ledger {
     if (note !== undefined) r.note = note;
     else delete r.note;
     this.touch(r.key);
+    // a task that handed its work on is finished when all the work it handed out is
+    if (state === 'reported') this.settleParent(r);
+    if (state === 'handed') this.settleHanded(r);
+  }
+
+  private children(key: string): TaskRec[] {
+    return this.list().filter((c) => c.parent === key);
+  }
+
+  private settleParent(child: TaskRec): void {
+    const parent = child.parent ? this.recs.get(child.parent) : undefined;
+    if (parent) this.settleHanded(parent);
+  }
+
+  private settleHanded(r: TaskRec): void {
+    if (r.state !== 'handed') return;
+    const kids = this.children(r.key);
+    if (kids.length === 0 || kids.some((c) => c.state !== 'reported')) return;
+    this.set(r.projectId, r.id, 'reported', 'all the work it handed out is reported');
   }
 
   /** Tasks of a session that are still open. */

@@ -472,6 +472,7 @@ export class Team {
       this.all().some((h) => h.role === 'head' && h.projectId === this.rootOf(s.projectId));
     this.ledger = new Ledger(store);
     this.restore();
+    this.reconcileLedger();
     // a daemon that restarted while a Coach was resting: no status event comes, so look every 2 minutes
     setInterval(() => this.autopilotSweep(), 2 * 60_000).unref();
     setInterval(() => {
@@ -682,6 +683,16 @@ export class Team {
 
   private taskState(sessionId: string, task: string | undefined, state: Parameters<Ledger['set']>[2], note?: string): void {
     this.ledger.set(this.ledgerProject(sessionId), task, state, note);
+  }
+
+  /** After a restart: a task that is neither being worked on nor waiting in a queue lost its trail — settle it. */
+  private reconcileLedger(): void {
+    for (const r of this.ledger.list()) {
+      if (r.state === 'reported' || r.state === 'asking' || r.state === 'handed') continue;
+      const queued = (this.outbox.get(r.to) ?? []).some((q) => q.task === r.id);
+      if (this.pending.get(r.to)?.task === r.id || queued) continue;
+      this.ledger.set(r.projectId, r.id, 'reported', 'no trace of it after a restart');
+    }
   }
 
   /** The session got an answer / new work: what it was asking is settled. */
@@ -904,6 +915,8 @@ export class Team {
     if (!s || !text.trim()) return;
     const task = this.newTask(s);
     this.openTask(task, 'user', s, text);
+    // typed right now into a running session (not queued behind anything)
+    if (this.sessions.isLive(id)) this.taskState(id, task, 'working');
     this.answered(id);
     this.record(s, 'directive', { id: 'user', title: DIRECT }, text, true, task);
     this.tellCoach(s, text, task);
@@ -1605,7 +1618,11 @@ export class Team {
     // a coach's turn usually ends after delegating, so it "replied"; a player's turn is the work itself
     const state = s.status !== 'waiting' ? `stopped (${s.status})` : s.role === 'player' ? 'finished' : 'replied';
     if (s.status !== 'waiting') this.taskState(s.id, p.task, 'blocked', `the session stopped (${s.status})`);
-    else this.taskState(s.id, p.task, state === 'replied' && p.delegated ? 'handed' : 'reported');
+    else {
+      this.taskState(s.id, p.task, state === 'replied' && p.delegated ? 'handed' : 'reported');
+      // what the manager typed into it during this turn was part of the same turn
+      for (const r of this.ledger.openOf(s.id)) if (r.from === 'user' && r.state === 'working' && r.id !== p.task) this.taskState(s.id, r.id, 'reported');
+    }
     if (p.from === 'user') {
       // a coordinator that just handed the work on has no result yet: recorded as "handed on" (shown faintly, no alert)
       const shown = state === 'replied' && p.delegated ? 'handed on' : state;
