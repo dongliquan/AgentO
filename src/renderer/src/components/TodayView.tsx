@@ -7,6 +7,7 @@ import { useNeedsIds, openNeed } from './NeedsYou';
 import { useDelegations } from './Delegations';
 import { useTodos, saveTodos, newTodo } from '@/lib/todos';
 import { AwayCard } from './AwayCard';
+import { PageSwitch } from './PageSwitch';
 import { ResumeCard } from './ResumeCard';
 
 const NEED_LABEL = { prompt: 'Prompt', question: 'Question', context: 'Large chat' } as const;
@@ -63,6 +64,7 @@ export function TodayView(): JSX.Element {
     <div className="today">
       <div className="today-head">
         <h2>Today</h2>
+        <PageSwitch />
         <span className="muted">{new Date(now).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</span>
         <span className="today-sum">
           <b className={needs.length ? 'warn' : ''}>{needs.length}</b> need you · <b>{working.filter((s) => s.status === 'working').length}</b> working · <b>{openTodos}</b> to do

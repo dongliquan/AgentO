@@ -38,7 +38,7 @@ window.addEventListener('storage', (e) => {
 });
 
 /** Right-panel tabs that belong to team mode: the manager's orders, the inbox of team reports, the team log. */
-export const TEAM_TABS: string[] = ['orders', 'inbox', 'log'];
+export const TEAM_TABS: string[] = ['orders', 'inbox'];
 
 export const isTeamMode = (): boolean => useTeamMode.getState().team;
 

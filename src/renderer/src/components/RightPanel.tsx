@@ -21,6 +21,7 @@ import { TeamLog } from './TeamLog';
 import { FilesPanel } from './FilesPanel';
 import { WebPanel } from './WebPanel';
 import { TAB_ORDER, useDock } from '@/lib/dock';
+import { useActivitySub } from '@/lib/activitySub';
 import { TEAM_TABS, useTeamMode } from '@/lib/teamMode';
 import { ShareSplitter } from './Splitter';
 import { threadsOf } from '@/lib/closed';
@@ -42,11 +43,11 @@ import { AttachmentBar } from './AttachmentBar';
 import { kbd } from '@/lib/keys';
 import { useBuffer } from '@/lib/buffers';
 
-const TAB_LABEL: Record<RightTab, string> = { orders: 'Manager', inbox: 'Inbox', detail: 'Session', files: 'Files', log: 'Logs', web: 'Web' };
+const TAB_LABEL: Record<RightTab, string> = { orders: 'Manager', inbox: 'Activity', detail: 'Session', files: 'Files', log: 'Logs', web: 'Web' };
 const TAB_TITLE: Partial<Record<RightTab, string>> = {
   files: 'Files — the selected session\'s project folders; a file name clicked in a chat is shown here',
   orders: 'You, the manager: what you said and the answers, and the order box (projects, new project, routines)',
-  log: 'Everything the team sent each other, by order',
+  inbox: 'Activity — what needs your attention (alerts), and everything the team sent each other (team log)',
   web: 'Gemini, ChatGPT on the web — your own sign-in and subscription'
 };
 
@@ -56,12 +57,31 @@ function useTabCounts(): Partial<Record<RightTab, number>> {
   return { inbox: unread };
 }
 
+/** Alerts (Inbox) and the team's log (Logs) in one tab, switched at the top. */
+function ActivityTab(): JSX.Element {
+  const sub = useActivitySub((s) => s.sub);
+  const setSub = useActivitySub((s) => s.set);
+  const unread = useStore(unreadCount);
+  return (
+    <div className="activity-tab">
+      <div className="activity-switch" role="tablist" aria-label="Activity">
+        <button role="tab" aria-selected={sub === 'alerts'} className={sub === 'alerts' ? 'active' : ''} onClick={() => setSub('alerts')}>
+          Alerts{unread > 0 ? <span className="count">{unread}</span> : null}
+        </button>
+        <button role="tab" aria-selected={sub === 'log'} className={sub === 'log' ? 'active' : ''} onClick={() => setSub('log')} title="Everything the team sent each other, by order">
+          Team log
+        </button>
+      </div>
+      {sub === 'log' ? <TeamLog /> : <Inbox />}
+    </div>
+  );
+}
+
 /** A tab's content (the Web tab is handled apart: its pages stay mounted). */
 function TabContent({ tab, session }: { tab: RightTab; session: Session | undefined }): JSX.Element | null {
   if (tab === 'detail') return session ? <Detail session={session} /> : <div className="rp-body muted dock-empty">Select a session on the Ground or in the tree.</div>;
   if (tab === 'orders') return <ManagerTab />;
-  if (tab === 'log') return <TeamLog />;
-  if (tab === 'inbox') return <Inbox />;
+  if (tab === 'log' || tab === 'inbox') return <ActivityTab />;
   if (tab === 'files') return <FilesPanel />;
   return null;
 }

@@ -37,7 +37,6 @@ function PopOutIcon({ open }: { open: boolean }): JSX.Element {
 export function Toolbar(): JSX.Element {
   const viewMode = useStore((s) => s.viewMode);
   const focusMode = useStore((s) => s.focusMode);
-  const team = useTeamMode((t) => t.team);
   const onTimeline = viewMode === 'timeline';
   const onToday = viewMode === 'today';
   /** a record / overview page, not a session layout: the layout tools hide */
@@ -81,12 +80,9 @@ export function Toolbar(): JSX.Element {
       </div>
       <span className="toolbar-sep" />
       <div className="segmented">
-        <button className={onToday ? 'active' : ''} onClick={() => setViewMode('today')} title={kbd('Today — what needs you, who is working, what got done, your to-dos (Ctrl+5)')}>
+        <button className={onToday || onTimeline ? 'active' : ''} onClick={() => setViewMode('today')} title={kbd('Today — what needs you, who is working, what got done, your to-dos (Ctrl+5)')}>
           Today
         </button>
-        {team && <button className={onTimeline ? 'active' : ''} onClick={() => setViewMode('timeline')} title={kbd('Timeline — the features each project finished, by day (Ctrl+4)')}>
-          Timeline
-        </button>}
       </div>
       <div className="breadcrumb">
         {onToday ? (

@@ -12,6 +12,7 @@ import { dayTime, displayTitle, formatDateTime, pcStyle, roleLabel } from '@/lib
 import { renderMarkdown } from '@/lib/markdown';
 import { matches } from '@/lib/search';
 import { useNow } from '@/lib/hooks';
+import { PageSwitch } from './PageSwitch';
 import { ProjectFilter } from './ProjectFilter';
 import { SearchBox } from './SearchBox';
 import { useFlow } from './OrderFlow';
@@ -100,6 +101,7 @@ export function TimelineView(): JSX.Element {
   return (
     <div className="timeline">
       <div className="timeline-bar">
+        <PageSwitch />
         <ProjectFilter value={pick} onChange={setPick} />
         <div className="segmented sm" role="tablist" aria-label="Period">
           {PERIODS.map((p) => (

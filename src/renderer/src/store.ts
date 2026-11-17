@@ -7,6 +7,7 @@ import { appendBuffer, dropBuffer, setBuffer } from '@/lib/buffers';
 import { arrangeTeam } from '@shared/layout';
 import { closedSessionIds, openSessions } from '@/lib/closedIds';
 import { applyChatSnapshot, applyChatUpsert, dropChat } from '@/lib/chat';
+import { useActivitySub } from '@/lib/activitySub';
 
 export const ZOOM_MIN = 0.2;
 export const ZOOM_MAX = 2.5;
@@ -423,7 +424,11 @@ export const useStore = create<AppState>((set, get) => ({
     }
     set({ collapsedGroups: next });
   },
-  setRightTab: (t) => set({ rightTab: t, rightOpen: true }),
+  // 'log' (the team's log) is a view of the Activity tab, which is the 'inbox' tab
+  setRightTab: (t) => {
+    if (t === 'log') useActivitySub.getState().set('log');
+    set({ rightTab: t === 'log' ? 'inbox' : t, rightOpen: true });
+  },
   setActivity: (a) => {
     const patch: Partial<AppState> = { activity: a };
     if (a === 'inbox') {
