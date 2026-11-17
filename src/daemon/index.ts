@@ -10,7 +10,7 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket, type RawData } from 'ws';
-import { DAEMON_PORT_DEFAULT, type ClientMessage, type ServerMessage, type Session, type SessionLast } from '@shared/protocol';
+import { DAEMON_PORT_DEFAULT, type ClientMessage, type ServerMessage, type SessionLast } from '@shared/protocol';
 import { lastInfo } from './lastinfo';
 import type { DaemonInfoFile } from '@shared/extra';
 import { attachmentsDir, dataDir, ensureDir, daemonJsonPath, daemonLockPipe, logsDir } from './paths';
@@ -24,60 +24,17 @@ import { detectAgents } from './agents';
 import { collectUsage } from './usage';
 import { gitChanged, listDir, readFileCapped, searchFiles, warmIndex, commitSubjects } from './fsapi';
 import { TranscriptTail, findTranscript } from './transcript';
-import { Team, REVIEWER_TITLE } from './team';
-import { Routines } from './routines';
-import { parseDemoCommand, runDemo } from './demo';
+import { Team } from './team';
 import { exportProject, importProject } from './projectfile';
 import { importClaudeSessions, listClaudeSessions } from './claudeimport';
 import { agentConnections } from './agentstatus';
 import { usageReport } from './usagereport';
 import { fixPathFromLoginShell } from '@shared/loginpath';
 
-const REVIEWER_NOTE = (id: string): string => `
-Review: the project has a Codex session "${REVIEWER_TITLE}" (session ${id.slice(0, 8)}) for cross-checking — a second
-opinion from another model. Claude players do the work; Codex only reviews. When a piece of work is finished, before
-you report it to the manager as done, send_to_session the reviewer what to check: the goal, the changed files or
-commits, and how to verify. It reads and runs checks but does not edit files. Put its verdict in your report and send
-real problems back to the player. Do not give it implementation work, and do not create other reviewers.
-`;
-
-/** New project from Orders: how the head coach is briefed (plan: report the plan first and wait for the go). */
-const START_ORDER = (plan: boolean, brief: string, reviewer?: string): string =>
-  `[New project]
-You lead this new project. Below is the manager's brief.
-1. Get the starting point from list_projects and a quick look at the top level of the folder(s) — do not read the
-   code yourself (a player can survey it as its first task).
-2. Design the team: 2–5 parts (areas of work, e.g. planning, front-end, back-end, QA) — create_part each one (give
-   \`folders\` when a part works in a subfolder).
-3. In each part create_session the players it needs (one per area of work, a short Korean title each). Do not give
-   them a prompt yet.
-4. Do not make coaches: you manage every part's players yourself (a coach that only relays your messages costs
-   tokens and time). Only a part with 4 or more players that needs constant review may get one (make_coach).
-${plan ? `5. report_up to the manager, in Korean: the parts, the players, the first tasks and the order of work. Then WAIT for
-   the manager's go before sending anyone work.` : `5. Hand out the first tasks (send_to_session to the players), then
-   report_up the team and the plan to the manager, in Korean.`}
-${reviewer ? REVIEWER_NOTE(reviewer) : ''}
-Brief from the manager:
-${brief}`;
-
 /** Session › New Chat: the project (and folder name) that holds the chat sessions, and what a chat is called. */
 const CHATS = 'Chats';
 const CHAT_GAP = 80;
 const CHAT_NAMES: Partial<Record<string, string>> = { codex: 'ChatGPT', claude: 'Claude', gemini: 'Gemini' };
-
-/** Organize Team: what the head coach is asked to do with a project's sessions. */
-const ORGANIZE_ORDER = `[Organize the team]
-The sessions of this project were brought in from VS Code / a terminal: they all sit directly under the project as
-players, stopped. Organize them into a team:
-1. list_sessions, then read_session (max_entries 3) for each one to learn what it works on. Reading does not start
-   them — do not send_to_session anyone, that would wake them and cost tokens.
-2. Group them by area of work into 2–6 parts (for example docs/analysis, front-end, back-end, QA/bugs, tools) and
-   create_part each one.
-3. move_session every session into its part. If a title is unclear, rename_session it (short, Korean).
-4. Do not make coaches: you manage the parts' players yourself (a coach that only relays messages costs tokens
-   and time). Only a part with 4 or more sessions that needs constant review may get one (make_coach).
-5. Then report_up to the manager, in Korean: the parts, who is in each, and sessions that look
-   finished or obsolete (candidates to remove). Do not hand out any work yet.`;
 
 const HERE = typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 
@@ -310,15 +267,9 @@ async function main(): Promise<void> {
     const gone = sessions.list().filter((s) => ids.has(s.projectId)).map((s) => s.id);
     for (const id of gone) sessions.remove(id);
     store.purgeRecords(gone);
-    for (const r of store.listRoutines()) {
-      const t = r.target;
-      const aimed = t.kind === 'project' ? [t.projectId] : t.kind === 'projects' ? t.projectIds : t.kind === 'session' ? [t.sessionId] : [];
-      if (aimed.length && aimed.every((x) => ids.has(x) || gone.includes(x))) store.deleteRoutine(r.id);
-    }
     team.forgetProject([...ids], gone);
     store.deleteProject(projectId);
     broadcast({ type: 'projects', projects: store.listProjects() });
-    broadcast({ type: 'routines', routines: store.listRoutines() });
     pushInbox();
   }
   /** The sessions that were running when the daemon was last shut down with its sessions stopped and are still stopped. */
@@ -350,46 +301,6 @@ async function main(): Promise<void> {
   team.ledger.onChange = (changed) => broadcast({ type: 'ledger.delta', upsert: changed });
   team.onDelivered = (sessionId, text) => broadcast({ type: 'team.delivered', sessionId, text });
   team.onProjects = () => broadcast({ type: 'projects', projects: store.listProjects() });
-  /** Orders › New project, and the team head coach's create_project tool: project + folders + head coach + the brief as its first order */
-  const startProject = (rawName: string, folders: string[], text: string, plan: boolean, via = 'New project'): Session => {
-    const name = rawName.trim();
-    if (!name) throw new Error('Give the project a name');
-    if (!text.trim()) throw new Error('Write the order for the new project');
-    if (store.listProjects().some((p) => !p.parentId && p.name === name)) throw new Error(`A project named "${name}" already exists`);
-    const dirs = [...new Set(folders.map((f) => path.resolve(f)))];
-    // no folder picked: a new one, ~/AgentO Projects/<name> (a name that is not a valid folder name is cleaned up)
-    if (dirs.length === 0) {
-      const safe = name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/[. ]+$/, '') || 'project';
-      const dir = path.join(os.homedir(), 'AgentO Projects', safe);
-      fs.mkdirSync(dir, { recursive: true });
-      dirs.push(dir);
-    }
-    for (const d of dirs) if (!fs.existsSync(d) || !fs.statSync(d).isDirectory()) throw new Error(`Folder does not exist: ${d}`);
-    const project = store.createProject(name);
-    // the team works here on the manager's order: trusted, so new players do not stop at the folder-trust prompt
-    for (const d of dirs) store.addFolder(project.id, d, path.basename(d) || d, true);
-    broadcast({ type: 'projects', projects: store.listProjects() });
-    const head = team.createHead(project.id);
-    // the cross-check reviewer: a Codex session in the project folder, stopped until the head coach sends it a review
-    let reviewer: Session | undefined;
-    try {
-      const folder = store.listProjects().find((p) => p.id === project.id)?.folders[0];
-      if (folder) {
-        reviewer = sessions.restore({ projectId: project.id, folderId: folder.id, cwd: folder.path, agent: 'codex', role: 'player', title: REVIEWER_TITLE });
-        team.arrange(project.id);
-      }
-    } catch (e) {
-      log.warn('could not add the Codex reviewer', name, (e as Error).message);
-    }
-    team.order({ kind: 'session', sessionId: head.id }, START_ORDER(plan, text.trim(), reviewer?.id), via, true);
-    // started by the manager (not by the Head Coach's own create_project): the Head Coach should know it exists
-    if (via === 'New project') team.announceProject(project.id, head.id);
-    broadcast({ type: 'orders.done', done: store.listDoneOrders(), tasks: store.listTaskOrders() });
-    log.info('project started from an order', name, dirs.join(', '), via);
-    return head;
-  };
-  team.startProject = (name, folders, brief, plan) => startProject(name, folders, brief, plan, 'New project · Head Coach');
-  const routines = new Routines(store, team, (list) => broadcast({ type: 'routines', routines: list }));
   server.on('request', (req, res) => {
     if (!team.handleHttp(req, res)) res.writeHead(404).end();
   });
@@ -404,7 +315,6 @@ async function main(): Promise<void> {
       // the sessions that run now: after a shutdown that stops them, the next start offers to bring them back
       if (killSessions) store.setKv('lastLive', { at: Date.now(), ids: sessions.list().filter((x) => sessions.isLive(x.id)).map((x) => x.id) });
       sessions.dispose();
-      routines.dispose();
       // a plain shutdown / restart keeps the sessions: their holders carry the processes to the next daemon
       if (killSessions) sessions.killAll();
       else sessions.detachAll();
@@ -448,8 +358,8 @@ async function main(): Promise<void> {
         return;
       }
       case 'project.close': {
-        // stop every session of the project and its parts (resumable: Claude hibernates with its resume id), pause the
-        // routines that order them; the layout and history stay in the store
+        // stop every session of the project and its parts (resumable: Claude hibernates with its resume id); the layout
+        // and history stay in the store
         const top = store.listProjects().find((p) => p.id === msg.id);
         if (!top || top.parentId) throw new Error('Only a project (not a part) can be closed');
         const ids = new Set([top.id, ...store.listProjects().filter((p) => p.parentId === top.id).map((p) => p.id)]);
@@ -462,27 +372,18 @@ async function main(): Promise<void> {
             sessions.kill(s.id); // no resume id yet: stop it; it can still be restarted
           }
         }
-        const memberIds = new Set(members.map((s) => s.id));
-        for (const r of routines.list()) {
-          const hit =
-            (r.target.kind === 'project' && ids.has(r.target.projectId)) ||
-            (r.target.kind === 'projects' && r.target.projectIds.some((id) => ids.has(id))) ||
-            (r.target.kind === 'session' && memberIds.has(r.target.sessionId));
-          if (!hit || !r.enabled) continue;
-          routines.save({ id: r.id, name: r.name, target: r.target, text: r.text, enabled: false, ...(r.dailyAt ? { dailyAt: r.dailyAt } : { everyMinutes: r.everyMinutes ?? 60 }) });
-        }
         store.setProjectClosed(top.id, true);
         broadcast({ type: 'projects', projects: store.listProjects() });
         log.info('project closed', top.name, `${members.length} session(s)`);
         return;
       }
       case 'project.export': {
-        const { name, file } = exportProject({ store, sessions, team, routines }, msg.id);
+        const { name, file } = exportProject({ store, sessions }, msg.id);
         sendTo(ws, { type: 'project.exported', name, data: JSON.stringify(file, null, 2) });
         return;
       }
       case 'project.import': {
-        const { project, missing } = importProject({ store, sessions, team, routines }, msg.data);
+        const { project, missing } = importProject({ store, sessions }, msg.data);
         broadcast({ type: 'projects', projects: store.listProjects() });
         pushInbox();
         log.info('project opened from file', project.name, missing ? `(${missing} folder(s) missing)` : '');
@@ -595,7 +496,6 @@ async function main(): Promise<void> {
       }
       case 'order.done':
         store.setOrderDone(msg.id, msg.done);
-        broadcast({ type: 'orders.done', done: store.listDoneOrders(), tasks: store.listTaskOrders() });
         return;
       case 'project.rename': {
         const name = msg.name.trim();
@@ -616,7 +516,7 @@ async function main(): Promise<void> {
         team.setAutopilot(msg.id, msg.on, msg.leadId);
         return;
       case 'project.open': {
-        // sessions stay stopped until they get work (a delivery wakes them); paused routines stay paused
+        // sessions stay stopped until they get work (a delivery wakes them)
         store.setProjectClosed(msg.id, false);
         broadcast({ type: 'projects', projects: store.listProjects() });
         return;
@@ -673,20 +573,6 @@ async function main(): Promise<void> {
         clients.get(ws)?.add(session.id);
         return;
       }
-      case 'project.start': {
-        const head = startProject(msg.name, msg.folders, msg.text, msg.plan);
-        clients.get(ws)?.add(head.id);
-        return;
-      }
-      case 'team.organize': {
-        // the head coach first (it organizes); then the order, in the manager's name
-        const top = store.listProjects().find((p) => p.id === msg.projectId && !p.parentId);
-        if (!top) throw new Error('Choose a project (not a part)');
-        const head = sessions.list().find((s) => s.role === 'head' && s.projectId === top.id) ?? team.createHead(top.id);
-        clients.get(ws)?.add(head.id);
-        team.order({ kind: 'session', sessionId: head.id }, ORGANIZE_ORDER, 'Organize Team');
-        return;
-      }
       case 'usage.report': {
         const report = usageReport(
           sessions.list().map((s) => ({ id: s.id, ...(s.resumeId ? { resumeId: s.resumeId } : {}), title: s.title, role: s.role, agent: s.agent, projectId: s.projectId })),
@@ -694,51 +580,6 @@ async function main(): Promise<void> {
           msg.outside
         );
         sendTo(ws, { type: 'usage.report', report });
-        return;
-      }
-      case 'head.create': {
-        const session = team.createHead(msg.projectId);
-        clients.get(ws)?.add(session.id);
-        return;
-      }
-      case 'session.setRole':
-        team.setRole(msg.id, msg.role, msg.quiet === true);
-        return;
-      case 'team.order': {
-        // the secret demo orders (/demo shop, /demo stop, /demo reset) set up / pause / remove the built-in demo team
-        const demo = parseDemoCommand(msg.text);
-        if (demo) {
-          runDemo(demo, {
-            store,
-            sessions,
-            team,
-            routines,
-            onProjects: () => broadcast({ type: 'projects', projects: store.listProjects() }),
-            notify: (text, sessionId) => {
-              store.addInbox(sessionId, 'report', text, false, sessionId);
-              pushInbox();
-            },
-            deleteProject
-          });
-          return;
-        }
-        const to = team.order(msg.target, msg.text, undefined, msg.task === true);
-        if (msg.task) broadcast({ type: 'orders.done', done: store.listDoneOrders(), tasks: store.listTaskOrders() });
-        log.info('team order to', to);
-        return;
-      }
-      case 'routine.save':
-        routines.save(msg.routine);
-        return;
-      case 'routine.delete':
-        routines.delete(msg.id);
-        return;
-      case 'routine.run':
-        routines.run(msg.id);
-        return;
-      case 'coach.create': {
-        const session = team.createCoach(msg.projectId, msg.agent);
-        clients.get(ws)?.add(session.id);
         return;
       }
       case 'session.input':
@@ -873,11 +714,8 @@ async function main(): Promise<void> {
           inbox: store.listInbox(),
           usage: collectUsage(),
           agents,
-          routines: routines.list(),
           ledger: team.ledger.list(),
           restorable: restorable(),
-          doneOrders: store.listDoneOrders(),
-          taskOrders: store.listTaskOrders()
         });
         log.info(`client connected (${msg.client}); clients=${clients.size}`);
         return;

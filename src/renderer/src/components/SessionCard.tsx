@@ -307,7 +307,6 @@ function CardMenu({ session: s, x, y, onClose }: { session: Session; x: number; 
     </button>
   );
   const live = s.status === 'working' || s.status === 'waiting' || s.status === 'starting';
-  const projectHasCoach = useStore((st) => [...st.sessions.values()].some((o) => o.role === 'coach' && o.projectId === s.projectId));
   // Autopilot for this one session: a project without a Coach is carried on by the session itself
   const root = useStore((st) => rootProject(s.projectId, st.projects));
   const rootHasHead = useStore((st) => !!root && [...st.sessions.values()].some((o) => o.role === 'head' && o.projectId === root.id));
@@ -354,8 +353,6 @@ Tokens keep being used until then.`
       {item('External Terminal', () => void window.desktop.openExternalTerminal(s.cwd))}
       {item('Export Log', () => exportSession(s.id))}
       {s.agent === 'claude' && s.role === 'player' && root && !rootHasHead && item(apOnHere ? 'Autopilot: Turn off' : 'Autopilot: keep going while I am away…', toggleAutopilot)}
-      {s.role === 'player' && !projectHasCoach && item('Make Coach', () => send({ type: 'session.setRole', id: s.id, role: 'coach' }))}
-      {s.role === 'coach' && s.folderId && item('Back to Player', () => send({ type: 'session.setRole', id: s.id, role: 'player' }))}
       <div className="sep" />
       {item('Remove Session', () => {
         removeSession(s.id);

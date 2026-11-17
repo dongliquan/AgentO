@@ -22,7 +22,6 @@ interface PickerState {
 }
 
 /** Coaches ask and review; they may run on another vendor. Players (coding) stay on Claude. */
-const COACH_KINDS: AgentKind[] = ['claude', 'codex', 'gemini'];
 
 export function ProjectTree(): JSX.Element {
   const projects = useStore((s) => s.projects);
@@ -30,7 +29,6 @@ export function ProjectTree(): JSX.Element {
   const [expanded, toggle] = useExpanded();
 
   const [picker, setPicker] = useState<PickerState | null>(null);
-  const [coachPicker, setCoachPicker] = useState<{ x: number; y: number; projectId: string } | null>(null);
   const openNewSession = useStore((s) => s.openNewSession);
 
   // expand every project by default (once)
@@ -247,19 +245,6 @@ Not touched: your folders on disk and the Claude / Codex conversation files.`)) 
               );
             })}
         </div>
-      )}
-      {coachPicker && (
-        <AgentPicker
-          x={coachPicker.x}
-          y={coachPicker.y}
-          kinds={COACH_KINDS}
-          title="Coach runs on"
-          onPick={(agent) => {
-            if (agent === 'claude' || agent === 'codex' || agent === 'gemini') send({ type: 'coach.create', projectId: coachPicker.projectId, agent });
-            setCoachPicker(null);
-          }}
-          onClose={() => setCoachPicker(null)}
-        />
       )}
       {picker && (
         <AgentPicker

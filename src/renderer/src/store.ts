@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { useGitSubjects } from '@/lib/gitSubjects';
-import type { AgentConnection, ClaudeSessionInfo, FsEntry, InboxItem, Project, Routine, ServerMessage, Session, SessionLast, SessionStatus, TaskRec, UsageInfo, UsageReport } from '@shared/protocol';
+import type { AgentConnection, ClaudeSessionInfo, FsEntry, InboxItem, Project, ServerMessage, Session, SessionLast, SessionStatus, TaskRec, UsageInfo, UsageReport } from '@shared/protocol';
 import type { AgentDefEx } from '@shared/extra';
 import { emitTerm } from '@/lib/termbus';
 import { appendBuffer, dropBuffer, setBuffer } from '@/lib/buffers';
@@ -44,7 +44,6 @@ export interface AppState {
   sessions: Map<string, Session>;
   inbox: InboxItem[];
   /** repeating orders (Manager tab) */
-  routines: Routine[];
   /** the daemon's task ledger by key ("<project>/#T12") */
   ledger: Map<string, TaskRec>;
   /** where stopped sessions left off (asked for by LastInfoWatcher) */
@@ -89,7 +88,6 @@ export interface AppState {
   agentConnections: AgentConnection[] | null;
   claudeSessions: { path: string; items: ClaudeSessionInfo[] } | null;
   /** the manager's orders marked done (Tasks): order record id → when */
-  doneOrders: Record<string, number>;
   /** Quick Open file search: the latest answer (ref = the query it answers) */
   fileSearch: { ref: string; items: { path: string; root: string }[] } | null;
   activeTabSessionId: string | null;
@@ -184,7 +182,6 @@ export const useStore = create<AppState>((set, get) => ({
   projects: [],
   sessions: new Map(),
   inbox: [],
-  routines: [],
   ledger: new Map(),
   lastInfo: new Map(),
   restorable: { at: 0, ids: [] },
@@ -220,7 +217,6 @@ export const useStore = create<AppState>((set, get) => ({
   agentConnections: null,
   claudeSessions: null,
   fileSearch: null,
-  doneOrders: {},
   activeTabSessionId: null,
 
   fsLists: new Map(),
@@ -240,8 +236,6 @@ export const useStore = create<AppState>((set, get) => ({
           projects: msg.projects,
           sessions,
           inbox: msg.inbox,
-          doneOrders: msg.doneOrders ?? {},
-          routines: msg.routines ?? [],
           ledger: new Map((msg.ledger ?? []).map((r) => [r.key, r])),
           restorable: msg.restorable ?? { at: 0, ids: [] },
           usage: msg.usage,
@@ -324,17 +318,11 @@ export const useStore = create<AppState>((set, get) => ({
         set({ ledger });
         break;
       }
-      case 'routines':
-        set({ routines: msg.routines });
-        break;
       case 'usage.report':
         set({ usageReport: msg.report });
         break;
       case 'agents.status':
         set({ agentConnections: msg.items });
-        break;
-      case 'orders.done':
-        set({ doneOrders: msg.done });
         break;
       case 'fs.search.result':
         set({ fileSearch: { ref: msg.ref, items: msg.items } });

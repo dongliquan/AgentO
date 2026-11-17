@@ -396,24 +396,15 @@ export type ClientMessage =
    * Start a new project from an order: AgentO creates the project, its folders and its head coach, and hands it the
    * brief; the head coach designs the parts and creates the players. plan: report the plan and wait for the go.
    */
-  | { type: 'project.start'; name: string; folders: string[]; text: string; plan: boolean }
   /** create the project's head coach if needed and have it organize the sessions into parts with coaches */
-  | { type: 'team.organize'; projectId: string }
   | { type: 'claude.sessions.import'; projectId: string; folderId: string; ids: string[]; titles?: Record<string, string> }
   | { type: 'folder.add'; projectId: string; path: string; autoTrust?: boolean }
   | { type: 'folder.remove'; id: string }
   /** point a project folder at another place on disk (sessions already in it keep their own working folder) */
   | { type: 'folder.update'; id: string; path: string }
   | { type: 'session.create'; projectId: string; folderId: string; agent: AgentKind; title?: string; command?: string; args?: string[]; cols?: number; rows?: number; mode?: SessionMode; model?: string }
-  | { type: 'head.create'; projectId?: string }      // one head coach per top-level project
-  | { type: 'coach.create'; projectId: string; agent?: 'claude' | 'codex' | 'gemini' } // one coach per project; default claude
   /** player ⇄ playing coach; quiet: a stopped session is not woken for the note (it rides along with its next work) */
-  | { type: 'session.setRole'; id: string; role: 'coach' | 'player'; quiet?: boolean }
-  | { type: 'team.order'; target: TeamOrderTarget; text: string; task?: boolean }      // the user's order; task: added as a task (Tasks › Add Task)
   | { type: 'usage.report'; days: number; outside: boolean }   // Manager › Usage: token report for the last `days` days
-  | { type: 'routine.save'; routine: RoutineInput }   // create (no id) or update
-  | { type: 'routine.delete'; id: string }
-  | { type: 'routine.run'; id: string }               // run now (counts as a run)
   | { type: 'session.input'; id: string; data: string }
   | { type: 'session.resize'; id: string; cols: number; rows: number }
   | { type: 'session.attach'; id: string }          // request scrollback replay
@@ -447,11 +438,8 @@ export interface FsEntry {
 }
 
 export type ServerMessage =
-  | { type: 'welcome'; daemonPid: number; version: string; projects: Project[]; sessions: Session[]; inbox: InboxItem[]; usage: UsageInfo[]; agents: AgentDef[]; routines: Routine[]; ledger: TaskRec[]; restorable: { at: number; ids: string[] }; doneOrders: Record<string, number>; taskOrders: string[] }
-  /** Tasks: the manager's orders marked done (order record id → when) and the ones added as tasks explicitly */
-  | { type: 'orders.done'; done: Record<string, number>; tasks: string[] }
+  | { type: 'welcome'; daemonPid: number; version: string; projects: Project[]; sessions: Session[]; inbox: InboxItem[]; usage: UsageInfo[]; agents: AgentDef[]; ledger: TaskRec[]; restorable: { at: number; ids: string[] } }
   | { type: 'usage.report'; report: UsageReport }
-  | { type: 'routines'; routines: Routine[] }
   /** answer to project.export: the .agento file contents */
   | { type: 'project.exported'; name: string; data: string }
   | { type: 'claude.sessions'; path: string; items: ClaudeSessionInfo[] }
