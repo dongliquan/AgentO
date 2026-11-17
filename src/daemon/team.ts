@@ -513,9 +513,11 @@ export class Team {
     if (!s || (s.agent !== 'claude' && s.agent !== 'codex') || !s.pid) return;
     const key = `${id}:${s.pid}`;
     // cheap checks first: this runs on every output chunk
-    if (!this.trustable(s)) return;
     const out = this.sessions.outputSinceInput(id);
+    // every Claude session is started with AgentO's attachments folder (and a Coach with its project folders): the
+    // "Adding a new directory" question can come up in any of them, whatever folder the session works in
     if (s.agent === 'claude' && /new\s*directory/i.test(out)) this.autoAddDir(id, s, out);
+    if (!this.trustable(s)) return;
     if (this.trustAnswered.has(key)) return;
     if (!/trust/i.test(out)) return;
     const screen = plainTerminal(out);
@@ -535,7 +537,7 @@ export class Team {
   /**
    * Claude Code asks "Adding a new directory: <dir> … No, exit / Yes, add it" for every extra folder it is started with
    * (--add-dir: the project folders of a Coach). Left open it holds the Coach for good and swallows every message.
-   * Said yes for folders the manager registered in AgentO (or below one); anything else is left to the manager.
+   * Said yes for AgentO's own folders and the folders the manager registered (or below one), in any Claude session; anything else is left to the manager.
    */
   private autoAddDir(id: string, s: StoredSession, out: string): void {
     const screen = plainTerminal(out);
