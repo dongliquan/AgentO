@@ -1,3 +1,4 @@
+import { useDraft } from '@/lib/draft';
 import { parseTeamMessages, type TeamMessage } from '@/lib/teamMessage';
 import { DelegationStrip } from './Delegations';
 import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -1004,7 +1005,8 @@ const GO_REPLIES = [
 /** The message box under a session's conversation — also used for terminal agents (Codex) in the Session tab. */
 export function Composer({ session: s, quick, lastAt }: { session: Session; quick?: QuickReply | null; lastAt?: number }): JSX.Element {
   const nowTick = useNow(60_000);
-  const [text, setText] = useState('');
+  // what is typed stays when the view changes or the session is selected elsewhere (until it is sent)
+  const [text, setText] = useDraft<string>(`session.${s.id}.input`, '');
   const [picked, setPicked] = useState<string[]>([]);
   const [quickClosed, setQuickClosed] = useState<string | null>(null);
   const [severalFor, setSeveralFor] = useState<string | null>(null);
