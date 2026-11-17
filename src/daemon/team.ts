@@ -467,7 +467,8 @@ export class Team {
       this.onStatus(s);
       this.onFreshStatus(s);
     });
-    sessions.keepAwake = (id) => this.fresh.has(id);
+    // a Fresh start in progress, or a question / blocked task that waits for the manager, keeps the session awake
+    sessions.keepAwake = (id) => this.fresh.has(id) || this.ledger.openOf(id).some((r) => r.state === 'asking' || r.state === 'blocked');
     // every 2 minutes (an oversized conversation waits only a short pause; the others still need 25 idle minutes)
     if (AUTO_FRESH) setInterval(() => this.autoFresh(), 2 * 60_000).unref?.();
     sessions.on('data', (id) => {
@@ -1266,6 +1267,8 @@ export class Team {
     const root = this.rootOf(caller.projectId);
     if (target.role === 'head') return target.id === this.headOf(root)?.id && (caller.role === 'coach' || !this.coachOf(caller.projectId));
     if (target.projectId === caller.projectId) return true;
+    // no team in the project (plain sessions): sessions of the same project, its parts too, can ask each other
+    if (caller.role === 'player' && target.role === 'player' && root !== '' && this.rootOf(target.projectId) === root && !this.headOf(root)) return true;
     return caller.role === 'coach' && target.role === 'coach' && root !== '' && this.rootOf(target.projectId) === root;
   }
 
