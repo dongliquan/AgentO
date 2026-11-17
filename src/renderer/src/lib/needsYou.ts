@@ -28,15 +28,18 @@ const ASKS = /\?|까요|할지|할까|정해\s?주세요|골라\s?주세요|선�
 const OPTIONAL = /(?:있으면|있으시면|원하시면|필요하면|필요하시면|필요해지면|생기면|안\s?보이면|문제가\s?있으면|이의가\s?있으면)\s*(?:언제든\s*)?(?:알려|말씀|다시\s?꺼내)[^.?!\n]{0,12}/g;
 const GENERIC = /(새\s?(?:주문|지시|요청)|다른\s?(?:주문|지시|일)|추가로\s?필요).{0,20}(있으면|있으시면)|if you (?:have|need) anything/i;
 
+// a list of what was already waiting before this answer ("이전부터 대기 중인 것", "still open from earlier")
+const STANDING = /이전부터|이전에\s?(?:묻|올린|알린)|기존(?:에)?\s?(?:대기|보류)|대기\s?중인\s?것|보류\s?중|still (?:open|pending|waiting)|carried over|from earlier|previously (?:asked|raised)/i;
+
 /** The asking tail of a report, or null when it does not ask the manager anything. */
-export function askingTail(text: string): string | null {
+export function askingTail(text: string, clip = true): string | null {
   const body = text.replace(/^[^:\n]{0,120}?(?:→ Manager \(you\)|finished|replied|reported)\s*:\s*/, '');
   const paras = body.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
   // the last two paragraphs, without a generic closing line
   const tail = paras.slice(-2).filter((p) => !(GENERIC.test(p) && p.length < 120));
   const t = tail.join('\n\n');
   if (!t || !ASKS.test(t.replace(OPTIONAL, ''))) return null;
-  return t.length > 600 ? `…${t.slice(-600)}` : t;
+  return clip && t.length > 600 ? `…${t.slice(-600)}` : t;
 }
 
 /**
@@ -44,14 +47,22 @@ export function askingTail(text: string): string | null {
  * three decisions asked at once are not lost in the explanation. Empty when the answer asks nothing.
  */
 export function askedLines(text: string): string[] {
-  const tail = askingTail(text);
+  // not cut short: the heading a list hangs under must still be there
+  const tail = askingTail(text, false);
   if (!tail) return [];
   const out: string[] = [];
   const push = (line: string): void => {
     if (line.length >= 6 && ASKS.test(line.replace(OPTIONAL, ''))) out.push(line.length > 240 ? `${line.slice(0, 237)}…` : line);
   };
+  // lines under a heading like "이전부터 대기 중인 것" restate what has waited for a long time: not a new question
+  const parents: { indent: number; text: string }[] = [];
   for (const raw of tail.split(/\n+/)) {
     const line = raw.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, '').replace(/\*\*|__|`/g, '').trim();
+    const indent = raw.length - raw.trimStart().length;
+    while (parents.length && parents[parents.length - 1]!.indent >= indent) parents.pop();
+    const standing = parents.some((p) => STANDING.test(p.text));
+    parents.push({ indent, text: line });
+    if (standing) continue;
     // a list item is kept whole (its context is part of the question); a long line is cut into its sentences
     if (line.length <= 200) push(line);
     else for (const sentence of line.split(/(?<=[.?!。？])\s+/)) push(sentence.trim());
