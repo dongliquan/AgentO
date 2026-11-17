@@ -566,10 +566,6 @@ async function main(): Promise<void> {
         if (msg.mode !== undefined) opts.mode = msg.mode;
         if (msg.model) opts.modelPref = msg.model;
         const session = sessions.create(opts);
-        // a project with a head coach is laid out as a team: the new card joins its part's rows
-        const own = store.listProjects().find((p) => p.id === msg.projectId);
-        const root = own?.parentId ?? own?.id;
-        if (root && team.headOf(root)) team.arrange(root);
         clients.get(ws)?.add(session.id);
         return;
       }
@@ -733,8 +729,6 @@ async function main(): Promise<void> {
     });
     ws.on('error', (err) => log.warn('client socket error', err));
   });
-
-  team.resumeHeads();
 
   // periodic usage refresh (cheap)
   setInterval(() => {
