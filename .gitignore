@@ -17,3 +17,4 @@ dist-c/
 CLAUDE.md
 .ci-step.log
 dist-d/
+dist-*/
