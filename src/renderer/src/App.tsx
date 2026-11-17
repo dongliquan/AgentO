@@ -10,6 +10,7 @@ import { NewProjectDialog } from '@/components/NewProjectDialog';
 import { FileRefMenu } from '@/components/FileRefMenu';
 import { ProjectColorMenu } from '@/components/ProjectColorMenu';
 import { NeedsYouWatcher } from '@/components/NeedsYou';
+import { useLastInfoRequests } from '@/lib/lastInfo';
 import { AwayWatcher } from '@/components/AwayCard';
 import { DelegationWatcher } from '@/components/Delegations';
 import { PathMenu } from '@/components/PathMenu';
@@ -131,6 +132,7 @@ function handleKey(e: KeyboardEvent): void {
 
 export function App(): JSX.Element {
   useFollowSelection();
+  useLastInfoRequests();
   // the first start: what to call you, then the agent setup when Claude Code is not ready yet
   useEffect(() => {
     void firstRun();

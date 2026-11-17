@@ -11,6 +11,7 @@ import { useDelegations } from './Delegations';
 import { useFlow } from './OrderFlow';
 import { useReport, useTodos, saveTodos, newTodo } from './DailyReport';
 import { AwayCard } from './AwayCard';
+import { ResumeCard } from './ResumeCard';
 
 const NEED_LABEL = { prompt: 'Prompt', question: 'Question', context: 'Large chat' } as const;
 
@@ -87,6 +88,7 @@ export function TodayView(): JSX.Element {
         </button>
       </div>
       <AwayCard />
+      <ResumeCard />
       <div className="today-grid">
         <section className="today-card needs">
           <h3>Needs you <span className="count">{needs.length}</span></h3>

@@ -253,6 +253,13 @@ export interface TaskRec {
   note?: string;
 }
 
+/** Where a stopped session left off: what it was last asked, how its last answer ended, and when. */
+export interface SessionLast {
+  ask: string;
+  reply: string;
+  at: number;
+}
+
 export interface InboxItem {
   id: string;
   sessionId: string;
@@ -412,6 +419,8 @@ export type ClientMessage =
   | { type: 'session.kill'; id: string }
   | { type: 'session.restart'; id: string }
   | { type: 'session.resume'; id: string }
+  /** where these sessions left off (answered with session.last.result, in batches) */
+  | { type: 'session.last'; ids: string[] }
   | { type: 'session.hibernate'; id: string }
   | { type: 'session.update'; id: string; patch: Partial<Pick<Session, 'title' | 'color' | 'x' | 'y' | 'w' | 'h'>> }
   | { type: 'session.remove'; id: string }
@@ -435,7 +444,7 @@ export interface FsEntry {
 }
 
 export type ServerMessage =
-  | { type: 'welcome'; daemonPid: number; version: string; projects: Project[]; sessions: Session[]; inbox: InboxItem[]; usage: UsageInfo[]; agents: AgentDef[]; routines: Routine[]; ledger: TaskRec[]; doneOrders: Record<string, number>; taskOrders: string[] }
+  | { type: 'welcome'; daemonPid: number; version: string; projects: Project[]; sessions: Session[]; inbox: InboxItem[]; usage: UsageInfo[]; agents: AgentDef[]; routines: Routine[]; ledger: TaskRec[]; restorable: { at: number; ids: string[] }; doneOrders: Record<string, number>; taskOrders: string[] }
   /** Tasks: the manager's orders marked done (order record id → when) and the ones added as tasks explicitly */
   | { type: 'orders.done'; done: Record<string, number>; tasks: string[] }
   | { type: 'usage.report'; report: UsageReport }
@@ -463,6 +472,7 @@ export type ServerMessage =
   | { type: 'inbox.delta'; upsert: InboxItem[]; remove: string[] }
   /** task ledger rows that were added or changed */
   | { type: 'ledger.delta'; upsert: TaskRec[] }
+  | { type: 'session.last.result'; items: Record<string, SessionLast> }
   | { type: 'usage'; usage: UsageInfo[] }
   | { type: 'fs.list.result'; path: string; entries: FsEntry[] }
   | { type: 'fs.read.result'; path: string; content: string; truncated: boolean }

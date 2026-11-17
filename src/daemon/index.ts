@@ -10,7 +10,8 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket, type RawData } from 'ws';
-import { DAEMON_PORT_DEFAULT, type ClientMessage, type ServerMessage, type Session } from '@shared/protocol';
+import { DAEMON_PORT_DEFAULT, type ClientMessage, type ServerMessage, type Session, type SessionLast } from '@shared/protocol';
+import { lastInfo } from './lastinfo';
 import type { DaemonInfoFile } from '@shared/extra';
 import { attachmentsDir, dataDir, ensureDir, daemonJsonPath, daemonLockPipe, logsDir } from './paths';
 import { ensureMemory } from './memory';
@@ -320,6 +321,13 @@ async function main(): Promise<void> {
     broadcast({ type: 'routines', routines: store.listRoutines() });
     pushInbox();
   }
+  /** The sessions that were running when the daemon was last shut down with its sessions stopped and are still stopped. */
+  function restorable(): { at: number; ids: string[] } {
+    const saved = store.getKv<{ at: number; ids: string[] }>('lastLive');
+    if (!saved) return { at: 0, ids: [] };
+    const ids = saved.ids.filter((id) => sessions.get(id)?.status === 'hibernated');
+    return { at: saved.at, ids };
+  }
   function pushInbox(): void {
     if (inboxTimer) return;
     inboxTimer = setTimeout(() => {
@@ -393,6 +401,8 @@ async function main(): Promise<void> {
     log.info(`shutdown (killSessions=${killSessions})`);
     try {
       for (const id of [...chats.keys()]) dropChat(id);
+      // the sessions that run now: after a shutdown that stops them, the next start offers to bring them back
+      if (killSessions) store.setKv('lastLive', { at: Date.now(), ids: sessions.list().filter((x) => sessions.isLive(x.id)).map((x) => x.id) });
       sessions.dispose();
       routines.dispose();
       // a plain shutdown / restart keeps the sessions: their holders carry the processes to the next daemon
@@ -761,6 +771,24 @@ async function main(): Promise<void> {
       case 'session.resume':
         sessions.resume(msg.id);
         return;
+      case 'session.last': {
+        // a few at a time: reading a conversation file is not free, and a UI asks for every stopped session at once
+        const ids = [...new Set(msg.ids)].slice(0, 200);
+        const work = (): void => {
+          const batch = ids.splice(0, 8);
+          if (batch.length === 0) return;
+          const items: Record<string, SessionLast> = {};
+          for (const id of batch) {
+            const s = sessions.get(id);
+            const info = s ? lastInfo(s) : undefined;
+            if (info) items[id] = info;
+          }
+          if (Object.keys(items).length) sendTo(ws, { type: 'session.last.result', items });
+          setImmediate(work);
+        };
+        work();
+        return;
+      }
       case 'session.hibernate':
         sessions.hibernate(msg.id);
         return;
@@ -847,6 +875,7 @@ async function main(): Promise<void> {
           agents,
           routines: routines.list(),
           ledger: team.ledger.list(),
+          restorable: restorable(),
           doneOrders: store.listDoneOrders(),
           taskOrders: store.listTaskOrders()
         });

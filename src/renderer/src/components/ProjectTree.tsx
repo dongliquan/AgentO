@@ -482,8 +482,13 @@ function SessionIcon({ s }: { s: Session }): JSX.Element {
   const needs = s.permission !== undefined || (s.status === 'waiting' && s.attention === true) || asked;
   const badge = s.status === 'working' || s.status === 'starting' ? 'working' : needs ? 'needs' : st === 'limit' ? 'limit' : s.status === 'error' ? 'error' : null;
   const off = s.status === 'hibernated' || s.status === 'done';
+  // a stopped session says where it left off
+  const last = useStore((st) => (off ? st.lastInfo.get(s.id) : undefined));
+  const tip = last ? `${statusLabel(s)}
+Asked: ${last.ask}
+Left at: ${last.reply}` : statusLabel(s);
   return (
-    <span className={`tree-icon ${off ? 'off' : ''}`} title={statusLabel(s)}>
+    <span className={`tree-icon ${off ? 'off' : ''}`} title={tip}>
       <AgentIcon kind={s.agent} color={s.color} />
       {badge && <span className={`tree-badge ${badge}`} />}
     </span>

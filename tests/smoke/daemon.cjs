@@ -121,6 +121,7 @@ async function main() {
   let c = await connect(info);
   const welcome = await c.waitFor((m) => m.type === 'welcome');
   check('daemon starts and greets', !!welcome, `pid ${info.pid}, port ${info.port}`);
+  check('welcome carries the task ledger and the restorable list', Array.isArray(welcome?.ledger) && Array.isArray(welcome?.restorable?.ids), JSON.stringify(welcome?.restorable));
 
   // a second daemon on the same data folder must step aside (two would fight over the session holders)
   {

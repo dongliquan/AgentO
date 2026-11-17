@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { useGitSubjects } from '@/lib/gitSubjects';
-import type { AgentConnection, ClaudeSessionInfo, FsEntry, InboxItem, Project, Routine, ServerMessage, Session, SessionStatus, TaskRec, UsageInfo, UsageReport } from '@shared/protocol';
+import type { AgentConnection, ClaudeSessionInfo, FsEntry, InboxItem, Project, Routine, ServerMessage, Session, SessionLast, SessionStatus, TaskRec, UsageInfo, UsageReport } from '@shared/protocol';
 import type { AgentDefEx } from '@shared/extra';
 import { emitTerm } from '@/lib/termbus';
 import { appendBuffer, dropBuffer, setBuffer } from '@/lib/buffers';
@@ -47,6 +47,10 @@ export interface AppState {
   routines: Routine[];
   /** the daemon's task ledger by key ("<project>/#T12") */
   ledger: Map<string, TaskRec>;
+  /** where stopped sessions left off (asked for by LastInfoWatcher) */
+  lastInfo: Map<string, SessionLast>;
+  /** sessions that were running when the daemon last shut down with its sessions stopped, and are still stopped */
+  restorable: { at: number; ids: string[] };
   /** the last team message typed into a session — its card replays it in the message box */
   delivered: Record<string, { text: string; nonce: number }>;
   usage: UsageInfo[];
@@ -182,6 +186,8 @@ export const useStore = create<AppState>((set, get) => ({
   inbox: [],
   routines: [],
   ledger: new Map(),
+  lastInfo: new Map(),
+  restorable: { at: 0, ids: [] },
   delivered: {},
   usage: [],
   agents: [],
@@ -237,6 +243,7 @@ export const useStore = create<AppState>((set, get) => ({
           doneOrders: msg.doneOrders ?? {},
           routines: msg.routines ?? [],
           ledger: new Map((msg.ledger ?? []).map((r) => [r.key, r])),
+          restorable: msg.restorable ?? { at: 0, ids: [] },
           usage: msg.usage,
           agents: msg.agents as AgentDefEx[],
           lastError: null
@@ -303,6 +310,12 @@ export const useStore = create<AppState>((set, get) => ({
         const drop = new Set([...msg.remove, ...msg.upsert.map((i) => i.id)]);
         const inbox = [...msg.upsert, ...get().inbox.filter((i) => !drop.has(i.id))].sort((a, b) => b.createdAt - a.createdAt);
         set({ inbox });
+        break;
+      }
+      case 'session.last.result': {
+        const lastInfo = new Map(get().lastInfo);
+        for (const [id, v] of Object.entries(msg.items)) lastInfo.set(id, v);
+        set({ lastInfo });
         break;
       }
       case 'ledger.delta': {
