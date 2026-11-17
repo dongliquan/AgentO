@@ -999,7 +999,15 @@ const REPLAY_SEND_MS = 700;
 const GO_REPLIES = [
   { label: 'Go', text: '진행해줘' },
   { label: 'Steps', text: '순서대로 해줘' },
-  { label: 'Best', text: '추천대로 해줘' }
+  { label: 'Best', text: '추천대로 해줘' },
+  // the manager's standing routine for getting a branch ready to check
+  {
+    label: 'Branch',
+    text:
+      'branch 정리해줘. 표준 절차: 1) main 을 pull 한다. 2) 검증할 branch 를 최신 main 위로 rebase 한다. ' +
+      '3) 같은 기능의 commit 은 하나로 합친다(squash). 4) 내 작업 폴더에서 그 branch 를 checkout 하고 대기한다. ' +
+      '내가 검증하기 전에는 push 하지 않는다. 끝나면 branch 이름 · commit 목록 · 충돌이 있었는지를 짧게 알려줘.'
+  }
 ];
 
 /** The message box under a session's conversation — also used for terminal agents (Codex) in the Session tab. */
