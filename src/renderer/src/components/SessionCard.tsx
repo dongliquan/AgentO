@@ -5,7 +5,7 @@ import { useStore } from '@/store';
 import { send } from '@/client';
 import { countUse } from '@/lib/uiUsage';
 import { exportSession, focusTerminal, removeSession, selectAndReveal } from '@/commands';
-import { AGENT_LABELS, agentColor, basename, formatElapsed, displayTitle } from '@/lib/format';
+import { AGENT_LABELS, agentColor, basename, formatElapsed, displayTitle, rootProject } from '@/lib/format';
 import { RoleTag } from './RoleTag';
 import { DelegationChip, useDelegations } from './Delegations';
 import { ModelChip } from './ModelChip';
@@ -258,9 +258,15 @@ function Preview({ sessionId }: { sessionId: string }): JSX.Element {
 function Footer({ session: s, onAnswer, onFocusMode }: { session: Session; onAnswer: () => void; onFocusMode: () => void }): JSX.Element {
   const now = useNow(1000);
   const live = s.status === 'working' || s.status === 'waiting' || s.status === 'starting';
+  // this session carries its project on by itself (Autopilot without a Coach)
+  const apHere = useStore((st) => {
+    const r = rootProject(s.projectId, st.projects);
+    return r?.autopilot?.on === true && r.autopilot.leadId === s.id;
+  });
   return (
     <div className="card-footer">
       <span style={{ color: agentColor(s.agent, s.color) }}>{AGENT_LABELS[s.agent]}</span>
+      {apHere && <span className="ap-chip" title="Autopilot is on for this session — it keeps going while you are away (card menu to turn it off)">Autopilot</span>}
       {/* the model under the session, next to its CLI: click to pick another */}
       <ModelChip session={s} />
       <span>·</span>
@@ -305,6 +311,26 @@ function CardMenu({ session: s, x, y, onClose }: { session: Session; x: number; 
   );
   const live = s.status === 'working' || s.status === 'waiting' || s.status === 'starting';
   const projectHasCoach = useStore((st) => [...st.sessions.values()].some((o) => o.role === 'coach' && o.projectId === s.projectId));
+  // Autopilot for this one session: a project without a Coach is carried on by the session itself
+  const root = useStore((st) => rootProject(s.projectId, st.projects));
+  const rootHasHead = useStore((st) => !!root && [...st.sessions.values()].some((o) => o.role === 'head' && o.projectId === root.id));
+  const autopilot = root?.autopilot;
+  const apOnHere = autopilot?.on === true && autopilot.leadId === s.id;
+  const toggleAutopilot = (): void => {
+    if (!root) return;
+    if (apOnHere) {
+      send({ type: 'project.autopilot', id: root.id, on: false });
+      return;
+    }
+    const ok = window.confirm(
+      `Switch Autopilot on for "${s.title}"?
+
+While you are away it first writes down what "finished" means and what is still open (the project memory, section Open), then keeps working through it on its own, deciding open questions with the option it recommends. It stops by itself when nothing is open, after 6 continues in an hour, or after 2 continues without progress.
+
+Tokens keep being used until then.`
+    );
+    if (ok) send({ type: 'project.autopilot', id: root.id, on: true, leadId: s.id });
+  };
   return (
     <div className="popover" ref={ref} style={{ left: Math.max(4, x), top: y }} onPointerDown={(e) => e.stopPropagation()}>
       {item('Rename (F2)', () => window.dispatchEvent(new CustomEvent('asm:rename', { detail: { sessionId: s.id } })))}
@@ -330,6 +356,7 @@ function CardMenu({ session: s, x, y, onClose }: { session: Session; x: number; 
       {item('Open in VS Code', () => void window.desktop.openInVsCode(s.cwd))}
       {item('External Terminal', () => void window.desktop.openExternalTerminal(s.cwd))}
       {item('Export Log', () => exportSession(s.id))}
+      {s.agent === 'claude' && s.role === 'player' && root && !rootHasHead && item(apOnHere ? 'Autopilot: Turn off' : 'Autopilot: keep going while I am away…', toggleAutopilot)}
       {s.role === 'player' && !projectHasCoach && item('Make Coach', () => send({ type: 'session.setRole', id: s.id, role: 'coach' }))}
       {s.role === 'coach' && s.folderId && item('Back to Player', () => send({ type: 'session.setRole', id: s.id, role: 'player' }))}
       <div className="sep" />

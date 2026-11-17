@@ -21,6 +21,7 @@ import { TeamLog } from './TeamLog';
 import { FilesPanel } from './FilesPanel';
 import { WebPanel } from './WebPanel';
 import { TAB_ORDER, useDock } from '@/lib/dock';
+import { TEAM_TABS, useTeamMode } from '@/lib/teamMode';
 import { ShareSplitter } from './Splitter';
 import { threadsOf } from '@/lib/closed';
 import { pieceResult } from '@/lib/threads';
@@ -93,7 +94,8 @@ export function RightPanel(): JSX.Element {
   const session = useStore((s) => (s.selectedId ? s.sessions.get(s.selectedId) : undefined));
   const docked = useDock((s) => s.docked);
   const dock = useDock((s) => s.dock);
-  const here = TAB_ORDER.filter((t) => !docked.includes(t));
+  const team = useTeamMode((t) => t.team);
+  const here = TAB_ORDER.filter((t) => !docked.includes(t) && (team || !TEAM_TABS.includes(t)));
   // the chosen tab, unless it is docked (or Session without a session): then the first tab still in the panel
   const want = rightTab === 'detail' && !session ? 'orders' : rightTab;
   const tab = here.includes(want) ? want : here.find((t) => t !== 'detail' || session) ?? here[0]!;
@@ -131,7 +133,9 @@ export function RightPanel(): JSX.Element {
  * window (dragged, remembered); panels window: a third of the width.
  */
 export function SecondPanel({ panels = false }: { panels?: boolean }): JSX.Element | null {
-  const docked = useDock((s) => s.docked);
+  const team = useTeamMode((t) => t.team);
+  const dockedAll = useDock((s) => s.docked);
+  const docked = team ? dockedAll : dockedAll.filter((t) => !TEAM_TABS.includes(t));
   const undock = useDock((s) => s.undock);
   const shownTab = useDock((s) => s.shown);
   const setShown = useDock((s) => s.setShown);

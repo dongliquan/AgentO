@@ -11,6 +11,7 @@ import { useDelegations } from './Delegations';
 import { useFlow } from './OrderFlow';
 import { useReport, useTodos, saveTodos, newTodo } from './DailyReport';
 import { AwayCard } from './AwayCard';
+import { useTeamMode } from '@/lib/teamMode';
 import { ResumeCard } from './ResumeCard';
 
 const NEED_LABEL = { prompt: 'Prompt', question: 'Question', context: 'Large chat' } as const;
@@ -22,6 +23,7 @@ const NEED_LABEL = { prompt: 'Prompt', question: 'Question', context: 'Large cha
  */
 export function TodayView(): JSX.Element {
   const now = useNow(60_000);
+  const team = useTeamMode((t) => t.team);
   const sessions = useStore((s) => s.sessions);
   const projects = useStore((s) => s.projects);
   const threads = useOpenThreads();
@@ -83,9 +85,9 @@ export function TodayView(): JSX.Element {
           <b className={needs.length ? 'warn' : ''}>{needs.length}</b> need you · <b>{working.filter((s) => s.status === 'working').length}</b> working · <b>{doneCount}</b> done · <b>{openTodos}</b> to do
         </span>
         <span className="grow" />
-        <button className="btn sm" onClick={() => useReport.getState().show()} title="The Report — any day's done list and to-dos">
+        {team && <button className="btn sm" onClick={() => useReport.getState().show()} title="The Report — any day's done list and to-dos">
           Report
-        </button>
+        </button>}
       </div>
       <AwayCard />
       <ResumeCard />
@@ -125,6 +127,7 @@ export function TodayView(): JSX.Element {
           })}
         </section>
 
+        {team && (
         <section className="today-card done">
           <h3>Done today <span className="count">{doneCount}</span></h3>
           {doneCount === 0 && <div className="muted today-empty">No feature finished yet today.</div>}
@@ -142,6 +145,7 @@ export function TodayView(): JSX.Element {
             </div>
           ))}
         </section>
+        )}
 
         <section className="today-card todo">
           <h3>To do <span className="count">{openTodos}</span></h3>

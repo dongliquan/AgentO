@@ -93,6 +93,14 @@ const AUTOPILOT_RULES =
   '- Keep handing the next pieces of the plan to the players, check each result before the next piece, and use the reviewer when there is one. Never end your answer with a question.\n' +
   '- Work only on what is still open: unfinished orders, the memory sections Open and Decisions. Never report again what was already reported; do not repeat or summarize finished work.\n' +
   '- When nothing is open any more, answer with only the line `AUTOPILOT DONE` (no report). When the whole plan was finished and checked in this run, send one `report_up` with the new results first, and end your answer with `AUTOPILOT DONE`.';
+/** Autopilot for a single session (no Coach): it does the work itself, one open piece at a time */
+const AUTOPILOT_RULES_SOLO =
+  '[AgentO Autopilot] The manager is away; keep working on this project without them.\n' +
+  '- Do not stop to ask the manager. When a decision is open, choose the option you recommend, do it, and record it with `update_memory` (section Decisions, one line: what and why). Say it in your answer as "Assumed: …" — do not wait for an answer.\n' +
+  '- Only what nobody but the manager can do (credentials, passwords, access to production, destructive or irreversible actions) is skipped: add one line to the memory section Open ("Manager: …") and carry on with the other work.\n' +
+  '- Do the work yourself, one open piece at a time: build or test each piece before the next, and remove its line from the memory section Open with `update_memory` when it is finished and checked. Never end your answer with a question.\n' +
+  '- Work only on what is still open. Never repeat or summarize finished work.\n' +
+  '- When nothing is open any more, answer with only the line `AUTOPILOT DONE`. When the whole plan was finished and checked in this run, say what is new in a few lines first, and end your answer with `AUTOPILOT DONE`.';
 /** a rider (a note that only goes along with another message) is delivered on its own after this long */
 const RIDE_MAX_MS = 15 * 60_000;
 /** an FYI to a coach about what the manager told a player directly: it goes along with the coach's next work, or is dropped */
@@ -1445,19 +1453,23 @@ export class Team {
   /* ---------- autopilot ---------- */
 
   /** Switch a project's autopilot on or off (the Coach is told the rules when it goes on). */
-  setAutopilot(projectId: string, on: boolean): void {
+  setAutopilot(projectId: string, on: boolean, leadId?: string): void {
     const root = this.project(projectId);
     if (!root || root.parentId) throw new Error('Autopilot belongs to a whole project');
-    const coach = this.all().find((x) => x.role === 'head' && x.projectId === root.id);
+    const head = this.all().find((x) => x.role === 'head' && x.projectId === root.id);
+    // with a Coach the Coach leads; without one a single session does the work itself
+    const solo = !head && leadId ? this.sessions.get(leadId) : undefined;
+    const coach = head ?? solo;
+    if (solo && this.rootOf(solo.projectId) !== root.id) throw new Error('That session is not in this project');
     if (on) {
-      if (!coach) throw new Error('The project has no Coach yet');
+      if (!coach) throw new Error('The project has no Coach, and no session was picked to carry it on');
       if (coach.agent !== 'claude') throw new Error('Autopilot needs a Claude Coach');
       if (this.isClosed(root.id)) throw new Error('Open the project first');
       const now = Date.now();
-      this.store.setAutopilot(root.id, { on: true, since: now, continues: 0, lastAt: now, note: 'Switched on' });
+      this.store.setAutopilot(root.id, { on: true, since: now, continues: 0, lastAt: now, note: 'Switched on', ...(solo ? { leadId: solo.id } : {}) });
       this.apRun.set(root.id, { at: 0, idle: 0, window: [] });
       this.apActive.set(root.id, now);
-      this.enqueue(coach.id, { text: `${AUTOPILOT_RULES}\nAutopilot is on now. First, in this answer: write down what "finished" means for this project and what is still open — read the plan documents and the memory, then record it with \`update_memory\` in the section Open (one line per open piece, "Done when: …" as the first line). Then start on it. If nothing is open, answer only AUTOPILOT DONE — do not report finished work again.`, wake: true });
+      this.enqueue(coach.id, { text: `${solo ? AUTOPILOT_RULES_SOLO : AUTOPILOT_RULES}\nAutopilot is on now. First, in this answer: write down what "finished" means for this project and what is still open — read the plan documents and the memory, then record it with \`update_memory\` in the section Open (one line per open piece, "Done when: …" as the first line). Then start on it. If nothing is open, answer only AUTOPILOT DONE — do not report finished work again.`, wake: true });
     } else {
       const cur = root.autopilot;
       this.store.setAutopilot(root.id, cur ? { ...cur, on: false, lastAt: Date.now(), note: 'Switched off' } : null);
@@ -1476,7 +1488,9 @@ export class Team {
 
   /** A Coach that rests with autopilot on is looked at after a short settle (a new turn cancels it). */
   private autopilotWatch(s: Session): void {
-    if (s.role !== 'head' || !s.projectId) return;
+    const lead = this.rootProject(s.projectId)?.autopilot?.leadId;
+    // the project's Coach, or the one session a Coach-less project's autopilot was switched on for
+    if (lead ? lead !== s.id : s.role !== 'head' || !s.projectId) return;
     const prev = this.apTimers.get(s.id);
     if (s.status !== 'waiting') {
       if (prev) {
@@ -1485,7 +1499,7 @@ export class Team {
       }
       return;
     }
-    if (!this.project(s.projectId)?.autopilot?.on) return;
+    if (!this.rootProject(s.projectId)?.autopilot?.on) return;
     if (prev) clearTimeout(prev);
     this.apTimers.set(
       s.id,
@@ -1497,18 +1511,19 @@ export class Team {
   }
 
   private autopilotSweep(): void {
-    for (const s of this.all()) if (s.role === 'head' && s.projectId && s.status === 'waiting' && !this.apTimers.has(s.id)) this.autopilotWatch(s);
+    for (const s of this.all()) if (s.status === 'waiting' && !this.apTimers.has(s.id)) this.autopilotWatch(s);
   }
 
   private autopilotCheck(coachId: string): void {
     const coach = this.sessions.get(coachId);
-    const root = coach ? this.project(coach.projectId) : undefined;
+    const root = coach ? this.rootProject(coach.projectId) : undefined;
     const ap = root?.autopilot;
     if (!coach || !root || !ap?.on || coach.status !== 'waiting') return;
     // closed, paused by the usage limit, or stuck on a prompt: not a pause to act on
     if (this.isClosed(root.id) || this.limited(coach) || this.needsAttention(coach)) return;
     // work is out, or something is on its way to the Coach: its results come back by themselves
-    const mine = this.all().filter((m) => m.id !== coach.id && this.rootOf(m.projectId) === root.id);
+    const solo = coach.role !== 'head';
+    const mine = solo ? [] : this.all().filter((m) => m.id !== coach.id && this.rootOf(m.projectId) === root.id);
     const busy = mine.some(
       (m) => m.status === 'working' || m.status === 'starting' || this.pending.get(m.id)?.from === coach.id || (this.outbox.get(m.id) ?? []).some((q) => q.from === coach.id)
     );
@@ -1538,7 +1553,7 @@ export class Team {
     this.store.setAutopilot(root.id, { ...ap, continues: n, lastAt: now, note: `Continue #${n}` });
     this.onProjects();
     this.enqueue(coach.id, {
-      text: `${AUTOPILOT_RULES}\nNothing is running now. Take the next open piece from the memory section Open and hand it out (remove a line from Open with \`update_memory\` when its piece is finished and checked); if Open is empty, answer only AUTOPILOT DONE (no report of finished work).`,
+      text: `${solo ? AUTOPILOT_RULES_SOLO : AUTOPILOT_RULES}\nNothing is running now. Take the next open piece from the memory section Open and ${solo ? 'do it yourself' : 'hand it out'} (remove a line from Open with \`update_memory\` when its piece is finished and checked); if Open is empty, answer only AUTOPILOT DONE (no report of finished work).`,
       wake: true
     });
     log.info('team: autopilot continue', root.name, n);

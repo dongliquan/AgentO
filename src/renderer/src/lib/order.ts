@@ -1,5 +1,6 @@
 import type { Project, Session } from '@shared/protocol';
 import { closedProjectIds } from './closedIds';
+import { hiddenInSimple } from './teamMode';
 
 /** Sessions in the sidebar tree's order, grouped by project (parts marked), for the Split and Tabs views. */
 export interface SessionGroup {
@@ -16,7 +17,7 @@ const bySortOrder = (a: Session, b: Session): number =>
 
 export function treeOrder(sessions: Map<string, Session>, projects: Project[]): SessionGroup[] {
   const closed = closedProjectIds(projects);
-  const all = [...sessions.values()].filter((s) => !closed.has(s.projectId));
+  const all = [...sessions.values()].filter((s) => !closed.has(s.projectId) && !hiddenInSimple(s));
   const byProject = new Map<string, Session[]>();
   for (const s of all) {
     if (s.role === 'head') continue;

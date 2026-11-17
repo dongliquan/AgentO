@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useStore, type ViewMode } from '@/store';
 import { autoArrange, fitAll, newSessionFor, newProject, runCommand } from '@/commands';
 import { kbd } from '@/lib/keys';
+import { useTeamMode } from '@/lib/teamMode';
 import { getThemePref, onThemeChange, setThemePref, type ThemePref } from '@/lib/theme';
 
 /** the three ways to lay out the live sessions; Timeline (a record of finished work) stands apart from them */
@@ -36,6 +37,7 @@ function PopOutIcon({ open }: { open: boolean }): JSX.Element {
 export function Toolbar(): JSX.Element {
   const viewMode = useStore((s) => s.viewMode);
   const focusMode = useStore((s) => s.focusMode);
+  const team = useTeamMode((t) => t.team);
   const onTimeline = viewMode === 'timeline';
   const onToday = viewMode === 'today';
   /** a record / overview page, not a session layout: the layout tools hide */
@@ -82,9 +84,9 @@ export function Toolbar(): JSX.Element {
         <button className={onToday ? 'active' : ''} onClick={() => setViewMode('today')} title={kbd('Today — what needs you, who is working, what got done, your to-dos (Ctrl+5)')}>
           Today
         </button>
-        <button className={onTimeline ? 'active' : ''} onClick={() => setViewMode('timeline')} title={kbd('Timeline — the features each project finished, by day (Ctrl+4)')}>
+        {team && <button className={onTimeline ? 'active' : ''} onClick={() => setViewMode('timeline')} title={kbd('Timeline — the features each project finished, by day (Ctrl+4)')}>
           Timeline
-        </button>
+        </button>}
       </div>
       <div className="breadcrumb">
         {onToday ? (
@@ -139,6 +141,7 @@ export function Toolbar(): JSX.Element {
       >
         <PopOutIcon open={detached} />
       </button>
+      <TeamToggle />
       <ThemeToggle />
     </div>
   );
@@ -150,6 +153,26 @@ const THEME_LABEL: Record<ThemePref, string> = { light: 'Light', dark: 'Dark' };
  * Light ⇄ dark, as in the shared theme spec (manager's correction #T48): an icon button only — the icon shows the
  * current theme (sun = light, moon = dark), the name is in the tooltip. Also View › Theme.
  */
+/** Team mode on/off: the Head Coach / Coach layers and their screens. Off = plain sessions. */
+function TeamToggle(): JSX.Element {
+  const team = useTeamMode((t) => t.team);
+  const set = useTeamMode((t) => t.set);
+  const title = team
+    ? 'Team mode is on (Head Coach, Coach, Manager, Inbox, Logs, Timeline) — click for plain sessions'
+    : 'Plain sessions — click to turn on team mode (Head Coach, Coach, Manager, Inbox, Logs, Timeline)';
+  return (
+    <button className={`icon-btn layout-toggle team-toggle ${team ? 'active' : ''}`} title={title} aria-label={title} aria-pressed={team} onClick={() => set(!team)}>
+      {/* two small people */}
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+        <circle cx="5.5" cy="5.5" r="2" fill="none" stroke="currentColor" />
+        <path d="M2 13c0-2.2 1.6-3.5 3.5-3.5S9 10.8 9 13" fill="none" stroke="currentColor" strokeLinecap="round" />
+        <circle cx="11" cy="6" r="1.7" fill="none" stroke="currentColor" />
+        <path d="M10.3 9.6c.3-.1.5-.1.7-.1 1.7 0 3 1.1 3 3.1" fill="none" stroke="currentColor" strokeLinecap="round" />
+      </svg>
+    </button>
+  );
+}
+
 function ThemeToggle(): JSX.Element {
   const [pref, setPref] = useState(getThemePref());
   useEffect(() => onThemeChange(() => setPref(getThemePref())), []);

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useExpanded } from './FileTree';
 import type { AgentKind, Folder, Project, Session } from '@shared/protocol';
 import { useStore } from '@/store';
+import { teamOnly, useTeamMode } from '@/lib/teamMode';
 import { send } from '@/client';
 import { organizeTeam, removeSession, renameProject, renameSession, saveProject, selectAndReveal } from '@/commands';
 import { askText } from '@/lib/prompt';
@@ -29,6 +30,7 @@ const COACH_KINDS: AgentKind[] = ['claude', 'codex', 'gemini'];
 export function ProjectTree(): JSX.Element {
   const projects = useStore((s) => s.projects);
   const sessions = useStore((s) => s.sessions);
+  const team = useTeamMode((t) => t.team);
   const [expanded, toggle] = useExpanded();
 
   const [picker, setPicker] = useState<PickerState | null>(null);
@@ -48,7 +50,7 @@ export function ProjectTree(): JSX.Element {
   const sessionsByProject = useMemo(() => {
     const m = new Map<string, Session[]>();
     for (const s of sessions.values()) {
-      if (s.role === 'head') continue;
+      if (s.role === 'head' || (!team && teamOnly(s))) continue;
       const arr = m.get(s.projectId) ?? [];
       arr.push(s);
       m.set(s.projectId, arr);
@@ -56,8 +58,8 @@ export function ProjectTree(): JSX.Element {
     const key = (s: Session): number => s.order ?? Number.MAX_SAFE_INTEGER;
     for (const arr of m.values()) arr.sort((a, b) => Number(b.role === 'coach') - Number(a.role === 'coach') || key(a) - key(b) || a.createdAt - b.createdAt);
     return m;
-  }, [sessions]);
-  const heads = useMemo(() => [...sessions.values()].filter((s) => s.role === 'head'), [sessions]);
+  }, [sessions, team]);
+  const heads = useMemo(() => [...sessions.values()].filter((s) => s.role === 'head' && team), [sessions, team]);
   const tops = projects.filter((p) => !p.parentId && !p.closed);
   const closedTops = projects.filter((p) => !p.parentId && p.closed);
   const partsOf = (id: string): Project[] => projects.filter((p) => p.parentId === id);

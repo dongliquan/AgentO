@@ -47,6 +47,8 @@ export interface AutopilotState {
   lastAt?: number;
   /** why it is off (finished / paused / no progress), or the last thing it did */
   note?: string;
+  /** a single session carries the project on (no Coach): the session that does the work itself */
+  leadId?: string;
 }
 
 export interface Project {
@@ -353,7 +355,8 @@ export type ClientMessage =
   | { type: 'project.close'; id: string }
   | { type: 'project.open'; id: string }
   | { type: 'project.setColor'; id: string; color: string }
-  | { type: 'project.autopilot'; id: string; on: boolean }
+  /** leadId: without a Coach, the one session that carries the project on by itself */
+  | { type: 'project.autopilot'; id: string; on: boolean; leadId?: string }
   | { type: 'project.rename'; id: string; name: string }
   /** Tasks: mark one of the manager's orders (its directive record id) done, or open again */
   | { type: 'order.done'; id: string; done: boolean }

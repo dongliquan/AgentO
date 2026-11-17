@@ -613,7 +613,7 @@ async function main(): Promise<void> {
         broadcast({ type: 'projects', projects: store.listProjects() });
         return;
       case 'project.autopilot':
-        team.setAutopilot(msg.id, msg.on);
+        team.setAutopilot(msg.id, msg.on, msg.leadId);
         return;
       case 'project.open': {
         // sessions stay stopped until they get work (a delivery wakes them); paused routines stay paused

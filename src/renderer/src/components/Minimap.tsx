@@ -2,6 +2,7 @@ import type React from 'react';
 import { useStore } from '@/store';
 import { useClosedSessionIds } from '@/lib/closed';
 import { pcStyle, projectColor } from '@/lib/format';
+import { hiddenInSimple } from '@/lib/teamMode';
 
 const W = 160;
 const H = 100;
@@ -25,7 +26,7 @@ export function Minimap({ containerRef }: { containerRef: React.RefObject<HTMLDi
   const projects = useStore((s) => s.projects);
 
   const items = [
-    ...[...sessions.values()].filter((s) => !closed.has(s.id)).map((s) => ({ x: s.x, y: s.y, w: s.w, h: s.h, color: STATUS_COLOR[s.status] ?? '#666' }))
+    ...[...sessions.values()].filter((s) => !closed.has(s.id) && !hiddenInSimple(s)).map((s) => ({ x: s.x, y: s.y, w: s.w, h: s.h, color: STATUS_COLOR[s.status] ?? '#666' }))
   ];
   if (items.length === 0) return null;
   // one frame per project (parts included) around its cards, in the project's colour, so projects read apart
