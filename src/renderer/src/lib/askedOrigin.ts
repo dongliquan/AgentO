@@ -43,7 +43,8 @@ const INPUT_WINDOW = 20 * 60_000;
 
 export function findOrigin(inbox: InboxItem[], sessionId: string, question: string, at: number): AskedOrigin {
   const mine = inbox.filter((i) => i.sessionId === sessionId && i.createdAt <= at + 60_000 && i.createdAt >= at - SOURCE_WINDOW);
-  const q = words(question);
+  // a "#T399" in the question is a reference to another piece of work, not what identifies this question
+  const q = words(question).filter((x) => !/^t\d+$/i.test(x.stem));
   // the session's own report that holds the question (to the manager or handed on). A question that carries a
   // distinctive word ("N1~N11") is repeated in every later report: the origin is the first one that says it.
   const reports = mine.filter((i) => i.kind === 'report' && i.fromId === sessionId).sort((x, y) => x.createdAt - y.createdAt);
@@ -62,14 +63,22 @@ export function findOrigin(inbox: InboxItem[], sessionId: string, question: stri
     }
   }
   if (!source) return {};
+  // when the order this report answers reached the session: work handed on counts only after that
+  const received = (taskId: string | undefined): number => {
+    let at = 0;
+    for (const it of inbox) if (it.kind === 'directive' && it.sessionId === sessionId && it.taskId === taskId && it.fromId !== sessionId) at = Math.max(at, it.createdAt);
+    return at;
+  };
+  let since = 0;
   const handedTo = (t: number): string | undefined => {
-    // the session this coach last handed work to before time t
+    // the session this coach last handed work to for that order, before time t
     let h: InboxItem | undefined;
     for (const it of inbox) {
-      if (it.kind === 'directive' && it.fromId === sessionId && it.sessionId !== sessionId && it.createdAt <= t + 60_000 && (!h || it.createdAt > h.createdAt)) h = it;
+      if (it.kind === 'directive' && it.fromId === sessionId && it.sessionId !== sessionId && it.createdAt >= since && it.createdAt <= t + 60_000 && (!h || it.createdAt > h.createdAt)) h = it;
     }
     return h?.sessionId;
   };
+  if (source.taskId) since = received(source.taskId);
   if (source.taskId) return { taskId: source.taskId, aboutId: handedTo(source.createdAt) };
   // a report without a number answers something it received just before: the closest in content
   const src = words(source.text.slice(0, 1500));

@@ -90,7 +90,8 @@ const AUTOPILOT_RULES =
   '- Do not stop to ask the manager. When a decision is open, choose the option you recommend, do it, and record it with `update_memory` (section Decisions, one line: what and why). Say it in your next `report_up` as "Assumed: …" with directive=false — do not wait for an answer.\n' +
   '- Only what nobody but the manager can do (credentials, passwords, access to production, destructive or irreversible actions) is skipped: add one line to the memory section Open ("Manager: …") and carry on with the other work.\n' +
   '- Keep handing the next pieces of the plan to the players, check each result before the next piece, and use the reviewer when there is one. Never end your answer with a question.\n' +
-  '- When the whole plan is finished and checked, send one final `report_up` with the results, and end your answer with the line `AUTOPILOT DONE`.';
+  '- Work only on what is still open: unfinished orders, the memory sections Open and Decisions. Never report again what was already reported; do not repeat or summarize finished work.\n' +
+  '- When nothing is open any more, answer with only the line `AUTOPILOT DONE` (no report). When the whole plan was finished and checked in this run, send one `report_up` with the new results first, and end your answer with `AUTOPILOT DONE`.';
 /** a rider (a note that only goes along with another message) is delivered on its own after this long */
 const RIDE_MAX_MS = 15 * 60_000;
 /** an FYI to a coach about what the manager told a player directly: it goes along with the coach's next work, or is dropped */
@@ -498,10 +499,11 @@ export class Team {
     const s = this.sessions.get(id);
     if (!s || (s.agent !== 'claude' && s.agent !== 'codex') || !s.pid) return;
     const key = `${id}:${s.pid}`;
-    if (this.trustAnswered.has(key)) return;
     // cheap checks first: this runs on every output chunk
     if (!this.trustable(s)) return;
     const out = this.sessions.outputSinceInput(id);
+    if (s.agent === 'claude' && /new\s*directory/i.test(out)) this.autoAddDir(id, s, out);
+    if (this.trustAnswered.has(key)) return;
     if (!/trust/i.test(out)) return;
     const screen = plainTerminal(out);
     const prompt = s.agent === 'claude' ? /Yes, I trust this folder/ : /Trust\s*and\s*continue/;
@@ -515,6 +517,34 @@ export class Team {
       } else this.sessions.input(id, '\r');
     }, 600);
     log.info('team: accepted folder trust for', s.title, s.cwd);
+  }
+
+  /**
+   * Claude Code asks "Adding a new directory: <dir> … No, exit / Yes, add it" for every extra folder it is started with
+   * (--add-dir: the project folders of a Coach). Left open it holds the Coach for good and swallows every message.
+   * Said yes for folders the manager registered in AgentO (or below one); anything else is left to the manager.
+   */
+  private autoAddDir(id: string, s: StoredSession, out: string): void {
+    const screen = plainTerminal(out);
+    const m = /Adding a new directory:\s*(\S.*?)\s*(?:This session|$)/im.exec(screen);
+    if (!m || !/Yes, add it/.test(screen)) return;
+    // the screen text has lost its spaces ("AgentOProjects"): compare without them
+    const squash = (p: string): string => path.resolve(p).toLowerCase().replace(/\s+/g, '');
+    const dir = squash(m[1]!);
+    const roots = this.store.listProjects().flatMap((p) => p.folders.map((f) => squash(f.path)));
+    roots.push(squash(path.join(os.homedir(), 'AgentO Projects')), squash(dataDir()));
+    const known = roots.some((root) => dir === root || dir.startsWith(root + path.sep));
+    if (!known) return;
+    const key = `${id}:${s.pid}:add:${dir}`;
+    if (Date.now() - (this.dismissed.get(key) ?? 0) < 30_000) return;
+    this.dismissed.set(key, Date.now());
+    this.notBefore.set(id, Date.now() + TRUST_SETTLE_MS);
+    // the cursor starts on "No, exit": ↓ to "Yes, add it", then Enter (a number key does nothing here)
+    setTimeout(() => {
+      this.sessions.input(id, '\x1b[B');
+      setTimeout(() => this.sessions.input(id, '\r'), 300);
+    }, 500);
+    log.info('team: added directory for', s.title, dir);
   }
 
   /** when each dialog was last dismissed in a session's process (it may come back: dismissed again after a minute) */
@@ -1371,7 +1401,7 @@ export class Team {
       this.store.setAutopilot(root.id, { on: true, since: now, continues: 0, lastAt: now, note: 'Switched on' });
       this.apRun.set(root.id, { at: 0, idle: 0, window: [] });
       this.apActive.set(root.id, now);
-      this.enqueue(coach.id, { text: `${AUTOPILOT_RULES}\nAutopilot is on now: carry on with the plan.`, wake: true });
+      this.enqueue(coach.id, { text: `${AUTOPILOT_RULES}\nAutopilot is on now: carry on with what is still open. If nothing is open, answer only AUTOPILOT DONE — do not report finished work again.`, wake: true });
     } else {
       const cur = root.autopilot;
       this.store.setAutopilot(root.id, cur ? { ...cur, on: false, lastAt: Date.now(), note: 'Switched off' } : null);
@@ -1452,7 +1482,7 @@ export class Team {
     this.store.setAutopilot(root.id, { ...ap, continues: n, lastAt: now, note: `Continue #${n}` });
     this.onProjects();
     this.enqueue(coach.id, {
-      text: `${AUTOPILOT_RULES}\nNothing is running now. Hand out the next pieces of the plan; if everything is finished and checked, report and end with AUTOPILOT DONE.`,
+      text: `${AUTOPILOT_RULES}\nNothing is running now. Hand out the next open pieces of the plan; if nothing is open, answer only AUTOPILOT DONE (no report of finished work).`,
       wake: true
     });
     log.info('team: autopilot continue', root.name, n);
