@@ -1,32 +1,24 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '@/store';
-import { useOpenThreads } from '@/lib/closed';
-import { buildTimeline, featureName, isFeature } from '@/lib/timeline';
 import { pcStyle, projectColor, relativeTime, rootProject, statusClass } from '@/lib/format';
-import { useGitSubjects } from '@/lib/gitSubjects';
 import { useNow } from '@/lib/hooks';
 import { selectAndReveal } from '@/commands';
 import { useNeedsIds, openNeed } from './NeedsYou';
-import { useDelegations } from './Delegations';
-import { useFlow } from './OrderFlow';
-import { useReport, useTodos, saveTodos, newTodo } from './DailyReport';
+import { useTodos, saveTodos, newTodo } from '@/lib/todos';
+import { AwayCard } from './AwayCard';
+import { ResumeCard } from './ResumeCard';
 
 const NEED_LABEL = { prompt: 'Prompt', question: 'Question', context: 'Large chat' } as const;
 
 /**
- * Today — the manager's home: what needs an answer, who is working on what, the features finished today, and the
- * to-do list for today. Built only from what AgentO already has (sessions, the team records, the report's to-dos);
- * nothing here asks a session anything.
+ * Today — what needs an answer, who is working, the sessions to pick up again, and the to-do list for today. Built
+ * only from what AgentO already has; nothing here asks a session anything.
  */
 export function TodayView(): JSX.Element {
   const now = useNow(60_000);
   const sessions = useStore((s) => s.sessions);
   const projects = useStore((s) => s.projects);
-  const threads = useOpenThreads();
-  const subjects = useGitSubjects((s) => s.subjects);
   const needs = useNeedsIds((s) => s.list);
-  const delegations = useDelegations((s) => s.byCoach);
-  const openFlow = useFlow((s) => s.open);
   const todos = useTodos();
   const [draft, setDraft] = useState('');
 
@@ -43,23 +35,15 @@ export function TodayView(): JSX.Element {
     return p ? { name: p.name, color: projectColor(p.id, projects) } : undefined;
   };
 
-  // working now: sessions in a turn, coordinators with work handed out
+  // working now: sessions in a turn
   const working = useMemo(
     () =>
       [...sessions.values()]
-        .filter((s) => s.status === 'working' || s.status === 'starting' || (delegations.get(s.id)?.length ?? 0) > 0)
+        .filter((s) => s.status === 'working' || s.status === 'starting')
         .sort((a, b) => Number(b.status === 'working') - Number(a.status === 'working') || a.title.localeCompare(b.title)),
-    [sessions, delegations]
+    [sessions]
   );
 
-  // finished today: the timeline's features since midnight, by project
-  const done = useMemo(() => {
-    const tl = buildTimeline(threads, sessions, projects, dayStart);
-    return tl
-      .map((p) => ({ ...p, rows: p.rows.filter((r) => r.kind === 'feature' && r.ts >= dayStart && isFeature(r)) }))
-      .filter((p) => p.rows.length > 0);
-  }, [threads, sessions, projects, dayStart]);
-  const doneCount = done.reduce((n, p) => n + p.rows.length, 0);
 
   const todayTodos = todos.filter((t) => t.day === today || (!t.doneAt && new Date(t.day).getTime() < dayStart));
   const openTodos = todayTodos.filter((t) => !t.doneAt).length;
@@ -78,13 +62,12 @@ export function TodayView(): JSX.Element {
         <h2>Today</h2>
         <span className="muted">{new Date(now).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</span>
         <span className="today-sum">
-          <b className={needs.length ? 'warn' : ''}>{needs.length}</b> need you · <b>{working.filter((s) => s.status === 'working').length}</b> working · <b>{doneCount}</b> done · <b>{openTodos}</b> to do
+          <b className={needs.length ? 'warn' : ''}>{needs.length}</b> need you · <b>{working.filter((s) => s.status === 'working').length}</b> working · <b>{openTodos}</b> to do
         </span>
         <span className="grow" />
-        <button className="btn sm" onClick={() => useReport.getState().show()} title="The Report — any day's done list and to-dos">
-          Report
-        </button>
       </div>
+      <AwayCard />
+      <ResumeCard />
       <div className="today-grid">
         <section className="today-card needs">
           <h3>Needs you <span className="count">{needs.length}</span></h3>
@@ -109,34 +92,15 @@ export function TodayView(): JSX.Element {
           {working.length === 0 && <div className="muted today-empty">Nobody is working right now.</div>}
           {working.map((s) => {
             const p = projectOf(s.id);
-            const handed = delegations.get(s.id)?.length ?? 0;
             return (
               <button key={s.id} className="today-row" onClick={() => selectAndReveal(s.id)}>
                 <span className={`status-dot ${statusClass(s)}`} />
                 {p && <span className="today-proj" style={pcStyle(p.color)}>{p.name}</span>}
                 <span className="today-title ellipsis">{s.title}</span>
-                <span className="today-text muted">{s.status === 'working' || s.status === 'starting' ? 'working' : ''}{handed ? `${s.status === 'working' ? ' · ' : ''}→ ${handed} handed out` : ''}</span>
+                <span className="today-text muted">{s.status === 'working' || s.status === 'starting' ? 'working' : ''}</span>
               </button>
             );
           })}
-        </section>
-
-        <section className="today-card done">
-          <h3>Done today <span className="count">{doneCount}</span></h3>
-          {doneCount === 0 && <div className="muted today-empty">No feature finished yet today.</div>}
-          {done.map((p) => (
-            <div key={p.projectId} className="today-group" style={pcStyle(p.color)}>
-              <div className="today-group-name">{p.name}</div>
-              {p.rows.map((r) => (
-                <button key={r.key} className="today-row" onClick={() => openFlow(r.order)} title="Flow — who did it, and how it was reported">
-                  <span className="today-check">✓</span>
-                  <span className="today-title ellipsis">{featureName(r, subjects)}</span>
-                  <span className="today-text muted ellipsis">{r.sessionId ? sessions.get(r.sessionId)?.title ?? '' : ''}</span>
-                  <span className="today-time muted">{new Date(r.ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span>
-                </button>
-              ))}
-            </div>
-          ))}
         </section>
 
         <section className="today-card todo">

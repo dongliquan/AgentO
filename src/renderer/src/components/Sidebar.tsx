@@ -3,42 +3,22 @@ import { useStore } from '@/store';
 import { send } from '@/client';
 import { AgentPicker } from './AgentPicker';
 import { newProject } from '@/commands';
-import { ProjectTree, SessionRow } from './ProjectTree';
-import { useReport } from './DailyReport';
+import { ProjectTree } from './ProjectTree';
 import { askNick, useNick } from '@/lib/nick';
 
 /** Left sidebar: the project tree (Manager, projects ⊃ parts, sessions). Folders and files are in the right panel's Files tab. */
 export function Sidebar(): JSX.Element {
-  const setRightTab = useStore((s) => s.setRightTab);
   const nick = useNick();
   const [chatAt, setChatAt] = useState<{ x: number; y: number } | null>(null);
-  const teamHead = useStore((s) => {
-    for (const x of s.sessions.values()) if (x.role === 'head' && !x.projectId) return x;
-    return undefined;
-  });
 
   return (
     <div className="sidebar">
-      {/* the manager is the user, above every project: gives orders from the Manager tab */}
-      <div className="sidebar-manager" title="You are the manager — your orders and the answers (Manager tab)" onClick={() => setRightTab('orders')}>
+      {/* the name you go by, and the token usage report */}
+      <div className="sidebar-manager">
         <span className="manager-ico">♛</span>
-        <span className="label" title="Double-click to change what you are called" onDoubleClick={(e) => { e.stopPropagation(); void askNick(); }}>
+        <span className="label" title="Double-click to change what you are called" onDoubleClick={() => void askNick()}>
           {nick || 'Welcome'}
         </span>
-        <button
-          className="icon-btn manager-usage"
-          title="Report — what was done each day, and the to-do list for the next"
-          onClick={(e) => {
-            e.stopPropagation();
-            useReport.getState().show();
-          }}
-        >
-          {/* a checklist, drawn like the toolbar icons (16px, currentColor) */}
-          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-            <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" />
-            <path d="M5 6l1 1 2-2M5 10l1 1 2-2M9.5 6.5h2M9.5 10.5h2" stroke="currentColor" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
         <button
           className="icon-btn manager-usage"
           title="Token usage — by project, time, session, role and model"
@@ -56,12 +36,6 @@ export function Sidebar(): JSX.Element {
           </svg>
         </button>
       </div>
-      {/* the team-wide Head Coach: above the projects it routes orders to */}
-      {teamHead && (
-        <div className="sidebar-head">
-          <SessionRow session={teamHead} depth={10} />
-        </div>
-      )}
       <div className="sidebar-header">
         <span>PROJECTS</span>
         <span className="grow" />

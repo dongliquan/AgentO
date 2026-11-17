@@ -2,198 +2,186 @@
 
 # AgentO
 
-**すべての AI コーディングエージェントを、ひとつのボードで。** AgentO は、Claude Code・Codex・Gemini CLI・Ollama・通常のシェルを並べて実行し、小さなチームのように管理できるデスクトップアプリ（Windows · macOS）です。
+**AI コーディングセッションを一か所で。** AgentO は Claude Code、Codex、Gemini CLI、Ollama、通常のシェルを並べて実行し、セッションを動かし続け、セッション同士が助けを求め合えるようにするデスクトップアプリ(Windows · macOS)です。
 
-> **基本の考え方:** ウィンドウを閉じてもセッションは動き続けます。セッションはバックグラウンドのデーモンが保持し、UI はいつでも接続・切断できる画面にすぎません。
+> **基本の考え方:** ウィンドウを閉じてもセッションは動き続けます。バックグラウンドのデーモンがすべてのセッションを所有し、UI は接続・切断できるただの窓です。
 
 ## ダウンロード
 
-**[Releases](https://github.com/dongliquan/AgentO/releases/latest)** から最新ビルドを入手してください。実行したい CLI（Claude Code、Codex など）は別途インストールしてログインしておく必要があります。
+最新のビルドは **[Releases](https://github.com/dongliquan/AgentO/releases/latest)** から入手してください。実行したい CLI(Claude Code、Codex など)は別途インストールしてサインインしておく必要があります。
 
 | プラットフォーム | ファイル |
 |---|---|
-| Windows（インストーラー） | `AgentO-<バージョン>-win-x64-setup.exe` |
-| Windows（インストール不要） | `AgentO-<バージョン>-win-x64-portable.exe` |
-| macOS、Apple Silicon | `AgentO-<バージョン>-mac-arm64.dmg` |
-| macOS、Intel | `AgentO-<バージョン>-mac-x64.dmg` |
+| Windows(インストーラー) | `AgentO-<version>-win-x64-setup.exe` |
+| Windows(インストール不要) | `AgentO-<version>-win-x64-portable.exe` |
+| macOS、Apple Silicon | `AgentO-<version>-mac-arm64.dmg` |
+| macOS、Intel | `AgentO-<version>-mac-x64.dmg` |
 
-**まだコード署名がないため、初回起動時に警告が表示されます：**
+**ビルドはまだコード署名されていないため、初回起動時に警告が表示されます。**
 
-- **Windows:** SmartScreen が「Windows によって PC が保護されました」と表示します。**詳細情報 → 実行**をクリックするか、ダウンロードしたファイルを右クリック → プロパティ → **ブロックの解除**にチェックを入れてください（PowerShell: `Unblock-File <ファイル>`）。
-- **macOS:** アプリを右クリックして**開く**を選び、もう一度**開く**を押します。または `xattr -dr com.apple.quarantine /Applications/AgentO.app` を実行します。
+- **Windows:** SmartScreen が「Windows によって PC が保護されました」と表示します。**詳細情報 → 実行** をクリックするか、ダウンロードしたファイルを右クリック → プロパティ → **ブロックの解除** にチェックしてください(PowerShell: `Unblock-File <ファイル>`)。
+- **macOS:** アプリを右クリックして **開く** を選び、もう一度 **開く** を押します。または `xattr -dr com.apple.quarantine /Applications/AgentO.app` を実行します。
 
 ソースからビルドする場合は[クイックスタート](#クイックスタート)を参照してください。
 
 ## スクリーンショット
 
-| ライト | ダーク |
+| Light | Dark |
 |:-:|:-:|
 | <img src="docs/images/split-light.png" alt="AgentO Split view, light theme" width="480"> | <img src="docs/images/split-dark.png" alt="AgentO Split view, dark theme" width="480"> |
 
-<sub>デモプロジェクトの 4 セッションを Split ビューで表示（ここでは AI エージェントの代わりに通常のシェルを使用）。ライト／ダークテーマ。</sub>
+<sub>デモプロジェクトの 4 つのセッションを Split ビューで表示(ここでは AI エージェントの代わりに通常のシェルセッション)。ライトとダークのテーマ。</sub>
 
 ## なぜ AgentO か
 
 | AgentO なし | AgentO あり |
 |---|---|
-| エージェントごとにターミナルのタブ、どれが何か見失いがち | すべてのセッションが 1 つのキャンバス（**Ground**）上のカードに |
-| ターミナルを閉じるとセッションも消える | UI を閉じてもセッションは作業を続け、開き直せばそのまま復元 |
-| エージェント間の連絡を人が手で中継 | エージェント同士が指示・報告をやり取りし、あなたは指示を出すだけ |
-| 長い会話が知らないうちにトークンを消費 | 会話サイズを表示。**Fresh start** で要約を引き継いで新しい会話へ |
-| 何が終わったかの記録がない | タイムライン、日次レポート、タスク番号（`#T12`） |
+| エージェントごとにターミナルのタブが 1 つ、見失いやすい | すべてのセッションが 1 つのキャンバス(**Ground**)上のカード、またはタブ、または分割表示 |
+| ターミナルを閉じるとセッションを失う | UI を閉じてもセッションは動き続け、開き直すとそのまま戻る |
+| エージェント間のメッセージを手で中継 | セッションが同じプロジェクトの別のセッションに頼み、答えを受け取れる |
+| 長い会話が気づかないうちにトークンを消費 | 会話サイズを表示し、**Fresh start** が要約付きで新しい会話に引き継ぐ |
+| 再起動するとセッションがどこまで進んだか忘れてしまう | **Pick up where you left off** が停止中のセッションと、最後の依頼・終わった位置を一覧表示 |
 
-セッションは各ツールの **CLI とご自身のサブスクリプションのログイン**だけで動きます。AgentO は API キーを求めません。
+セッションは各ツールの **CLI とご自身のサブスクリプションのログイン**で動かします。AgentO は API キーを要求しません。
 
 ## 仕組み
 
 ```mermaid
 flowchart LR
-  UI["AgentO ウィンドウ<br/>(Electron UI)<br/>いつでも閉じてOK"] <-->|WebSocket| D["デーモン<br/>SQLite · チームツール(MCP)<br/>ルーティン · 使用量"]
-  D --> H1["ホルダー"] --> A1["claude"]
-  D --> H2["ホルダー"] --> A2["codex"]
-  D --> H3["ホルダー"] --> A3["shell"]
+  UI["AgentO ウィンドウ<br/>(Electron UI)<br/>いつでも閉じてよい"] <-->|WebSocket| D["デーモン<br/>SQLite · セッションツール(MCP)<br/>使用量"]
+  D --> H1["Holder"] --> A1["claude"]
+  D --> H2["Holder"] --> A2["codex"]
+  D --> H3["Holder"] --> A3["shell"]
 ```
 
-各セッションは小さな**ホルダー**プロセスが 1 つずつ保持するため、デーモンを再起動してもエージェントは止まりません。
+各セッションは専用の小さな **holder** プロセスで動くため、デーモンを再起動してもエージェントは止まりません。
 
-## チームモデル
+## 頼み合うセッション
 
-あなたは**マネージャー（Manager）**です。指示を出すと、セッションが仕事を分担して報告します。
+Claude Code と Codex のセッションは MCP でいくつかのツールを受け取ります。階層も管理者もなく、セッションが別のセッションにそのまま頼みます。
 
 ```mermaid
-flowchart TD
-  M["あなた — マネージャー"] -->|指示| HC["Head Coach<br/>(任意・全プロジェクト担当)"]
-  HC --> C1["Coach<br/>プロジェクト A"]
-  HC --> C2["Coach<br/>プロジェクト B"]
-  C1 --> P1["Player"]
-  C1 --> P2["Player"]
-  C2 --> P3["Player"]
-  P1 -.->|報告| C1
-  C1 -.->|報告| M
+flowchart LR
+  A["セッション A<br/>フロントエンド"] -->|send_to_session| B["セッション B<br/>バックエンド"]
+  B -.->|"[AgentO] finished"| A
 ```
 
-| 役割 | すること |
-|---|---|
-| **マネージャー**（あなた） | 指示を出し、質問に答え、判断する |
-| **Head Coach** | 任意。指示を適切なプロジェクトへ振り分ける |
-| **Coach** | プロジェクトごとに 1 つ。仕事を分けて Player に渡し、結果をまとめる |
-| **Player** | 実際のコーディング担当。Coach はファイルを直接編集しない |
-| **Reviewer** | 完了した仕事をクロスチェックする Codex セッション（新規プロジェクトごとに追加） |
-
-指示にはタスク番号（`#T12`）が付き、報告まで一貫して追跡されるので、何が終わり何が待っているか一目で分かります。
+- `list_sessions` は同じプロジェクトの他のセッションを、`read_session` はそのセッションの作業内容を表示します。
+- `send_to_session` で依頼を送ります。相手が終えると、最後の答えが `[AgentO] … finished` メッセージとタスク番号(`#T12`)付きで依頼元に戻ります。
+- `report_up` は返答や聞き返しに、`update_memory` はすべてのセッションが起動時に受け取るプロジェクトメモリに 1 行追加するのに使います。
 
 ## 機能
 
-| 領域 | 内容 |
+| 領域 | 得られるもの |
 |---|---|
-| **Ground** | セッションカードのキャンバス、プロジェクト/パートの領域、流れる指示・報告ライン、ミニマップ、フォーカス表示 |
-| **ビュー** | Ground · Split · Tabs · Timeline（完了した機能）· Today（今あなたが必要なこと） |
-| **会話** | Claude/Codex の会話をカード上で表示：ツール呼び出し、チームメッセージ、画像、ファイルリンク、質問・権限カード |
-| **右パネル** | Session · Files · Manager · Inbox · Logs · Web（Gemini、ChatGPT） |
-| **プロジェクトメモリ** | プロジェクトごとに決定・ルール・地図を 1 ファイルにまとめ、Claude セッション開始時に注入 |
-| **ルーティン** | 定期的な指示（N 分ごと、毎日 HH:MM）。UI を閉じていても実行 |
+| **Ground** | セッションカードのキャンバス、プロジェクト領域、ミニマップ、フォーカスモード |
+| **ビュー** | Ground · Split · Tabs · Today(今あなたの判断が必要なこと) |
+| **続きから** | 停止中のセッションの最後の依頼と終わった位置。再起動後に **Resume all** |
+| **Chat** | カード上で Claude/Codex の会話を読める: ツール呼び出し、他のセッションからのメッセージ、画像、ファイルリンク、質問・権限カード |
+| **右パネル** | Session · Files · Inbox · Web(Gemini、ChatGPT) |
+| **プロジェクトメモリ** | プロジェクトごとに 1 ファイル(決定、ルール、地図)を Claude セッションの起動時に注入 |
+| **Autopilot** | 不在の間もセッション 1 つが進め続ける: 「完了」の基準を書き出し、残りを片づけ、自分で止まる |
 | **トークン管理** | 会話サイズのチップ、自動 Fresh start、モデル選択、使用量レポート |
-| **Needs you** | あなたの判断待ちの質問やプロンプトを 1 つの通知に集約 |
-| **保存・取り込み** | プロジェクトを `.agento` ファイルとして保存・開く、既存の Claude Code セッションを取り込み |
-| **ファイル** | Markdown · JSON · CSV · 画像ビューア（ファイルごとに別ウィンドウ） |
+| **要対応** | あなたの判断を待つ質問やプロンプトを 1 つの通知にまとめる。あなたを待っているセッションは決してスリープさせない |
+| **保存 / インポート** | プロジェクトを `.agento` ファイルとして保存、既存の Claude Code セッションをインポート |
+| **ファイル** | Markdown、JSON、CSV、画像のビューアを、それぞれ独立したウィンドウで |
 
 ## 対応エージェント
 
-| エージェント | ターミナル | 会話ビュー | チームメンバー | Fresh start / 使用量レポート |
+| Agent | Terminal | チャット表示 | 他のセッションに依頼 | Fresh start / 使用量レポート |
 |---|:-:|:-:|:-:|:-:|
 | Claude Code | ✅ | ✅ | ✅ | ✅ |
 | Codex | ✅ | ✅ | ✅ | — |
 | Gemini CLI | ✅ | — | — | — |
 | Ollama | ✅ | — | — | — |
-| シェル | ✅ | — | — | — |
+| Shell | ✅ | — | — | — |
 
-Gemini CLI は個人プランのサポートが終了したため、ここではターミナル表示のみです。
+Gemini CLI は個人プランのサポートを終了したため、ここではターミナルのみです。
 
 ## クイックスタート
 
-**必要なもの:** Node.js 22（LTS）、使いたい CLI（`claude`、`codex`、`gemini`、`ollama`。`PATH` から自動検出）。Windows ではネイティブモジュールのビルドに Visual Studio Build Tools と Python が必要です。
+**必要なもの:** Node.js 22(LTS)と、使いたい CLI(`claude`、`codex`、`gemini`、`ollama`。`PATH` から検索)。Windows ではネイティブモジュールのビルドに Visual Studio Build Tools と Python が必要です。
 
 ```bash
 git clone https://github.com/dongliquan/AgentO.git
 cd AgentO
-npm install        # Electron 用に node-pty と better-sqlite3 をビルド
-npm run dev        # アプリを起動
+npm install        # builds node-pty and better-sqlite3 for Electron
+npm run dev        # starts the app
 ```
 
-その後：
+その後:
 
-1. **Agents › Connections** を開き、Claude Code がインストール・ログイン済みか確認します。
-2. *Projects* の横の **+** でプロジェクト（ディスク上のフォルダ）を作成します。
-3. フォルダの **+** でセッションを開始するか、**Manager** から指示を送ります。
+1. **Agents › Connections** を開き、Claude Code がインストール・サインイン済みか確認します。
+2. *Projects* の横の **+** を押してプロジェクト(ディスク上のフォルダー)を作ります。
+3. フォルダーの **+** を押してセッションを開始します。
 4. ウィンドウを閉じ、トレイから開き直します。セッションは動き続けています。
 
 | コマンド | 用途 |
 |---|---|
 | `npm run dev` | 開発モードで実行 |
-| `npm run typecheck` | メインとレンダラーの型チェック |
-| `npm run smoke` | 使い捨てデーモンで動作確認（AI 呼び出しなし） |
-| `npm run dist:win` | Windows インストーラー + ポータブル exe → `dist/`（未署名） |
-| `npm run dist:mac` | macOS の dmg + zip（Mac で実行） |
+| `npm run typecheck` | main と renderer の型チェック |
+| `npm run smoke` | 使い捨てデーモンを起動して確認(AI 呼び出しなし) |
+| `npm run dist:win` | Windows インストーラー + ポータブル exe → `dist/`(署名なし) |
+| `npm run dist:mac` | macOS dmg + zip(Mac で実行) |
 
-`v1.0.0` のようなタグを push すると、GitHub Actions が Windows と macOS のパッケージをビルドします。
+`v1.1.0` のようなタグを push すると、GitHub Actions が Windows と macOS のパッケージをビルドします。
 
-## データの場所
+## データの保存場所
 
 | 項目 | 場所 |
 |---|---|
-| データフォルダ | `%APPDATA%\AgentO`（macOS: `~/Library/Application Support/AgentO`） |
-| データベース・ログ | `asm.db`、`logs/` |
-| プロジェクトメモリ・チームフォルダ | `team/` |
+| データフォルダー | `%APPDATA%\AgentO` (macOS: `~/Library/Application Support/AgentO`) |
+| データベース、ログ | `asm.db`, `logs/` |
+| プロジェクトメモリ、セッションツールの設定 | `team/` |
 | 貼り付けた画像 | `attachments/` |
 
-デーモンは `127.0.0.1` のみで待ち受け、すべての接続にデータフォルダ内のランダムなトークンが必要です。
+デーモンは `127.0.0.1` のみで待ち受け、すべての接続にデータフォルダーに保存されたランダムなトークンが必要です。
 
-## ショートカット
+## キーボードショートカット
 
 | キー | 操作 |
 |---|---|
 | Ctrl+N | 新しいセッション |
 | Ctrl+P · Ctrl+Shift+P | クイックオープン · コマンドパレット |
-| Ctrl+1 … 5 | Ground · Split · Tabs · Timeline · Today |
+| Ctrl+1 … 4 | Ground · Split · Tabs · Today |
 | Ctrl+F | 検索 |
 | Ctrl+B | サイドバーの切り替え |
 | Ctrl+Shift+B | パネルを別ウィンドウに |
 | Ctrl+Shift+W | 入力待ちのセッションへ移動 |
 | F2 · F11 | 名前変更 · フォーカス表示 |
 
-## 設定（環境変数）
+## 設定(環境変数)
 
 | 変数 | 意味 |
 |---|---|
-| `AGENTO_DATA_DIR` | 別のデータフォルダを使用 |
-| `ASM_PORT` | デーモンのポート（既定 47831） |
-| `ASM_HIBERNATE_MIN` | 待機中のセッションが休止するまでの分数（既定 30） |
-| `AGENTO_HEADLESS=0` | チームセッションを headless ではなくターミナルで開始 |
-| `AGENTO_PLAYER_MODEL` · `AGENTO_COACH_MODEL` | Player / Coach の既定モデル |
-| `AGENTO_AUTO_FRESH=0` | 自動 Fresh start をオフ |
+| `AGENTO_DATA_DIR` | 別のデータフォルダーを使う |
+| `ASM_PORT` | デーモンのポート(既定 47831) |
+| `ASM_HIBERNATE_MIN` | アイドルのセッションがスリープするまでの分数(既定 30) |
+| `AGENTO_PLAYER_MODEL` | モデル未選択時の Claude の既定モデル(既定 Opus 5.5) |
+| `AGENTO_AUTO_FRESH=0` | 自動 Fresh start をオフにする |
 
-## フォルダ構成
+## プロジェクト構成
 
-| フォルダ | 内容 |
+| フォルダー | 内容 |
 |---|---|
-| `src/daemon/` | バックグラウンドデーモン：WebSocket + MCP サーバー、SQLite、チーム、ルーティン、使用量。`holder.ts` が 1 セッションを保持 |
-| `src/main/` | Electron メイン：ウィンドウ、メニュー、トレイ、デーモン起動、ディープリンク |
-| `src/preload/` | メインと UI の間の安全なブリッジ |
+| `src/daemon/` | バックグラウンドデーモン: WebSocket + MCP サーバー、SQLite、使用量。`holder.ts` が 1 つのセッションを所有 |
+| `src/main/` | Electron main: ウィンドウ、メニュー、トレイ、デーモン起動、ディープリンク |
+| `src/preload/` | main と UI の間の安全なブリッジ |
 | `src/renderer/` | React + zustand + xterm の UI |
-| `src/shared/` | メッセージ規約と共通コード |
-| `tests/smoke/` | デーモン・UI のスモークテスト |
-| `docs/` | 設計ドキュメント |
+| `src/shared/` | メッセージプロトコルと共有ヘルパー |
+| `tests/smoke/` | デーモンと UI のスモークテスト |
+| `docs/` | 設計メモ |
 
 ## 既知の制限
 
-- ビルドはまだコード署名されていません。Windows では SmartScreen の警告が出て、macOS では手動で開く必要があります。
-- 使用量はローカルの会話ログに基づきます。サブスクリプションの残り枠は分かりません。
-- 自動アップデートと「A が終わったら B を開始」するチェーンはまだありません。
-- チーム機能は主に Claude Code で試しており、Codex・Gemini を Coach にする構成の検証は不十分です。
+- ビルドはまだコード署名されていません。Windows SmartScreen が警告し、macOS は手動で開く必要があります。
+- 使用量はローカルの会話ログから算出しており、サブスクリプションの残り枠は見えません。
+- 自動更新や「A が終わったら B を実行」といった連鎖はまだありません。
+- セッション同士の依頼は主に Claude Code で試しており、Codex での検証は少なめです。
 
 ## セキュリティ
 
-AgentO と接続した CLI は、あなたのファイルを操作できます。エージェントは与えた権限で動くため、権限の確認をよく読み、*Trust this folder* は自分で管理しているフォルダにだけ使ってください。脆弱性は公開 Issue ではなく、GitHub の *Report a vulnerability* から非公開で報告してください。
+Windows、macOS、接続する CLI は、あなたのファイルを操作できるものとして信頼されます。エージェントはあなたが与えた権限で動きます: 権限の確認を見直し、*このフォルダーを信頼* は管理しているフォルダーにのみ使ってください。脆弱性は公開 Issue ではなく、GitHub の *Report a vulnerability* ボタンから非公開で報告してください。
 
 ## ライセンス
 

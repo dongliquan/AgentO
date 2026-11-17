@@ -33,6 +33,24 @@ export interface AgentDef {
  * A project (one piece of work, e.g. "Shop") or, when parentId is set, a part of one (planning, development, QA).
  * Head coaches belong to a top-level project; coaches and players to a part (or to a project without parts).
  */
+/**
+ * Autopilot: the project goes on without the manager — its Coach decides open questions itself (and records them),
+ * is told to carry on when it stops with work left, and the run ends with `AUTOPILOT DONE`, a pause, or no progress.
+ */
+export interface AutopilotState {
+  on: boolean;
+  /** when it was switched on */
+  since: number;
+  /** how many times the Coach was told to carry on (since it was switched on) */
+  continues: number;
+  /** the last time it was told to carry on, or finished */
+  lastAt?: number;
+  /** why it is off (finished / paused / no progress), or the last thing it did */
+  note?: string;
+  /** a single session carries the project on (no Coach): the session that does the work itself */
+  leadId?: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -46,6 +64,8 @@ export interface Project {
   color?: string;
   /** a top-level project's memory file (team/memory/<id>.md): the short shared note its sessions get at start */
   memory?: string;
+  /** a top-level project's autopilot (see AutopilotState) */
+  autopilot?: AutopilotState;
 }
 
 /** Project colors, handed out in order to new projects (readable on the light and the dark theme). */
@@ -202,6 +222,46 @@ export interface UsageInfo {
   tokens?: number;
 }
 
+/**
+ * The task ledger: one record per piece of work ("#T12") the daemon handed to a session, with the state the daemon
+ * itself saw (not guessed from the text of a report).
+ *  queued    sent, not typed into the session yet (it is busy, stopped or waking up)
+ *  working   the session started on it
+ *  handed    a coordinator's turn ended after it passed the work on (the result comes with the sub-tasks)
+ *  reported  the session finished and its last reply went to whoever sent it
+ *  asking    the session asked its sender a question (report_up with needs_answer) and waits for the answer
+ *  blocked   stuck on a prompt / usage limit, or the session never took the message
+ */
+export type TaskState = 'queued' | 'working' | 'handed' | 'reported' | 'asking' | 'blocked';
+export interface TaskRec {
+  /** unique: "<project or 'team'>/#T12" */
+  key: string;
+  /** "#T12" */
+  id: string;
+  /** top-level project id the number belongs to ('' for the team head coach's counter) */
+  projectId: string;
+  /** sender: a session id, or 'user' */
+  from: string;
+  /** the session that has the work */
+  to: string;
+  /** the first line of what was asked */
+  summary: string;
+  /** the task the sender was working on when it handed this one out (a sub-task of it) */
+  parent?: string;
+  createdAt: number;
+  state: TaskState;
+  stateAt: number;
+  /** why it is blocked / what it asks */
+  note?: string;
+}
+
+/** Where a stopped session left off: what it was last asked, how its last answer ended, and when. */
+export interface SessionLast {
+  ask: string;
+  reply: string;
+  at: number;
+}
+
 export interface InboxItem {
   id: string;
   sessionId: string;
@@ -295,6 +355,8 @@ export type ClientMessage =
   | { type: 'project.close'; id: string }
   | { type: 'project.open'; id: string }
   | { type: 'project.setColor'; id: string; color: string }
+  /** leadId: without a Coach, the one session that carries the project on by itself */
+  | { type: 'project.autopilot'; id: string; on: boolean; leadId?: string }
   | { type: 'project.rename'; id: string; name: string }
   /** Tasks: mark one of the manager's orders (its directive record id) done, or open again */
   | { type: 'order.done'; id: string; done: boolean }
@@ -334,24 +396,15 @@ export type ClientMessage =
    * Start a new project from an order: AgentO creates the project, its folders and its head coach, and hands it the
    * brief; the head coach designs the parts and creates the players. plan: report the plan and wait for the go.
    */
-  | { type: 'project.start'; name: string; folders: string[]; text: string; plan: boolean }
   /** create the project's head coach if needed and have it organize the sessions into parts with coaches */
-  | { type: 'team.organize'; projectId: string }
   | { type: 'claude.sessions.import'; projectId: string; folderId: string; ids: string[]; titles?: Record<string, string> }
   | { type: 'folder.add'; projectId: string; path: string; autoTrust?: boolean }
   | { type: 'folder.remove'; id: string }
   /** point a project folder at another place on disk (sessions already in it keep their own working folder) */
   | { type: 'folder.update'; id: string; path: string }
   | { type: 'session.create'; projectId: string; folderId: string; agent: AgentKind; title?: string; command?: string; args?: string[]; cols?: number; rows?: number; mode?: SessionMode; model?: string }
-  | { type: 'head.create'; projectId?: string }      // one head coach per top-level project
-  | { type: 'coach.create'; projectId: string; agent?: 'claude' | 'codex' | 'gemini' } // one coach per project; default claude
   /** player ⇄ playing coach; quiet: a stopped session is not woken for the note (it rides along with its next work) */
-  | { type: 'session.setRole'; id: string; role: 'coach' | 'player'; quiet?: boolean }
-  | { type: 'team.order'; target: TeamOrderTarget; text: string; task?: boolean }      // the user's order; task: added as a task (Tasks › Add Task)
   | { type: 'usage.report'; days: number; outside: boolean }   // Manager › Usage: token report for the last `days` days
-  | { type: 'routine.save'; routine: RoutineInput }   // create (no id) or update
-  | { type: 'routine.delete'; id: string }
-  | { type: 'routine.run'; id: string }               // run now (counts as a run)
   | { type: 'session.input'; id: string; data: string }
   | { type: 'session.resize'; id: string; cols: number; rows: number }
   | { type: 'session.attach'; id: string }          // request scrollback replay
@@ -360,6 +413,8 @@ export type ClientMessage =
   | { type: 'session.kill'; id: string }
   | { type: 'session.restart'; id: string }
   | { type: 'session.resume'; id: string }
+  /** where these sessions left off (answered with session.last.result, in batches) */
+  | { type: 'session.last'; ids: string[] }
   | { type: 'session.hibernate'; id: string }
   | { type: 'session.update'; id: string; patch: Partial<Pick<Session, 'title' | 'color' | 'x' | 'y' | 'w' | 'h'>> }
   | { type: 'session.remove'; id: string }
@@ -383,11 +438,8 @@ export interface FsEntry {
 }
 
 export type ServerMessage =
-  | { type: 'welcome'; daemonPid: number; version: string; projects: Project[]; sessions: Session[]; inbox: InboxItem[]; usage: UsageInfo[]; agents: AgentDef[]; routines: Routine[]; doneOrders: Record<string, number>; taskOrders: string[] }
-  /** Tasks: the manager's orders marked done (order record id → when) and the ones added as tasks explicitly */
-  | { type: 'orders.done'; done: Record<string, number>; tasks: string[] }
+  | { type: 'welcome'; daemonPid: number; version: string; projects: Project[]; sessions: Session[]; inbox: InboxItem[]; usage: UsageInfo[]; agents: AgentDef[]; ledger: TaskRec[]; restorable: { at: number; ids: string[] } }
   | { type: 'usage.report'; report: UsageReport }
-  | { type: 'routines'; routines: Routine[] }
   /** answer to project.export: the .agento file contents */
   | { type: 'project.exported'; name: string; data: string }
   | { type: 'claude.sessions'; path: string; items: ClaudeSessionInfo[] }
@@ -409,6 +461,9 @@ export type ServerMessage =
   | { type: 'inbox'; items: InboxItem[] }
   /** what changed since the last inbox message: new or changed rows (read flag), and rows that dropped out */
   | { type: 'inbox.delta'; upsert: InboxItem[]; remove: string[] }
+  /** task ledger rows that were added or changed */
+  | { type: 'ledger.delta'; upsert: TaskRec[] }
+  | { type: 'session.last.result'; items: Record<string, SessionLast> }
   | { type: 'usage'; usage: UsageInfo[] }
   | { type: 'fs.list.result'; path: string; entries: FsEntry[] }
   | { type: 'fs.read.result'; path: string; content: string; truncated: boolean }

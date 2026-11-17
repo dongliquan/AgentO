@@ -3,7 +3,7 @@
  */
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
-import { PROJECT_COLORS, type Folder, type InboxItem, type Project, type Routine, type Session, type SessionRole, type SessionStatus, type AgentKind } from '@shared/protocol';
+import { PROJECT_COLORS, type AutopilotState, type Folder, type InboxItem, type Project, type Routine, type Session, type SessionRole, type SessionStatus, type AgentKind } from '@shared/protocol';
 import { dbPath, ensureDir, dataDir } from './paths';
 import { ensureMemory, memoryPath } from './memory';
 
@@ -15,6 +15,7 @@ interface ProjectRow {
   closed: number | null;
   color: string | null;
   sort_order: number | null;
+  autopilot: string | null;
 }
 interface FolderRow {
   id: string;
@@ -292,6 +293,7 @@ export class Store {
     if (!projectCols.has('parent_id')) this.db.exec('ALTER TABLE projects ADD COLUMN parent_id TEXT');
     if (!projectCols.has('closed')) this.db.exec('ALTER TABLE projects ADD COLUMN closed INTEGER');
     if (!projectCols.has('color')) this.db.exec('ALTER TABLE projects ADD COLUMN color TEXT');
+    if (!projectCols.has('autopilot')) this.db.exec('ALTER TABLE projects ADD COLUMN autopilot TEXT');
     // projects from before colors: one each, in creation order
     const uncolored = this.db.prepare('SELECT id FROM projects WHERE parent_id IS NULL AND color IS NULL ORDER BY created_at').all() as { id: string }[];
     for (const { id } of uncolored) this.db.prepare('UPDATE projects SET color = ? WHERE id = ?').run(this.nextColor(), id);
@@ -335,6 +337,7 @@ export class Store {
       ...(p.parent_id ? { parentId: p.parent_id } : {}),
       ...(p.closed ? { closed: true } : {}),
       ...(p.color ? { color: p.color } : {}),
+      ...(p.autopilot && !p.parent_id ? { autopilot: JSON.parse(p.autopilot) as AutopilotState } : {}),
       ...(p.parent_id ? {} : { memory: memoryPath(p.id) })
     }));
   }
@@ -368,6 +371,11 @@ export class Store {
   setProjectColor(id: string, color: string): void {
     this.projectsCache = null;
     this.stmt('UPDATE projects SET color = ? WHERE id = ? AND parent_id IS NULL').run(color, id);
+  }
+
+  setAutopilot(id: string, state: AutopilotState | null): void {
+    this.projectsCache = null;
+    this.stmt('UPDATE projects SET autopilot = ? WHERE id = ? AND parent_id IS NULL').run(state ? JSON.stringify(state) : null, id);
   }
 
   setProjectClosed(id: string, closed: boolean): void {

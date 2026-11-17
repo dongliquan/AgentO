@@ -1111,6 +1111,8 @@ export class SessionManager extends EventEmitter {
       const s = this.sessions.get(id);
       if (!s || s.status !== 'waiting' || !this.live.has(id)) continue;
       if (now - since < limit) continue;
+      // a session that waits for the manager (a prompt or a permission on screen) is not put to sleep: the answer would be lost
+      if (s.attention || s.permission !== undefined) continue;
       if (this.isAttached(id) || this.keepAwake(id)) continue;
       try {
         this.hibernate(id);

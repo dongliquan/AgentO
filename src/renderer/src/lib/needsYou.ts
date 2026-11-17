@@ -23,21 +23,54 @@ export interface NeedsYou {
 
 // the end of a report that asks the manager for something; generic closings ("새 주문이 있으면 말씀해 주세요",
 // "완료 보고가 오면 전달하겠습니다") don't count
-const ASKS = /\?|까요|할지|할까|정해\s?주세요|골라\s?주세요|선택해\s?주세요|알려\s?주(?:세요|시면|십시오)|말씀해\s?주(?:세요|시면)|확인해\s?주(?:세요|시면)|결정\s?(?:대기|해\s?주|이\s?필요|이\s?나면|해야)|어느\s?쪽|괜찮을까|should i|shall i|which (?:one|option)|let me know|please (?:confirm|decide|choose)|do you want|if you want me to|want me to/i;
+const ASKS = /\?|까요|할지|할까|정해\s?주세요|골라\s?주세요|선택해\s?주세요|알려\s?주(?:세요|시면|십시오)|말씀해\s?주(?:세요|시면)|확인해\s?주(?:세요|시면)|결정\s?(?:대기|해\s?주|이\s?필요|이\s?나면|해야)|어느\s?쪽|괜찮을까|should i|shall i|which (?:one|option)|let me know|please (?:confirm|decide|choose)|do you want|if you want me to|want me to|(?:답|답변|결정|확인|승인)(?:을|이)?\s?기다(?:립니다|리고|려)|waiting for your (?:answer|reply|decision|go-ahead)/i;
 // optional offers and closings: "다른 이름을 원하시면 말씀해 주세요", "고칠 점이 있으면 알려 주세요", "필요하시면 말씀해 주세요"
 const OPTIONAL = /(?:있으면|있으시면|원하시면|필요하면|필요하시면|필요해지면|생기면|안\s?보이면|문제가\s?있으면|이의가\s?있으면)\s*(?:언제든\s*)?(?:알려|말씀|다시\s?꺼내)[^.?!\n]{0,12}/g;
 const GENERIC = /(새\s?(?:주문|지시|요청)|다른\s?(?:주문|지시|일)|추가로\s?필요).{0,20}(있으면|있으시면)|if you (?:have|need) anything/i;
 
+// a list of what was already waiting before this answer ("이전부터 대기 중인 것", "still open from earlier")
+const STANDING = /이전부터|이전에\s?(?:묻|올린|알린)|기존(?:에)?\s?(?:대기|보류)|대기\s?중인\s?것|보류\s?중|still (?:open|pending|waiting)|carried over|from earlier|previously (?:asked|raised)/i;
+
 /** The asking tail of a report, or null when it does not ask the manager anything. */
-export function askingTail(text: string): string | null {
+export function askingTail(text: string, clip = true): string | null {
   const body = text.replace(/^[^:\n]{0,120}?(?:→ Manager \(you\)|finished|replied|reported)\s*:\s*/, '');
   const paras = body.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
   // the last two paragraphs, without a generic closing line
   const tail = paras.slice(-2).filter((p) => !(GENERIC.test(p) && p.length < 120));
   const t = tail.join('\n\n');
   if (!t || !ASKS.test(t.replace(OPTIONAL, ''))) return null;
-  return t.length > 600 ? `…${t.slice(-600)}` : t;
+  return clip && t.length > 600 ? `…${t.slice(-600)}` : t;
 }
+
+/**
+ * The questions inside an answer's asking tail, one per line (up to 5): shown apart from the report so that two or
+ * three decisions asked at once are not lost in the explanation. Empty when the answer asks nothing.
+ */
+export function askedLines(text: string): string[] {
+  // not cut short: the heading a list hangs under must still be there
+  const tail = askingTail(text, false);
+  if (!tail) return [];
+  const out: string[] = [];
+  const push = (line: string): void => {
+    if (line.length >= 6 && ASKS.test(line.replace(OPTIONAL, ''))) out.push(line.length > 240 ? `${line.slice(0, 237)}…` : line);
+  };
+  // lines under a heading like "이전부터 대기 중인 것" restate what has waited for a long time: not a new question
+  const parents: { indent: number; text: string }[] = [];
+  for (const raw of tail.split(/\n+/)) {
+    const line = raw.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, '').replace(/\*\*|__|`/g, '').trim();
+    const indent = raw.length - raw.trimStart().length;
+    while (parents.length && parents[parents.length - 1]!.indent >= indent) parents.pop();
+    const standing = parents.some((p) => STANDING.test(p.text));
+    parents.push({ indent, text: line });
+    if (standing) continue;
+    // a list item is kept whole (its context is part of the question); a long line is cut into its sentences
+    if (line.length <= 200) push(line);
+    else for (const sentence of line.split(/(?<=[.?!。？])\s+/)) push(sentence.trim());
+  }
+  return out.slice(-5);
+}
+
+const QUESTION_MAX_AGE_MS = 3 * 86_400_000;
 
 /** Conversation sizes that call for a fresh start (players do the work and grow faster than coordinators). */
 const CONTEXT_WARN = 225_000;
@@ -53,6 +86,48 @@ let dismissed: Set<string> = (() => {
   }
 })();
 const subs = new Set<() => void>();
+/* alerts already looked at (clicked): the toast goes away, the session stays marked until the manager answers it */
+const SEEN_KEY = 'asm.needsYou.seen';
+let seen: Set<string> = (() => {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) ?? '[]') as string[]);
+  } catch {
+    return new Set();
+  }
+})();
+// Before 2026-11-16 a click on an alert marked the question "dealt with" for good, so questions nobody answered vanished
+// from the card badge, Inbox and project status. Those clicks only meant "seen": keep the toast hidden, show the rest.
+try {
+  if (localStorage.getItem('asm.needsYou.migrated') !== '1') {
+    const old = [...dismissed].filter((k) => !k.startsWith('c:'));
+    if (old.length) {
+      seen = new Set([...seen, ...old]);
+      dismissed = new Set([...dismissed].filter((k) => k.startsWith('c:')));
+      localStorage.setItem(SEEN_KEY, JSON.stringify([...seen].slice(-500)));
+      localStorage.setItem(KEY, JSON.stringify([...dismissed]));
+    }
+    localStorage.setItem('asm.needsYou.migrated', '1');
+  }
+} catch {
+  /* not kept */
+}
+export function seeNeed(key: string): void {
+  seen = new Set(seen).add(key);
+  try {
+    localStorage.setItem(SEEN_KEY, JSON.stringify([...seen].slice(-500)));
+  } catch {
+    /* not kept */
+  }
+  subs.forEach((f) => f());
+}
+export const useSeenNeeds = (): Set<string> =>
+  useSyncExternalStore(
+    (f) => {
+      subs.add(f);
+      return () => subs.delete(f);
+    },
+    () => seen
+  );
 export function dismissNeed(key: string): void {
   dismissed = new Set(dismissed).add(key);
   try {
@@ -111,6 +186,8 @@ export function computeNeeds(sessions: Map<string, Session>, inbox: InboxItem[],
     const r = lastReport.get(s.id);
     // answered (the manager wrote to it since), busy again, or dealt with
     if (!r || gone.has(r.id) || (lastFromUser.get(s.id) ?? 0) > r.createdAt || s.status === 'working' || s.status === 'starting') continue;
+    // a question from days ago is not "waiting" any more (the work moved on)
+    if (Date.now() - r.createdAt > QUESTION_MAX_AGE_MS) continue;
     const tail = tailOf(r);
     if (tail) out.push({ sessionId: s.id, kind: 'question', text: tail, at: r.createdAt, itemId: r.id, key: r.id });
   }

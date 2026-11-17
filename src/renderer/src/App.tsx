@@ -5,12 +5,12 @@ import { runCommand, selectAndReveal, zoomBy } from '@/commands';
 import { activeHeadCoach } from '@/lib/activeProject';
 import { openNotification } from '@/lib/notify';
 import { Toasts } from '@/components/Toasts';
-import { OrderFlowDialog } from '@/components/OrderFlow';
 import { NewProjectDialog } from '@/components/NewProjectDialog';
 import { FileRefMenu } from '@/components/FileRefMenu';
 import { ProjectColorMenu } from '@/components/ProjectColorMenu';
 import { NeedsYouWatcher } from '@/components/NeedsYou';
-import { DelegationWatcher } from '@/components/Delegations';
+import { useLastInfoRequests } from '@/lib/lastInfo';
+import { AwayWatcher } from '@/components/AwayCard';
 import { PathMenu } from '@/components/PathMenu';
 import { DispatchDialog } from '@/components/DispatchDialog';
 import { reconnectClient } from '@/client';
@@ -19,7 +19,6 @@ import { Sidebar } from '@/components/Sidebar';
 import { Board } from '@/components/Board';
 import { SplitView } from '@/components/SplitView';
 import { TabView } from '@/components/TabView';
-import { TimelineView } from '@/components/TimelineView';
 import { TodayView } from '@/components/TodayView';
 import { RightPanel, SecondPanel, useFollowSelection } from '@/components/RightPanel';
 import { StatusBar } from '@/components/StatusBar';
@@ -29,7 +28,6 @@ import { ImportClaudeDialog } from '@/components/ImportClaudeDialog';
 import { AgentsDialog } from '@/components/AgentsDialog';
 import { SettingsDialog } from '@/components/SettingsDialog';
 import { UsageDialog } from '@/components/UsageDialog';
-import { DailyReport } from '@/components/DailyReport';
 import { FindBar } from '@/components/FindBar';
 import { Toolbar } from '@/components/Toolbar';
 import { FocusView } from '@/components/FocusView';
@@ -112,7 +110,7 @@ function handleKey(e: KeyboardEvent): void {
     runCommand('view.tabs');
   } else if (k === '4') {
     e.preventDefault();
-    runCommand('view.timeline');
+    runCommand('view.today');
   } else if (k === '5') {
     e.preventDefault();
     runCommand('view.today');
@@ -130,6 +128,7 @@ function handleKey(e: KeyboardEvent): void {
 
 export function App(): JSX.Element {
   useFollowSelection();
+  useLastInfoRequests();
   // the first start: what to call you, then the agent setup when Claude Code is not ready yet
   useEffect(() => {
     void firstRun();
@@ -187,7 +186,6 @@ export function App(): JSX.Element {
   if (focusMode) center = <FocusView />;
   else if (viewMode === 'split') center = <SplitView />;
   else if (viewMode === 'tabs') center = <TabView />;
-  else if (viewMode === 'timeline') center = <TimelineView />;
   else if (viewMode === 'today') center = <TodayView />;
   else center = <Board />;
 
@@ -212,15 +210,13 @@ export function App(): JSX.Element {
       <AgentsDialog />
       <SettingsDialog />
       <UsageDialog />
-      <DailyReport />
       <FindBar />
       <Toasts />
-      <OrderFlowDialog />
       <NewProjectDialog />
       <FileRefMenu />
       <ProjectColorMenu />
       <NeedsYouWatcher />
-      <DelegationWatcher />
+      <AwayWatcher />
       <PathMenu />
       <DispatchDialog />
       <PromptDialog />

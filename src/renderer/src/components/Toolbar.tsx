@@ -36,10 +36,9 @@ function PopOutIcon({ open }: { open: boolean }): JSX.Element {
 export function Toolbar(): JSX.Element {
   const viewMode = useStore((s) => s.viewMode);
   const focusMode = useStore((s) => s.focusMode);
-  const onTimeline = viewMode === 'timeline';
   const onToday = viewMode === 'today';
   /** a record / overview page, not a session layout: the layout tools hide */
-  const onPage = onTimeline || onToday;
+  const onPage = onToday;
   const setViewMode = useStore((s) => s.setViewMode);
   const projects = useStore((s) => s.projects);
   const selectedId = useStore((s) => s.selectedId);
@@ -58,10 +57,6 @@ export function Toolbar(): JSX.Element {
   const project = top && !top.closed ? top : undefined;
   const ids = new Set(project ? [project.id, ...projects.filter((p) => p.parentId === project.id).map((p) => p.id)] : []);
   const count = [...sessions.values()].filter((s) => ids.has(s.projectId)).length;
-  // the team-wide Head Coach belongs to no project: the breadcrumb is the whole team (all open projects), not the first project
-  const teamHead = !!sel && sel.role === 'head' && !sel.projectId;
-  const openIds = new Set(projects.filter((p) => !(p.parentId ? projects.find((x) => x.id === p.parentId)?.closed : p.closed)).map((p) => p.id));
-  const teamCount = [...sessions.values()].filter((s) => openIds.has(s.projectId)).length;
 
   return (
     <div className="toolbar">
@@ -82,22 +77,11 @@ export function Toolbar(): JSX.Element {
         <button className={onToday ? 'active' : ''} onClick={() => setViewMode('today')} title={kbd('Today — what needs you, who is working, what got done, your to-dos (Ctrl+5)')}>
           Today
         </button>
-        <button className={onTimeline ? 'active' : ''} onClick={() => setViewMode('timeline')} title={kbd('Timeline — the features each project finished, by day (Ctrl+4)')}>
-          Timeline
-        </button>
       </div>
       <div className="breadcrumb">
         {onToday ? (
           <>
             <b>Today</b> · needs you, working, done, to do
-          </>
-        ) : onTimeline ? (
-          <>
-            <b>Timeline</b> · finished features by project and day
-          </>
-        ) : teamHead ? (
-          <>
-            <b>Head Coach</b> › All projects › Sessions {teamCount}
           </>
         ) : project ? (
           <>
@@ -113,7 +97,7 @@ export function Toolbar(): JSX.Element {
           — session layout tools, not for the Timeline */}
       {!onPage && (
       <>
-      <button className="btn ghost" onClick={autoArrange} disabled={viewMode !== 'board'} title="Auto Arrange — move every card into the team layout (Head Coach in the middle, projects around it) and keep it">Auto Arrange</button>
+      <button className="btn ghost" onClick={autoArrange} disabled={viewMode !== 'board'} title="Auto Arrange — lay every card out in a grid by project and keep it">Auto Arrange</button>
       <button className="btn ghost" onClick={fitAll} disabled={viewMode !== 'board'} title="Fit All — zoom and pan so every card is in view (the cards do not move)">Fit All</button>
       <button
         className={`btn ghost ${focusMode ? 'on' : ''}`}

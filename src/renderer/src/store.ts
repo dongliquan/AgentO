@@ -1,18 +1,18 @@
 import { create } from 'zustand';
 import { useGitSubjects } from '@/lib/gitSubjects';
-import type { AgentConnection, ClaudeSessionInfo, FsEntry, InboxItem, Project, Routine, ServerMessage, Session, SessionStatus, UsageInfo, UsageReport } from '@shared/protocol';
+import type { AgentConnection, ClaudeSessionInfo, FsEntry, InboxItem, Project, ServerMessage, Session, SessionLast, SessionStatus, TaskRec, UsageInfo, UsageReport } from '@shared/protocol';
 import type { AgentDefEx } from '@shared/extra';
 import { emitTerm } from '@/lib/termbus';
 import { appendBuffer, dropBuffer, setBuffer } from '@/lib/buffers';
-import { arrangeTeam } from '@shared/layout';
+import { arrangeSimple } from '@shared/layout';
 import { closedSessionIds, openSessions } from '@/lib/closedIds';
 import { applyChatSnapshot, applyChatUpsert, dropChat } from '@/lib/chat';
 
 export const ZOOM_MIN = 0.2;
 export const ZOOM_MAX = 2.5;
-export type ViewMode = 'board' | 'split' | 'tabs' | 'timeline' | 'today';
+export type ViewMode = 'board' | 'split' | 'tabs' | 'today';
 /** orders: the Manager tab (conversation + order box) */
-export type RightTab = 'detail' | 'files' | 'inbox' | 'orders' | 'log' | 'web';
+export type RightTab = 'detail' | 'files' | 'inbox' | 'web';
 /** projects: the left sidebar's tree · inbox: also opens the right panel's Inbox tab */
 export type ActivityView = 'projects' | 'inbox';
 
@@ -44,7 +44,12 @@ export interface AppState {
   sessions: Map<string, Session>;
   inbox: InboxItem[];
   /** repeating orders (Manager tab) */
-  routines: Routine[];
+  /** the daemon's task ledger by key ("<project>/#T12") */
+  ledger: Map<string, TaskRec>;
+  /** where stopped sessions left off (asked for by LastInfoWatcher) */
+  lastInfo: Map<string, SessionLast>;
+  /** sessions that were running when the daemon last shut down with its sessions stopped, and are still stopped */
+  restorable: { at: number; ids: string[] };
   /** the last team message typed into a session — its card replays it in the message box */
   delivered: Record<string, { text: string; nonce: number }>;
   usage: UsageInfo[];
@@ -83,7 +88,6 @@ export interface AppState {
   agentConnections: AgentConnection[] | null;
   claudeSessions: { path: string; items: ClaudeSessionInfo[] } | null;
   /** the manager's orders marked done (Tasks): order record id → when */
-  doneOrders: Record<string, number>;
   /** Quick Open file search: the latest answer (ref = the query it answers) */
   fileSearch: { ref: string; items: { path: string; root: string }[] } | null;
   activeTabSessionId: string | null;
@@ -178,7 +182,9 @@ export const useStore = create<AppState>((set, get) => ({
   projects: [],
   sessions: new Map(),
   inbox: [],
-  routines: [],
+  ledger: new Map(),
+  lastInfo: new Map(),
+  restorable: { at: 0, ids: [] },
   delivered: {},
   usage: [],
   agents: [],
@@ -197,7 +203,7 @@ export const useStore = create<AppState>((set, get) => ({
   rightOpen: readFlag('asm.rightOpen', true),
   panelsDetached: false,
   collapsedGroups: readList('asm.collapsedGroups'),
-  rightTab: 'orders',
+  rightTab: 'detail',
   activity: 'projects',
   paletteOpen: false,
   paletteMode: 'quick',
@@ -211,7 +217,6 @@ export const useStore = create<AppState>((set, get) => ({
   agentConnections: null,
   claudeSessions: null,
   fileSearch: null,
-  doneOrders: {},
   activeTabSessionId: null,
 
   fsLists: new Map(),
@@ -231,8 +236,8 @@ export const useStore = create<AppState>((set, get) => ({
           projects: msg.projects,
           sessions,
           inbox: msg.inbox,
-          doneOrders: msg.doneOrders ?? {},
-          routines: msg.routines ?? [],
+          ledger: new Map((msg.ledger ?? []).map((r) => [r.key, r])),
+          restorable: msg.restorable ?? { at: 0, ids: [] },
           usage: msg.usage,
           agents: msg.agents as AgentDefEx[],
           lastError: null
@@ -301,17 +306,23 @@ export const useStore = create<AppState>((set, get) => ({
         set({ inbox });
         break;
       }
-      case 'routines':
-        set({ routines: msg.routines });
+      case 'session.last.result': {
+        const lastInfo = new Map(get().lastInfo);
+        for (const [id, v] of Object.entries(msg.items)) lastInfo.set(id, v);
+        set({ lastInfo });
         break;
+      }
+      case 'ledger.delta': {
+        const ledger = new Map(get().ledger);
+        for (const r of msg.upsert) ledger.set(r.key, r);
+        set({ ledger });
+        break;
+      }
       case 'usage.report':
         set({ usageReport: msg.report });
         break;
       case 'agents.status':
         set({ agentConnections: msg.items });
-        break;
-      case 'orders.done':
-        set({ doneOrders: msg.done });
         break;
       case 'fs.search.result':
         set({ fileSearch: { ref: msg.ref, items: msg.items } });
@@ -429,7 +440,8 @@ export const useStore = create<AppState>((set, get) => ({
     const sessions = new Map(get().sessions);
     // closed projects keep their layout for when they are opened again
     const projects = get().projects.filter((p) => !p.closed && !get().projects.some((x) => x.id === p.parentId && x.closed));
-    for (const [id, r] of arrangeTeam(openSessions(sessions, get().projects), projects)) {
+    const placed = arrangeSimple(openSessions(sessions, get().projects), projects);
+    for (const [id, r] of placed) {
       const cur = sessions.get(id);
       if (cur) sessions.set(id, { ...cur, ...r });
     }

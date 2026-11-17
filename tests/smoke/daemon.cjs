@@ -121,6 +121,7 @@ async function main() {
   let c = await connect(info);
   const welcome = await c.waitFor((m) => m.type === 'welcome');
   check('daemon starts and greets', !!welcome, `pid ${info.pid}, port ${info.port}`);
+  check('welcome carries the task ledger and the restorable list', Array.isArray(welcome?.ledger) && Array.isArray(welcome?.restorable?.ids), JSON.stringify(welcome?.restorable));
 
   // a second daemon on the same data folder must step aside (two would fight over the session holders)
   {
@@ -182,11 +183,15 @@ async function main() {
   c.send({ type: 'session.input', id: sid, data: 'echo smoke-after-session-restart\r' });
   check('restarted session takes input', !!(await c.waitFor((m) => m.type === 'session.data' && m.id === sid && m.data.includes('smoke-after-session-restart'), 10000)));
 
-  // ---------- an order gets a task id ----------
-  c.send({ type: 'team.order', target: { kind: 'session', sessionId: sid }, text: 'echo smoke-order' });
+  // ---------- a message typed into a session gets a task id ----------
+  c.send({ type: 'session.note', id: sid, text: 'echo smoke-note' });
   const rec = await c.waitFor((m) => m.type === 'inbox.delta' && m.upsert.some((i) => i.sessionId === sid && i.kind === 'directive'), 10000);
   const directive = rec?.upsert.find((i) => i.sessionId === sid && i.kind === 'directive');
-  check('order recorded with a task id', !!directive?.taskId, directive?.taskId ?? 'none');
+  check('a typed message is recorded with a task id', !!directive?.taskId, directive?.taskId ?? 'none');
+  // the task ledger holds it, in a state the daemon saw (not guessed from text)
+  const led = await c.waitFor((m) => m.type === 'ledger.delta' && m.upsert.some((r) => r.id === directive?.taskId && r.to === sid), 5000);
+  const taskRec = led?.upsert.find((r) => r.id === directive?.taskId);
+  check('it is in the task ledger', !!taskRec && ['queued', 'working', 'reported'].includes(taskRec.state), taskRec ? `${taskRec.id} ${taskRec.state}` : 'none');
 
   // ---------- MCP ----------
   const list = await mcp(info, sid, 'tools/list', {});

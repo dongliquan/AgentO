@@ -189,22 +189,6 @@ export async function saveProject(projectId?: string): Promise<void> {
 }
 
 /** The head coach (created if missing) sorts the project's sessions into parts with coaches, then reports. */
-export function organizeTeam(projectId: string): void {
-  const st = useStore.getState();
-  const p = st.projects.find((x) => x.id === projectId);
-  if (!p) return;
-  const n = [...st.sessions.values()].filter((s) => s.projectId === p.id || st.projects.some((x) => x.parentId === p.id && x.id === s.projectId)).length;
-  const hasHead = [...st.sessions.values()].some((s) => s.role === 'head' && s.projectId === p.id);
-  const msg =
-    `Organize "${p.name}"?\n\n` +
-    `${hasHead ? 'The coach' : 'A coach is created first. It'} reads the ${n} session(s) — without waking them — ` +
-    'sorts them into parts, picks a coach for each part, and reports to you. No work is handed out yet.';
-  if (window.confirm(msg)) {
-    send({ type: 'team.organize', projectId: p.id });
-    st.setRightTab('orders');
-  }
-}
-
 /** Pick a .agento file and open it as a new project (sessions are not started). */
 export function openProjectFile(): void {
   const input = document.createElement('input');
@@ -280,7 +264,6 @@ export const COMMANDS: CommandDef[] = [
   { id: 'view.board', label: 'View: Ground', shortcut: kbd('Ctrl+1'), run: () => useStore.getState().setViewMode('board') },
   { id: 'view.split', label: 'View: Split', shortcut: kbd('Ctrl+2'), run: () => useStore.getState().setViewMode('split') },
   { id: 'view.tabs', label: 'View: Tabs', shortcut: kbd('Ctrl+3'), run: () => useStore.getState().setViewMode('tabs') },
-  { id: 'view.timeline', label: 'View: Timeline', shortcut: kbd('Ctrl+4'), run: () => useStore.getState().setViewMode('timeline') },
   { id: 'view.today', label: 'View: Today', shortcut: kbd('Ctrl+5'), run: () => useStore.getState().setViewMode('today') },
   { id: 'help.ui-usage', label: 'Help: UI Usage (views and tabs opened, this PC only)', run: showUiUsage },
   { id: 'help.ui-usage-reset', label: 'Help: Reset UI Usage Counts', run: () => { resetUsage(); useToasts.getState().push({ title: 'UI usage counts reset', body: 'Counting again from now.' }); } },
@@ -293,12 +276,6 @@ export const COMMANDS: CommandDef[] = [
   { id: 'view.sidebar', label: 'Toggle Sidebar', shortcut: kbd('Ctrl+B'), run: () => useStore.getState().toggleSidebar() },
   { id: 'view.right-panel', label: 'Toggle Right Panel', shortcut: kbd('Ctrl+Alt+B'), run: () => useStore.getState().toggleRight() },
   { id: 'view.inbox', label: 'Show Inbox', run: () => useStore.getState().setActivity('inbox') },
-  { id: 'view.orders', label: 'Manager (give the team an order)', run: () => {
-    const st = useStore.getState();
-    // detached: the right panel lives in the panels window
-    if (!IS_PANELS && st.panelsDetached) relay({ kind: 'command', id: 'view.orders' });
-    else st.setRightTab('orders');
-  } },
   { id: 'view.panels-window', label: 'Panels in Separate Window', shortcut: kbd('Ctrl+Shift+B'), run: () => window.panels?.toggle() },
   { id: 'view.focus-mode', label: 'Focus Mode', shortcut: 'F11', run: () => {
     const st = useStore.getState();
@@ -336,7 +313,7 @@ export const COMMANDS: CommandDef[] = [
 const byId = new Map(COMMANDS.map((c) => [c.id, c]));
 
 /** Commands the panels window runs itself; everything else acts on the board and runs in the main window. */
-const PANELS_LOCAL = new Set(['go.palette', 'go.quick-open', 'view.panels-window', 'view.orders', 'project.new', 'view.inbox', 'usage.refresh']);
+const PANELS_LOCAL = new Set(['go.palette', 'go.quick-open', 'view.panels-window', 'project.new', 'view.inbox', 'usage.refresh']);
 
 /** Runs a menu/palette command id. Also accepts 'focus-session:<id>'. */
 export function runCommand(id: string): boolean {

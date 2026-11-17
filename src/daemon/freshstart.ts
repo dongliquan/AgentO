@@ -113,7 +113,7 @@ export const HANDOFF_REQUEST =
   `Markdown, in the language of this conversation, complete enough to carry on without the old conversation:\n` +
   `- goal and scope of the work\n- current state: what is done, what is in progress\n- decisions made and why\n` +
   `- files changed or created (full paths), branches / worktrees\n- how to check it (commands, URLs, test data)\n` +
-  `- open questions, things waiting on someone, and the next steps`;
+  `- open questions, things waiting on someone, and the next steps\n- cautions: traps met, what failed before, what not to touch`;
 
 export const HANDOFF_CONTINUE = (file: string): string =>
   `[AgentO] Fresh start — this is a new conversation that continues your earlier work. Read the handoff note first:\n` +
