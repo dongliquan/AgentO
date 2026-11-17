@@ -1401,7 +1401,7 @@ export class Team {
       this.store.setAutopilot(root.id, { on: true, since: now, continues: 0, lastAt: now, note: 'Switched on' });
       this.apRun.set(root.id, { at: 0, idle: 0, window: [] });
       this.apActive.set(root.id, now);
-      this.enqueue(coach.id, { text: `${AUTOPILOT_RULES}\nAutopilot is on now: carry on with what is still open. If nothing is open, answer only AUTOPILOT DONE — do not report finished work again.`, wake: true });
+      this.enqueue(coach.id, { text: `${AUTOPILOT_RULES}\nAutopilot is on now. First, in this answer: write down what "finished" means for this project and what is still open — read the plan documents and the memory, then record it with \`update_memory\` in the section Open (one line per open piece, "Done when: …" as the first line). Then start on it. If nothing is open, answer only AUTOPILOT DONE — do not report finished work again.`, wake: true });
     } else {
       const cur = root.autopilot;
       this.store.setAutopilot(root.id, cur ? { ...cur, on: false, lastAt: Date.now(), note: 'Switched off' } : null);
@@ -1482,7 +1482,7 @@ export class Team {
     this.store.setAutopilot(root.id, { ...ap, continues: n, lastAt: now, note: `Continue #${n}` });
     this.onProjects();
     this.enqueue(coach.id, {
-      text: `${AUTOPILOT_RULES}\nNothing is running now. Hand out the next open pieces of the plan; if nothing is open, answer only AUTOPILOT DONE (no report of finished work).`,
+      text: `${AUTOPILOT_RULES}\nNothing is running now. Take the next open piece from the memory section Open and hand it out (remove a line from Open with \`update_memory\` when its piece is finished and checked); if Open is empty, answer only AUTOPILOT DONE (no report of finished work).`,
       wake: true
     });
     log.info('team: autopilot continue', root.name, n);
