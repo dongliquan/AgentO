@@ -2,7 +2,7 @@
 
 # AgentO
 
-**One board for all your AI coding agents.** AgentO is a desktop app (Windows · macOS) that runs Claude Code, Codex, Gemini CLI, Ollama and plain shells side by side, and lets you manage them like a small team.
+**One place for all your AI coding sessions.** AgentO is a desktop app (Windows · macOS) that runs Claude Code, Codex, Gemini CLI, Ollama and plain shells side by side, keeps them alive, and lets them ask each other for help.
 
 > **The key idea:** close the window and your sessions keep running. A background daemon owns every session; the UI is just a window that attaches and detaches.
 
@@ -36,11 +36,11 @@ To build from source instead, see [Quick start](#quick-start).
 
 | Without AgentO | With AgentO |
 |---|---|
-| One terminal tab per agent, easy to lose track | Every session is a card on one canvas (the **Ground**) |
+| One terminal tab per agent, easy to lose track | Every session is a card on one canvas (the **Ground**), or a tab, or a split |
 | Close the terminal, lose the session | Close the UI, sessions keep working; reopen and everything is back |
-| You relay messages between agents by hand | Agents send tasks and reports to each other; you only give orders |
+| You relay messages between agents by hand | A session can ask another session of its project for something and gets the answer back |
 | Long chats quietly burn tokens | Chat size is shown; **Fresh start** hands off to a new chat with a summary |
-| No record of what got done | Timeline, daily report and per-task numbers (`#T12`) |
+| After a restart you forget where each session stopped | **Pick up where you left off** lists stopped sessions with what each was last asked and where it ended |
 
 Sessions are driven through each tool's **CLI with your own subscription login**. AgentO never asks for an API key.
 
@@ -48,7 +48,7 @@ Sessions are driven through each tool's **CLI with your own subscription login**
 
 ```mermaid
 flowchart LR
-  UI["AgentO window<br/>(Electron UI)<br/>close it any time"] <-->|WebSocket| D["Daemon<br/>SQLite · team tools (MCP)<br/>routines · usage"]
+  UI["AgentO window<br/>(Electron UI)<br/>close it any time"] <-->|WebSocket| D["Daemon<br/>SQLite · session tools (MCP)<br/>usage"]
   D --> H1["Holder"] --> A1["claude"]
   D --> H2["Holder"] --> A2["codex"]
   D --> H3["Holder"] --> A3["shell"]
@@ -56,50 +56,39 @@ flowchart LR
 
 Each session lives in its own small **holder** process, so even restarting the daemon does not stop your agents.
 
-## The team model
+## Sessions that ask each other
 
-You are the **Manager**. Give an order, and the sessions split the work and report back.
+Every Claude Code and Codex session gets a few tools through MCP. No hierarchy, no manager: a session just asks another one.
 
 ```mermaid
-flowchart TD
-  M["You — Manager"] -->|order| HC["Head Coach<br/>(optional, all projects)"]
-  HC --> C1["Coach<br/>Project A"]
-  HC --> C2["Coach<br/>Project B"]
-  C1 --> P1["Player"]
-  C1 --> P2["Player"]
-  C2 --> P3["Player"]
-  P1 -.->|report| C1
-  C1 -.->|report| M
+flowchart LR
+  A["Session A<br/>Frontend"] -->|send_to_session| B["Session B<br/>Backend"]
+  B -.->|"[AgentO] finished"| A
 ```
 
-| Role | What it does |
-|---|---|
-| **Manager** (you) | Gives orders, answers questions, decides |
-| **Head Coach** | Optional. Routes an order to the right project |
-| **Coach** | One per project. Splits work, sends it to players, collects results |
-| **Player** | Does the actual coding. A Coach does not edit files |
-| **Reviewer** | A Codex session that cross-checks finished work (added to each new project) |
-
-Every order gets a task number (`#T12`) that follows it through the reports, so you can see what is done and what is waiting.
+- `list_sessions` shows the other sessions of the same project; `read_session` shows what one of them is doing.
+- `send_to_session` sends a request. When the other session finishes, its last answer comes back to the asker as an `[AgentO] … finished` message, with a task number (`#T12`).
+- `report_up` answers or asks back; `update_memory` adds a line to the project memory that every session gets at start.
 
 ## Features
 
 | Area | What you get |
 |---|---|
-| **Ground** | Canvas of session cards, project/part areas, animated order and report lines, minimap, focus mode |
-| **Views** | Ground · Split · Tabs · Timeline (finished features) · Today (what needs you now) |
-| **Chat** | Read Claude/Codex chats on the card: tool calls, team messages, images, file links, question and permission cards |
-| **Right panel** | Session · Files · Manager · Inbox · Logs · Web (Gemini, ChatGPT) |
+| **Ground** | Canvas of session cards, project areas, minimap, focus mode |
+| **Views** | Ground · Split · Tabs · Today (what needs you now) |
+| **Pick up** | Stopped sessions with what each was last asked and where it ended; **Resume all** after a restart |
+| **Chat** | Read Claude/Codex chats on the card: tool calls, messages from other sessions, images, file links, question and permission cards |
+| **Right panel** | Session · Files · Inbox · Web (Gemini, ChatGPT) |
 | **Project memory** | One file per project (decisions, rules, map) injected into Claude sessions at start |
-| **Routines** | Recurring orders (every N minutes, daily at HH:MM); run even when the UI is closed |
+| **Autopilot** | Let one session keep going while you are away: it writes down what "finished" means, works through what is open, stops by itself |
 | **Token control** | Chat-size chips, automatic Fresh start, model picker, usage report |
-| **Needs you** | Questions and prompts that wait for your decision are gathered in one alert |
+| **Needs you** | Questions and prompts that wait for your decision are gathered in one alert; a session waiting for you is never put to sleep |
 | **Save / import** | Save a project as a `.agento` file; import existing Claude Code sessions |
 | **Files** | Markdown, JSON, CSV and image viewers, each in its own window |
 
 ## Supported agents
 
-| Agent | Terminal | Chat view | Team member | Fresh start / usage report |
+| Agent | Terminal | Chat view | Ask other sessions | Fresh start / usage report |
 |---|:-:|:-:|:-:|:-:|
 | Claude Code | ✅ | ✅ | ✅ | ✅ |
 | Codex | ✅ | ✅ | ✅ | — |
@@ -124,7 +113,7 @@ Then:
 
 1. Open **Agents › Connections** and make sure Claude Code is installed and signed in.
 2. Click **+** next to *Projects* and create a project (a folder on your disk).
-3. Click **+** on the folder to start a session, or use **Manager** to give an order.
+3. Click **+** on the folder to start a session.
 4. Close the window, then reopen it from the tray. The sessions are still running.
 
 | Command | Purpose |
@@ -135,7 +124,7 @@ Then:
 | `npm run dist:win` | Windows installer + portable exe → `dist/` (unsigned) |
 | `npm run dist:mac` | macOS dmg + zip (run on a Mac) |
 
-Pushing a tag like `v1.0.0` builds Windows and macOS packages via GitHub Actions.
+Pushing a tag like `v1.1.0` builds Windows and macOS packages via GitHub Actions.
 
 ## Where your data lives
 
@@ -143,7 +132,7 @@ Pushing a tag like `v1.0.0` builds Windows and macOS packages via GitHub Actions
 |---|---|
 | Data folder | `%APPDATA%\AgentO` (macOS: `~/Library/Application Support/AgentO`) |
 | Database, logs | `asm.db`, `logs/` |
-| Project memory, team folders | `team/` |
+| Project memory, session tool configs | `team/` |
 | Pasted images | `attachments/` |
 
 The daemon listens on `127.0.0.1` only, and every connection needs a random token stored in the data folder.
@@ -154,7 +143,7 @@ The daemon listens on `127.0.0.1` only, and every connection needs a random toke
 |---|---|
 | Ctrl+N | New session |
 | Ctrl+P · Ctrl+Shift+P | Quick open · Command palette |
-| Ctrl+1 … 5 | Ground · Split · Tabs · Timeline · Today |
+| Ctrl+1 … 4 | Ground · Split · Tabs · Today |
 | Ctrl+F | Find |
 | Ctrl+B | Toggle sidebar |
 | Ctrl+Shift+B | Panels in a separate window |
@@ -168,15 +157,14 @@ The daemon listens on `127.0.0.1` only, and every connection needs a random toke
 | `AGENTO_DATA_DIR` | Use a different data folder |
 | `ASM_PORT` | Daemon port (default 47831) |
 | `ASM_HIBERNATE_MIN` | Minutes before an idle session sleeps (default 30) |
-| `AGENTO_HEADLESS=0` | Start team sessions in a terminal instead of headless |
-| `AGENTO_PLAYER_MODEL` · `AGENTO_COACH_MODEL` | Default model for players / coaches |
+| `AGENTO_PLAYER_MODEL` | Default Claude model when none is picked (default Opus 5.5) |
 | `AGENTO_AUTO_FRESH=0` | Turn off automatic Fresh start |
 
 ## Project layout
 
 | Folder | Content |
 |---|---|
-| `src/daemon/` | Background daemon: WebSocket + MCP server, SQLite, team, routines, usage; `holder.ts` owns one session |
+| `src/daemon/` | Background daemon: WebSocket + MCP server, SQLite, usage; `holder.ts` owns one session |
 | `src/main/` | Electron main: windows, menu, tray, daemon start, deep links |
 | `src/preload/` | Safe bridge between main and UI |
 | `src/renderer/` | React + zustand + xterm UI |
@@ -189,7 +177,7 @@ The daemon listens on `127.0.0.1` only, and every connection needs a random toke
 - Builds are not code-signed yet: Windows SmartScreen will warn, and macOS needs a manual open.
 - Usage numbers come from local chat logs; your subscription's remaining quota is not visible.
 - No auto-update and no "run B when A finishes" chains yet.
-- Team features were tried mainly with Claude Code; Codex and Gemini coach setups are less tested.
+- Sessions asking each other were tried mainly with Claude Code; Codex is less tested.
 
 ## Security
 

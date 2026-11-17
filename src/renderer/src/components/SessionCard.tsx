@@ -6,7 +6,6 @@ import { send } from '@/client';
 import { countUse } from '@/lib/uiUsage';
 import { exportSession, focusTerminal, removeSession, selectAndReveal } from '@/commands';
 import { AGENT_LABELS, agentColor, basename, formatElapsed, displayTitle, rootProject } from '@/lib/format';
-import { RoleTag } from './RoleTag';
 import { ModelChip } from './ModelChip';
 import { useNeedsIds } from './NeedsYou';
 import { lastLines } from '@/lib/ansi';
@@ -171,7 +170,6 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
     >
       <div className="card-header" onPointerDown={onHeaderDown} onDoubleClick={() => { select(s.id); setFocusMode(true); }} title="Double-click for Focus view (rename: F2 or the ⋯ menu)">
         <AgentIcon kind={s.agent} color={s.color} size={16} />
-        <RoleTag s={s} />
         {editing ? (
           <input
             className="title-input"

@@ -2,151 +2,140 @@
 
 # AgentO
 
-**모든 AI 코딩 에이전트를 한 보드에서.** AgentO는 Claude Code, Codex, Gemini CLI, Ollama, 일반 셸을 나란히 실행하고 작은 팀처럼 관리하게 해 주는 데스크톱 앱(Windows · macOS)입니다.
+**AI 코딩 세션을 한곳에서.** AgentO 는 Claude Code, Codex, Gemini CLI, Ollama, 일반 셸을 나란히 실행하고, 세션을 계속 살려 두며, 세션끼리 서로 도움을 요청하게 해 주는 데스크톱 앱(Windows · macOS)입니다.
 
-> **핵심 아이디어:** 창을 닫아도 세션은 계속 돕니다. 세션은 백그라운드 데몬이 소유하고, UI는 붙었다 떨어지는 화면일 뿐입니다.
+> **핵심 아이디어:** 창을 닫아도 세션은 계속 실행됩니다. 백그라운드 데몬이 모든 세션을 소유하고, UI 는 붙었다 떨어지는 창일 뿐입니다.
 
 ## 다운로드
 
-**[Releases](https://github.com/dongliquan/AgentO/releases/latest)** 에서 최신 빌드를 받으세요. 실행할 CLI(Claude Code, Codex 등)는 따로 설치·로그인해 두어야 합니다.
+**[Releases](https://github.com/dongliquan/AgentO/releases/latest)** 에서 최신 빌드를 받으세요. 실행하려는 CLI(Claude Code, Codex 등)는 따로 설치하고 로그인해 두어야 합니다.
 
 | 플랫폼 | 파일 |
 |---|---|
-| Windows (설치본) | `AgentO-<버전>-win-x64-setup.exe` |
-| Windows (설치 없이) | `AgentO-<버전>-win-x64-portable.exe` |
-| macOS, Apple Silicon | `AgentO-<버전>-mac-arm64.dmg` |
-| macOS, Intel | `AgentO-<버전>-mac-x64.dmg` |
+| Windows (설치 파일) | `AgentO-<version>-win-x64-setup.exe` |
+| Windows (설치 없이) | `AgentO-<version>-win-x64-portable.exe` |
+| macOS, Apple Silicon | `AgentO-<version>-mac-arm64.dmg` |
+| macOS, Intel | `AgentO-<version>-mac-x64.dmg` |
 
-**아직 코드 서명이 없어서 처음 실행할 때 경고가 뜹니다:**
+**빌드에 아직 코드 서명이 없어서 처음 실행할 때 경고가 뜹니다.**
 
-- **Windows:** SmartScreen이 "Windows의 PC 보호"를 띄웁니다. **추가 정보 → 실행**을 누르거나, 내려받은 파일 우클릭 → 속성 → **차단 해제**를 체크하세요(PowerShell: `Unblock-File <파일>`).
-- **macOS:** 앱을 우클릭해 **열기**를 선택하고 한 번 더 **열기**를 누르세요. 또는 `xattr -dr com.apple.quarantine /Applications/AgentO.app` 를 실행하세요.
+- **Windows:** SmartScreen 이 "Windows의 PC 보호"라고 표시합니다. **추가 정보 → 실행** 을 누르거나, 받은 파일을 우클릭 → 속성 → **차단 해제** 를 체크하세요(PowerShell: `Unblock-File <파일>`).
+- **macOS:** 앱을 우클릭하고 **열기** 를 두 번 선택하세요. 또는 `xattr -dr com.apple.quarantine /Applications/AgentO.app` 을 실행합니다.
 
 소스에서 직접 빌드하려면 [빠른 시작](#빠른-시작)을 보세요.
 
 ## 스크린샷
 
-| 라이트 | 다크 |
+| Light | Dark |
 |:-:|:-:|
 | <img src="docs/images/split-light.png" alt="AgentO Split view, light theme" width="480"> | <img src="docs/images/split-dark.png" alt="AgentO Split view, dark theme" width="480"> |
 
-<sub>데모 프로젝트의 세션 4개를 Split 보기로 본 화면입니다(AI 에이전트 대신 일반 셸 세션을 사용). 라이트·다크 테마.</sub>
+<sub>데모 프로젝트의 세션 4개를 Split 보기로 본 모습입니다(여기서는 AI 에이전트 대신 일반 셸 세션). 라이트·다크 테마.</sub>
 
-## 왜 AgentO인가
+## 왜 AgentO 인가
 
-| AgentO 없이 | AgentO와 함께 |
+| AgentO 없이 | AgentO 와 함께 |
 |---|---|
-| 에이전트마다 터미널 탭, 어디에 뭐가 있는지 놓치기 쉬움 | 모든 세션이 한 캔버스(**Ground**)의 카드로 보임 |
-| 터미널을 닫으면 세션도 사라짐 | UI를 닫아도 세션은 계속 일하고, 다시 열면 그대로 복원 |
-| 에이전트 사이 메시지를 사람이 직접 전달 | 에이전트끼리 지시·보고를 주고받고, 나는 지시만 함 |
-| 긴 대화가 조용히 토큰을 소모 | 대화 크기를 표시하고, **Fresh start**로 요약을 넘겨 새 대화 시작 |
-| 무엇이 끝났는지 기록이 없음 | 타임라인, 일일 리포트, 작업 번호(`#T12`) |
+| 에이전트마다 터미널 탭이 하나씩, 놓치기 쉬움 | 모든 세션이 한 캔버스(**Ground**)의 카드, 또는 탭, 또는 분할 화면 |
+| 터미널을 닫으면 세션을 잃음 | UI 를 닫아도 세션은 계속 일하고, 다시 열면 그대로 돌아옴 |
+| 에이전트 사이의 메시지를 손으로 전달 | 세션이 같은 프로젝트의 다른 세션에게 부탁하고 답을 돌려받음 |
+| 긴 대화가 조용히 토큰을 태움 | 대화 크기를 보여 주고, **Fresh start** 가 요약과 함께 새 대화로 넘김 |
+| 재시작하면 세션이 어디까지 했는지 잊어버림 | **Pick up where you left off** 가 멈춘 세션의 마지막 요청과 어디서 끝났는지를 보여 줌 |
 
-세션은 각 도구의 **CLI와 본인 구독 로그인**으로만 실행합니다. AgentO는 API 키를 요구하지 않습니다.
+세션은 각 도구의 **CLI 와 본인 구독 로그인**으로 구동됩니다. AgentO 는 API 키를 요구하지 않습니다.
 
 ## 동작 방식
 
 ```mermaid
 flowchart LR
-  UI["AgentO 창<br/>(Electron UI)<br/>언제든 닫아도 됨"] <-->|WebSocket| D["데몬<br/>SQLite · 팀 도구(MCP)<br/>루틴 · 사용량"]
-  D --> H1["홀더"] --> A1["claude"]
-  D --> H2["홀더"] --> A2["codex"]
-  D --> H3["홀더"] --> A3["shell"]
+  UI["AgentO 창<br/>(Electron UI)<br/>언제든 닫아도 됨"] <-->|WebSocket| D["데몬<br/>SQLite · 세션 도구(MCP)<br/>사용량"]
+  D --> H1["Holder"] --> A1["claude"]
+  D --> H2["Holder"] --> A2["codex"]
+  D --> H3["Holder"] --> A3["shell"]
 ```
 
-세션마다 작은 **홀더** 프로세스가 하나씩 소유하므로, 데몬을 다시 띄워도 에이전트는 멈추지 않습니다.
+세션마다 작은 **홀더** 프로세스가 따로 있어서, 데몬을 재시작해도 에이전트는 멈추지 않습니다.
 
-## 팀 구조
+## 서로 부탁하는 세션
 
-당신은 **감독(Manager)** 입니다. 지시를 내리면 세션들이 일을 나누고 보고합니다.
+Claude Code 와 Codex 세션은 MCP 로 도구 몇 개를 받습니다. 위계도 관리자도 없이, 세션이 다른 세션에게 그냥 부탁합니다.
 
 ```mermaid
-flowchart TD
-  M["나 — 감독"] -->|지시| HC["Head Coach<br/>(선택, 전체 프로젝트)"]
-  HC --> C1["Coach<br/>프로젝트 A"]
-  HC --> C2["Coach<br/>프로젝트 B"]
-  C1 --> P1["선수"]
-  C1 --> P2["선수"]
-  C2 --> P3["선수"]
-  P1 -.->|보고| C1
-  C1 -.->|보고| M
+flowchart LR
+  A["세션 A<br/>프론트엔드"] -->|send_to_session| B["세션 B<br/>백엔드"]
+  B -.->|"[AgentO] finished"| A
 ```
 
-| 역할 | 하는 일 |
+- `list_sessions` 는 같은 프로젝트의 다른 세션을, `read_session` 은 그 세션이 하는 일을 보여 줍니다.
+- `send_to_session` 으로 요청을 보냅니다. 상대가 끝내면 마지막 답이 `[AgentO] … finished` 메시지와 작업 번호(`#T12`)로 부탁한 세션에 돌아옵니다.
+- `report_up` 은 답하거나 되묻고, `update_memory` 는 모든 세션이 시작할 때 받는 프로젝트 메모리에 한 줄을 추가합니다.
+
+## 기능
+
+| 영역 | 제공하는 것 |
 |---|---|
-| **감독**(나) | 지시, 질문에 답, 결정 |
-| **Head Coach** | 선택 사항. 지시를 알맞은 프로젝트로 전달 |
-| **Coach** | 프로젝트마다 하나. 일을 나눠 선수에게 보내고 결과를 모음 |
-| **선수** | 실제 코딩. Coach는 파일을 직접 고치지 않음 |
-| **검토자** | 끝난 일을 교차 검증하는 Codex 세션(새 프로젝트마다 추가) |
-
-지시마다 작업 번호(`#T12`)가 붙어 보고까지 따라가므로, 무엇이 끝났고 무엇이 기다리는지 한눈에 보입니다.
-
-## 주요 기능
-
-| 영역 | 내용 |
-|---|---|
-| **Ground** | 세션 카드 캔버스, 프로젝트·파트 영역, 지시·보고 연결선(흐르는 점선), 미니맵, Focus 보기 |
-| **보기** | Ground · Split · Tabs · Timeline(끝난 기능) · Today(지금 필요한 것) |
-| **대화** | Claude·Codex 대화를 카드에서 바로: 도구 호출, 팀 메시지, 이미지, 파일 링크, 질문·권한 카드 |
-| **오른쪽 패널** | Session · Files · Manager · Inbox · Logs · Web(Gemini, ChatGPT) |
-| **프로젝트 메모리** | 프로젝트마다 결정·규칙·지도를 한 파일로 두고 Claude 세션 시작 때 주입 |
-| **루틴** | 반복 지시(N분마다, 매일 HH:MM). UI를 닫아도 실행 |
+| **Ground** | 세션 카드 캔버스, 프로젝트 영역, 미니맵, 포커스 모드 |
+| **보기** | Ground · Split · Tabs · Today(지금 내 판단이 필요한 것) |
+| **이어서 하기** | 멈춘 세션의 마지막 요청과 끝난 지점, 재시작 뒤 **Resume all** |
+| **Chat** | 카드에서 Claude/Codex 대화 읽기: 도구 호출, 다른 세션의 메시지, 이미지, 파일 링크, 질문·권한 카드 |
+| **오른쪽 패널** | Session · Files · Inbox · Web(Gemini, ChatGPT) |
+| **프로젝트 메모리** | 프로젝트마다 파일 하나(결정, 규칙, 지도)를 Claude 세션 시작 때 주입 |
+| **Autopilot** | 자리를 비운 동안 세션 하나가 계속 진행: "끝났다"의 기준을 적고, 남은 일을 처리하고, 스스로 멈춤 |
 | **토큰 관리** | 대화 크기 칩, 자동 Fresh start, 모델 선택, 사용량 리포트 |
-| **Needs you** | 내 판단을 기다리는 질문·프롬프트를 한 알림으로 모아 보기 |
-| **저장·가져오기** | 프로젝트를 `.agento` 파일로 저장·열기, 기존 Claude Code 세션 가져오기 |
-| **파일** | Markdown · JSON · CSV · 이미지 뷰어를 파일별 새 창으로 |
+| **내 판단 필요** | 내 결정을 기다리는 질문과 프롬프트를 한 알림으로 모음. 나를 기다리는 세션은 절대 재우지 않음 |
+| **저장 / 가져오기** | 프로젝트를 `.agento` 파일로 저장, 기존 Claude Code 세션 가져오기 |
+| **파일** | Markdown, JSON, CSV, 이미지 뷰어를 각자 창으로 |
 
-## 지원 에이전트
+## 지원하는 에이전트
 
-| 에이전트 | 터미널 | 대화 보기 | 팀 구성원 | Fresh start / 사용량 리포트 |
+| Agent | Terminal | 대화 보기 | 다른 세션에 부탁 | Fresh start / 사용량 리포트 |
 |---|:-:|:-:|:-:|:-:|
 | Claude Code | ✅ | ✅ | ✅ | ✅ |
 | Codex | ✅ | ✅ | ✅ | — |
 | Gemini CLI | ✅ | — | — | — |
 | Ollama | ✅ | — | — | — |
-| 셸 | ✅ | — | — | — |
+| Shell | ✅ | — | — | — |
 
-Gemini CLI는 개인 요금제 지원이 끝나 여기서는 터미널 보기만 됩니다.
+Gemini CLI 가 개인 요금제 지원을 종료해서 여기서는 터미널만 지원합니다.
 
 ## 빠른 시작
 
-**필요한 것:** Node.js 22(LTS), 쓸 CLI(`claude`, `codex`, `gemini`, `ollama`; `PATH`에서 자동 감지). Windows는 네이티브 모듈 빌드를 위해 Visual Studio Build Tools와 Python이 필요합니다.
+**필요한 것:** Node.js 22(LTS), 쓰려는 CLI(`claude`, `codex`, `gemini`, `ollama`; `PATH` 에서 찾음). Windows 에서는 네이티브 모듈 빌드에 Visual Studio Build Tools 와 Python 이 필요합니다.
 
 ```bash
 git clone https://github.com/dongliquan/AgentO.git
 cd AgentO
-npm install        # Electron용 node-pty, better-sqlite3 빌드
-npm run dev        # 앱 실행
+npm install        # builds node-pty and better-sqlite3 for Electron
+npm run dev        # starts the app
 ```
 
 그다음:
 
-1. **Agents › Connections** 에서 Claude Code가 설치·로그인돼 있는지 확인합니다.
-2. *Projects* 옆 **+** 로 프로젝트(디스크의 폴더)를 만듭니다.
-3. 폴더의 **+** 로 세션을 시작하거나 **Manager** 에서 지시를 보냅니다.
-4. 창을 닫고 트레이에서 다시 엽니다. 세션은 그대로 돌고 있습니다.
+1. **Agents › Connections** 를 열어 Claude Code 가 설치되고 로그인되어 있는지 확인합니다.
+2. *Projects* 옆의 **+** 를 눌러 프로젝트(디스크의 폴더)를 만듭니다.
+3. 폴더의 **+** 를 눌러 세션을 시작합니다.
+4. 창을 닫고 트레이에서 다시 엽니다. 세션은 그대로 실행 중입니다.
 
 | 명령 | 용도 |
 |---|---|
-| `npm run dev` | 개발 모드 실행 |
-| `npm run typecheck` | 메인·렌더러 타입 검사 |
-| `npm run smoke` | 일회용 데몬으로 확인(AI 호출 없음) |
-| `npm run dist:win` | Windows 설치본 + 포터블 exe → `dist/`(서명 없음) |
-| `npm run dist:mac` | macOS dmg + zip (Mac에서 실행) |
+| `npm run dev` | 개발 모드로 실행 |
+| `npm run typecheck` | main 과 renderer 타입 검사 |
+| `npm run smoke` | 일회용 데몬을 띄워 점검(AI 호출 없음) |
+| `npm run dist:win` | Windows 설치 파일 + 포터블 exe → `dist/`(서명 없음) |
+| `npm run dist:mac` | macOS dmg + zip(Mac 에서 실행) |
 
-`v1.0.0` 같은 태그를 push하면 GitHub Actions가 Windows·macOS 패키지를 만듭니다.
+`v1.1.0` 같은 태그를 push 하면 GitHub Actions 가 Windows 와 macOS 패키지를 만듭니다.
 
 ## 데이터 위치
 
 | 항목 | 위치 |
 |---|---|
 | 데이터 폴더 | `%APPDATA%\AgentO` (macOS: `~/Library/Application Support/AgentO`) |
-| 데이터베이스·로그 | `asm.db`, `logs/` |
-| 프로젝트 메모리·팀 폴더 | `team/` |
-| 붙여넣은 이미지 | `attachments/` |
+| 데이터베이스, 로그 | `asm.db`, `logs/` |
+| 프로젝트 메모리, 세션 도구 설정 | `team/` |
+| 붙여 넣은 이미지 | `attachments/` |
 
-데몬은 `127.0.0.1` 에서만 듣고, 모든 연결은 데이터 폴더의 무작위 토큰이 있어야 합니다.
+데몬은 `127.0.0.1` 에서만 받으며, 모든 연결에는 데이터 폴더에 저장된 무작위 토큰이 필요합니다.
 
 ## 단축키
 
@@ -154,46 +143,45 @@ npm run dev        # 앱 실행
 |---|---|
 | Ctrl+N | 새 세션 |
 | Ctrl+P · Ctrl+Shift+P | 빠른 열기 · 명령 팔레트 |
-| Ctrl+1 … 5 | Ground · Split · Tabs · Timeline · Today |
+| Ctrl+1 … 4 | Ground · Split · Tabs · Today |
 | Ctrl+F | 찾기 |
-| Ctrl+B | 사이드바 토글 |
+| Ctrl+B | 사이드바 켜기/끄기 |
 | Ctrl+Shift+B | 패널을 별도 창으로 |
-| Ctrl+Shift+W | 입력 대기 세션으로 이동 |
-| F2 · F11 | 이름 바꾸기 · Focus 보기 |
+| Ctrl+Shift+W | 입력을 기다리는 세션으로 이동 |
+| F2 · F11 | 이름 바꾸기 · 포커스 보기 |
 
 ## 설정(환경 변수)
 
 | 변수 | 뜻 |
 |---|---|
-| `AGENTO_DATA_DIR` | 데이터 폴더 변경 |
+| `AGENTO_DATA_DIR` | 다른 데이터 폴더 사용 |
 | `ASM_PORT` | 데몬 포트(기본 47831) |
-| `ASM_HIBERNATE_MIN` | 쉬는 세션이 절전하기까지 분(기본 30) |
-| `AGENTO_HEADLESS=0` | 팀 세션을 headless 대신 터미널로 시작 |
-| `AGENTO_PLAYER_MODEL` · `AGENTO_COACH_MODEL` | 선수 / Coach 기본 모델 |
+| `ASM_HIBERNATE_MIN` | 쉬는 세션이 잠들기까지의 분(기본 30) |
+| `AGENTO_PLAYER_MODEL` | 고른 모델이 없을 때 Claude 기본 모델(기본 Opus 5.5) |
 | `AGENTO_AUTO_FRESH=0` | 자동 Fresh start 끄기 |
 
-## 폴더 구성
+## 프로젝트 구조
 
 | 폴더 | 내용 |
 |---|---|
-| `src/daemon/` | 백그라운드 데몬: WebSocket + MCP 서버, SQLite, 팀, 루틴, 사용량. `holder.ts` 가 세션 하나를 소유 |
-| `src/main/` | Electron 메인: 창, 메뉴, 트레이, 데몬 기동, 딥링크 |
-| `src/preload/` | 메인과 UI 사이의 안전한 다리 |
+| `src/daemon/` | 백그라운드 데몬: WebSocket + MCP 서버, SQLite, 사용량. `holder.ts` 가 세션 하나를 소유 |
+| `src/main/` | Electron main: 창, 메뉴, 트레이, 데몬 시작, 딥링크 |
+| `src/preload/` | main 과 UI 사이의 안전한 다리 |
 | `src/renderer/` | React + zustand + xterm UI |
-| `src/shared/` | 메시지 규약과 공용 코드 |
+| `src/shared/` | 메시지 프로토콜과 공용 도우미 |
 | `tests/smoke/` | 데몬·UI 스모크 테스트 |
-| `docs/` | 설계 문서 |
+| `docs/` | 설계 메모 |
 
 ## 알려진 한계
 
-- 코드 서명이 아직 없습니다. Windows는 SmartScreen 경고가 뜨고, macOS는 직접 열어야 합니다.
-- 사용량은 로컬 대화 기록 기준입니다. 구독의 남은 한도는 알 수 없습니다.
-- 자동 업데이트와 "A가 끝나면 B 시작" 연결은 아직 없습니다.
-- 팀 기능은 주로 Claude Code로 써 봤고, Codex·Gemini Coach 구성은 검증이 덜 됐습니다.
+- 빌드에 코드 서명이 아직 없습니다: Windows SmartScreen 이 경고하고 macOS 는 수동으로 열어야 합니다.
+- 사용량은 로컬 대화 로그에서 계산합니다. 구독의 남은 한도는 보이지 않습니다.
+- 자동 업데이트와 "A 가 끝나면 B 실행" 연결은 아직 없습니다.
+- 세션끼리 부탁하는 기능은 주로 Claude Code 로 시험했고 Codex 는 덜 시험했습니다.
 
 ## 보안
 
-AgentO와 연결한 CLI는 내 파일에 접근할 수 있습니다. 에이전트는 내가 준 권한으로 동작하니 권한 요청을 확인하고, *Trust this folder* 는 직접 관리하는 폴더에만 쓰세요. 취약점은 공개 이슈 대신 GitHub의 *Report a vulnerability* 로 비공개 제보해 주세요.
+Windows, macOS 와 연결하는 CLI 는 사용자의 파일을 다룰 수 있다고 신뢰합니다. 에이전트는 사용자가 준 권한으로 실행됩니다: 권한 요청을 확인하고, *이 폴더를 신뢰* 는 직접 관리하는 폴더에만 쓰세요. 취약점은 공개 이슈 대신 GitHub 의 *Report a vulnerability* 버튼으로 비공개 제보해 주세요.
 
 ## 라이선스
 

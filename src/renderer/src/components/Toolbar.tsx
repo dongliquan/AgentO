@@ -97,7 +97,7 @@ export function Toolbar(): JSX.Element {
           — session layout tools, not for the Timeline */}
       {!onPage && (
       <>
-      <button className="btn ghost" onClick={autoArrange} disabled={viewMode !== 'board'} title="Auto Arrange — move every card into the team layout (Head Coach in the middle, projects around it) and keep it">Auto Arrange</button>
+      <button className="btn ghost" onClick={autoArrange} disabled={viewMode !== 'board'} title="Auto Arrange — lay every card out in a grid by project and keep it">Auto Arrange</button>
       <button className="btn ghost" onClick={fitAll} disabled={viewMode !== 'board'} title="Fit All — zoom and pan so every card is in view (the cards do not move)">Fit All</button>
       <button
         className={`btn ghost ${focusMode ? 'on' : ''}`}
