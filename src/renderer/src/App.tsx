@@ -32,7 +32,6 @@ import { ImportClaudeDialog } from '@/components/ImportClaudeDialog';
 import { AgentsDialog } from '@/components/AgentsDialog';
 import { SettingsDialog } from '@/components/SettingsDialog';
 import { UsageDialog } from '@/components/UsageDialog';
-import { DailyReport } from '@/components/DailyReport';
 import { FindBar } from '@/components/FindBar';
 import { Toolbar } from '@/components/Toolbar';
 import { FocusView } from '@/components/FocusView';
@@ -221,7 +220,6 @@ export function App(): JSX.Element {
       <AgentsDialog />
       <SettingsDialog />
       <UsageDialog />
-      <DailyReport />
       <FindBar />
       <Toasts />
       <OrderFlowDialog />

@@ -4,7 +4,6 @@ import { send } from '@/client';
 import { AgentPicker } from './AgentPicker';
 import { newProject } from '@/commands';
 import { ProjectTree, SessionRow } from './ProjectTree';
-import { useReport } from './DailyReport';
 import { askNick, useNick } from '@/lib/nick';
 import { useTeamMode } from '@/lib/teamMode';
 
@@ -27,20 +26,6 @@ export function Sidebar(): JSX.Element {
         <span className="label" title="Double-click to change what you are called" onDoubleClick={(e) => { e.stopPropagation(); void askNick(); }}>
           {nick || 'Welcome'}
         </span>
-        <button
-          className="icon-btn manager-usage manager-report"
-          title="Report — what was done each day, and the to-do list for the next"
-          onClick={(e) => {
-            e.stopPropagation();
-            useReport.getState().show();
-          }}
-        >
-          {/* a checklist, drawn like the toolbar icons (16px, currentColor) */}
-          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-            <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" />
-            <path d="M5 6l1 1 2-2M5 10l1 1 2-2M9.5 6.5h2M9.5 10.5h2" stroke="currentColor" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
         <button
           className="icon-btn manager-usage"
           title="Token usage — by project, time, session, role and model"

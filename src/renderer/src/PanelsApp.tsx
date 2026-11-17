@@ -18,7 +18,6 @@ import { NeedsYouWatcher } from '@/components/NeedsYou';
 import { DelegationWatcher } from '@/components/Delegations';
 import { PathMenu } from '@/components/PathMenu';
 import { UsageDialog } from '@/components/UsageDialog';
-import { DailyReport } from '@/components/DailyReport';
 import { FindBar } from '@/components/FindBar';
 import { Splitter } from '@/components/Splitter';
 import logo from '@/assets/logo.png';
@@ -87,7 +86,6 @@ export function PanelsApp(): JSX.Element {
       {newSessionOpen && <NewSessionDialog />}
       <PromptDialog />
       <UsageDialog />
-      <DailyReport />
       <FindBar />
       <OrderFlowDialog />
       <NewProjectDialog />

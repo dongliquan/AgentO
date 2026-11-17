@@ -16,7 +16,6 @@ import { ProjectFilter } from './ProjectFilter';
 import { SearchBox } from './SearchBox';
 import { useFlow } from './OrderFlow';
 import { copyPath } from './PathMenu';
-import { useReport } from './DailyReport';
 import { ProjectNow } from './ProjectNow';
 
 const PERIODS = [
@@ -115,7 +114,6 @@ export function TimelineView(): JSX.Element {
         </label>
         <SearchBox value={query} onChange={setQuery} placeholder="Search features, commits" />
         <span className="grow" />
-        <button className="btn sm" onClick={() => useReport.getState().show()} title="Report: what was done each day, and the to-do list for the next">Report</button>
       </div>
       <div className="timeline-body">
         <div className="timeline-graphs">
