@@ -196,7 +196,7 @@ hr { border: 0; margin: 2.2em 0 }   /* 선 없이 여백만 — 챕터 구분은
 <table>
 <thead><tr><th>번호</th><th>질문</th><th>선택지</th><th>제안</th></tr></thead>
 <tbody>
-<tr style="background:#f8f9fa"><td><b>D1</b></td><td>2.0은 어느 코드에서 시작하나</td><td>release/1.1(팀 코드 제거됨) · main(팀 코드 포함 2.0.0)</td><td><b>release/1.1</b>에서 시작하고 main에만 있는 문서·시험·스크립트를 옮긴다. 팀 코드를 다시 걷어내는 일을 피한다</td></tr>
+<tr style="background:#f8f9fa"><td><b>D1</b></td><td>2.0은 어느 코드에서 시작하나</td><td>release/1.1(팀 코드 제거됨) · main(팀 코드 포함 2.0.0)</td><td><b>main에서 시작, 1.1의 팀 코드만 정리</b>(감독 결정 2026-11-18). 1.1의 팀 제거 커밋을 가져오고 남은 역할·파트를 걷어냈다(d6401b7, 브랜치 v2-remove-team)</td></tr>
 <tr style="background:#ffffff"><td><b>D2</b></td><td>Project / Part / Folder 구조</td><td>폴더 1개 = 작업공간(평면) · 프로젝트에 폴더 여러 개 · 지금처럼 파트까지</td><td><b>프로젝트(폴더 여러 개) 유지, 파트 삭제.</b> 한 프로젝트에 폴더 여러 개는 AgentO의 처음 목적이다</td></tr>
 <tr style="background:#f8f9fa"><td><b>D3</b></td><td>프로젝트 메모리의 원본 위치</td><td>데이터 폴더(지금) · 저장소 안 <code>.agento/</code></td><td><b>저장소 안 파일을 원본</b>으로 하고, 개인·비밀·로컬 전용은 데이터 폴더에 둔다. 폴더가 여러 개면 주 폴더 하나를 정해야 한다(6.2)</td></tr>
 <tr style="background:#ffffff"><td><b>D4</b></td><td>오른쪽 패널 탭</td><td>Files · Inbox · Inspector 3탭 · 1.1의 Session · Files · Inbox · Web</td><td><b>1.1의 4탭(Session · Files · Inbox · Web)을 유지.</b> Inspector는 별도 탭이 아니라 Session 안의 접힌 상세로 둔다. Web은 사용 기록을 보고 정한다</td></tr>
