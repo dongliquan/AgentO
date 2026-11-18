@@ -17,10 +17,7 @@ export interface GroupLayout {
   boxes: Map<string, Rect>;
 }
 
-/**
- * Which cards a collapsed group hides, and where its box sits. A project collapses with its head coach and every part;
- * a part (or a project without parts) collapses its coach and players.
- */
+/** Which cards a collapsed project hides, and where its box sits. */
 export function groupLayout(sessions: Session[], projects: Project[], collapsed: ReadonlySet<string>): GroupLayout {
   const hidden = new Map<string, string>();
   const boxes = new Map<string, Rect>();
@@ -29,19 +26,12 @@ export function groupLayout(sessions: Session[], projects: Project[], collapsed:
     boxes.set(groupId, { x: Math.min(...members.map((s) => s.x)), y: Math.min(...members.map((s) => s.y)), ...COLLAPSED });
     for (const s of members) hidden.set(s.id, groupId);
   };
-  for (const top of projects.filter((p) => !p.parentId)) {
-    const parts = projects.filter((p) => p.parentId === top.id);
-    if (top.closed) {
-      for (const s of sessions) if (s.projectId === top.id || parts.some((p) => p.id === s.projectId)) hidden.set(s.id, top.id);
+  for (const p of projects) {
+    if (p.closed) {
+      for (const s of sessions) if (s.projectId === p.id) hidden.set(s.id, p.id);
       continue;
     }
-    if (collapsed.has(top.id)) {
-      hide(top.id, sessions.filter((s) => s.projectId === top.id || parts.some((p) => p.id === s.projectId)));
-      continue;
-    }
-    for (const g of parts.length ? parts : [top]) {
-      if (collapsed.has(g.id)) hide(g.id, sessions.filter((s) => s.projectId === g.id && s.role !== 'head'));
-    }
+    if (collapsed.has(p.id)) hide(p.id, sessions.filter((s) => s.projectId === p.id));
   }
   return { hidden, boxes };
 }

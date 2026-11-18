@@ -1,4 +1,4 @@
-import type { AgentKind, SessionRole, SessionStatus } from '@shared/protocol';
+import type { AgentKind, SessionStatus } from '@shared/protocol';
 
 export const AGENT_COLORS: Record<AgentKind, string> = {
   claude: '#d97757',
@@ -9,33 +9,18 @@ export const AGENT_COLORS: Record<AgentKind, string> = {
   custom: '#b8b8be'
 };
 
-/** Team hierarchy labels (football club: the user is the manager · head coach · coach · player). */
-export const ROLE_LABELS: Record<SessionRole, string> = { head: 'Coach', coach: 'Part Coach', player: 'Player' };
-
 /**
- * Role label of a session: the team-wide head coach (no project) is "Head Coach", a project's head coach "Coach", a
- * part's coach "Part Coach" (a player promoted to coach is labelled the same).
- */
-export function roleLabel(s: { role: SessionRole; folderId: string; projectId?: string }): string {
-  return s.role === 'head' && !s.projectId ? 'Head Coach' : ROLE_LABELS[s.role];
-}
-
-/**
- * Session name where a role badge sits next to it: drops a leading role ("Head Coach · 쇼핑몰" → "쇼핑몰"). The stored
- * title keeps it — agents address each other by title.
+ * Session name as shown: drops a leading 1.x role ("Head Coach · 쇼핑몰" → "쇼핑몰"). The stored title keeps it —
+ * agents address each other by title.
  */
 export function displayTitle(s: { title: string }): string {
   const t = s.title.replace(/^(Head Coach|Playing Coach|Part Coach|Coach|Player) · /, '');
   return t || s.title;
 }
 
-/** Project label of a session; the head coach belongs to the whole team. */
-export function projectLabel(projectId: string, projects: { id: string; name: string; parentId?: string }[]): string {
-  if (!projectId) return 'Team (all projects)';
-  const p = projects.find((x) => x.id === projectId);
-  if (!p) return '?';
-  const parent = p.parentId ? projects.find((x) => x.id === p.parentId) : undefined;
-  return parent ? `${parent.name} › ${p.name}` : p.name;
+/** Project label of a session. */
+export function projectLabel(projectId: string, projects: { id: string; name: string }[]): string {
+  return projects.find((x) => x.id === projectId)?.name ?? '?';
 }
 
 export const AGENT_LABELS: Record<AgentKind, string> = {
@@ -143,15 +128,14 @@ export function formatBytes(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-/** A project's top-level project (a part's project; a project is its own). */
-export function rootProject<P extends { id: string; parentId?: string }>(projectId: string, projects: P[]): P | undefined {
-  const p = projects.find((x) => x.id === projectId);
-  return p?.parentId ? projects.find((x) => x.id === p.parentId) ?? p : p;
+/** The project of a project id. */
+export function projectOf<P extends { id: string }>(projectId: string, projects: P[]): P | undefined {
+  return projects.find((x) => x.id === projectId);
 }
 
-/** A project's color (a part takes its project's), for tags, the tree, the Ground frame and the Manager tab. */
-export function projectColor(projectId: string, projects: { id: string; parentId?: string; color?: string }[]): string {
-  return rootProject(projectId, projects)?.color ?? '#64748b';
+/** A project's color, for tags, the tree and the Ground frame. */
+export function projectColor(projectId: string, projects: { id: string; color?: string }[]): string {
+  return projectOf(projectId, projects)?.color ?? '#64748b';
 }
 
 /** A Windows path as a comparison key: backslashes, no trailing separator, lower case. */

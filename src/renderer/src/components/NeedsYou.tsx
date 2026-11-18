@@ -34,8 +34,8 @@ export function openNeed(sessionId: string): void {
 /** The alert's click: fly to the session's card on the Ground (the right panel stays as it is). */
 function goToCard(sessionId: string): void {
   const st = useStore.getState();
-  // Today / Timeline have no cards: go back to the Ground first
-  if (st.viewMode === 'today' || st.viewMode === 'timeline') st.setViewMode('board');
+  // Today has no cards: go back to the Ground first
+  if (st.viewMode === 'today') st.setViewMode('board');
   selectAndReveal(sessionId);
 }
 

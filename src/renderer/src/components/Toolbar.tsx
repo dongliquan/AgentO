@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useStore, type ViewMode } from '@/store';
 import { autoArrange, fitAll, newSessionFor, newProject, runCommand } from '@/commands';
 import { kbd } from '@/lib/keys';
-import { useTeamMode } from '@/lib/teamMode';
 import { getThemePref, onThemeChange, setThemePref, type ThemePref } from '@/lib/theme';
 
 /** the three ways to lay out the live sessions; Timeline (a record of finished work) stands apart from them */
@@ -37,10 +36,9 @@ function PopOutIcon({ open }: { open: boolean }): JSX.Element {
 export function Toolbar(): JSX.Element {
   const viewMode = useStore((s) => s.viewMode);
   const focusMode = useStore((s) => s.focusMode);
-  const onTimeline = viewMode === 'timeline';
   const onToday = viewMode === 'today';
   /** a record / overview page, not a session layout: the layout tools hide */
-  const onPage = onTimeline || onToday;
+  const onPage = onToday;
   const setViewMode = useStore((s) => s.setViewMode);
   const projects = useStore((s) => s.projects);
   const selectedId = useStore((s) => s.selectedId);
@@ -52,17 +50,11 @@ export function Toolbar(): JSX.Element {
   const detached = useStore((s) => s.panelsDetached);
 
   const sel = selectedId ? sessions.get(selectedId) : undefined;
-  // the selected session's project (and part), else the first open project; a closed project is never shown here
+  // the selected session's project, else the first open project; a closed project is never shown here
   const own = sel ? projects.find((p) => p.id === sel.projectId) : undefined;
-  const part = own?.parentId ? own : undefined;
-  const top = (part ? projects.find((p) => p.id === part.parentId) : own) ?? projects.find((p) => !p.parentId && !p.closed);
+  const top = own ?? projects.find((p) => !p.closed);
   const project = top && !top.closed ? top : undefined;
-  const ids = new Set(project ? [project.id, ...projects.filter((p) => p.parentId === project.id).map((p) => p.id)] : []);
-  const count = [...sessions.values()].filter((s) => ids.has(s.projectId)).length;
-  // the team-wide Head Coach belongs to no project: the breadcrumb is the whole team (all open projects), not the first project
-  const teamHead = !!sel && sel.role === 'head' && !sel.projectId;
-  const openIds = new Set(projects.filter((p) => !(p.parentId ? projects.find((x) => x.id === p.parentId)?.closed : p.closed)).map((p) => p.id));
-  const teamCount = [...sessions.values()].filter((s) => openIds.has(s.projectId)).length;
+  const count = project ? [...sessions.values()].filter((s) => s.projectId === project.id).length : 0;
 
   return (
     <div className="toolbar">
@@ -80,7 +72,7 @@ export function Toolbar(): JSX.Element {
       </div>
       <span className="toolbar-sep" />
       <div className="segmented">
-        <button className={onToday || onTimeline ? 'active' : ''} onClick={() => setViewMode('today')} title={kbd('Today — what needs you, who is working, what got done, your to-dos (Ctrl+5)')}>
+        <button className={onToday ? 'active' : ''} onClick={() => setViewMode('today')} title={kbd('Today — what needs you, who is working, what got done, your to-dos (Ctrl+5)')}>
           Today
         </button>
       </div>
@@ -89,18 +81,10 @@ export function Toolbar(): JSX.Element {
           <>
             <b>Today</b> · needs you, working, done, to do
           </>
-        ) : onTimeline ? (
-          <>
-            <b>Timeline</b> · finished features by project and day
-          </>
-        ) : teamHead ? (
-          <>
-            <b>Head Coach</b> › All projects › Sessions {teamCount}
-          </>
         ) : project ? (
           <>
             <b>{project.name}</b>
-            {part && <> › {part.name}</>} › Sessions {count}
+             › Sessions {count}
           </>
         ) : (
           <b>No Open Project</b>
@@ -111,7 +95,7 @@ export function Toolbar(): JSX.Element {
           — session layout tools, not for the Timeline */}
       {!onPage && (
       <>
-      <button className="btn ghost" onClick={autoArrange} disabled={viewMode !== 'board'} title="Auto Arrange — move every card into the team layout (Head Coach in the middle, projects around it) and keep it">Auto Arrange</button>
+      <button className="btn ghost" onClick={autoArrange} disabled={viewMode !== 'board'} title="Auto Arrange — lay every card out in a grid by project and keep it">Auto Arrange</button>
       <button className="btn ghost" onClick={fitAll} disabled={viewMode !== 'board'} title="Fit All — zoom and pan so every card is in view (the cards do not move)">Fit All</button>
       <button
         className={`btn ghost ${focusMode ? 'on' : ''}`}
@@ -123,7 +107,7 @@ export function Toolbar(): JSX.Element {
       </button>
       </>
       )}
-      <button className="btn" onClick={() => void newProject()} title="New project: name, folders and an optional brief for its coach">+ New Project</button>
+      <button className="btn" onClick={() => void newProject()} title="New project: name and folders">+ New Project</button>
       <button className="btn primary" onClick={() => newSessionFor()}>+ New Session</button>
       {!detached && (
         <button className={`icon-btn layout-toggle ${rightOpen ? 'on' : ''}`} title={kbd(`${rightOpen ? 'Hide' : 'Show'} Details Panel (Ctrl+Alt+B)`)} onClick={toggleRight}>
@@ -137,7 +121,6 @@ export function Toolbar(): JSX.Element {
       >
         <PopOutIcon open={detached} />
       </button>
-      <TeamToggle />
       <ThemeToggle />
     </div>
   );
@@ -149,30 +132,6 @@ const THEME_LABEL: Record<ThemePref, string> = { light: 'Light', dark: 'Dark' };
  * Light ⇄ dark, as in the shared theme spec (manager's correction #T48): an icon button only — the icon shows the
  * current theme (sun = light, moon = dark), the name is in the tooltip. Also View › Theme.
  */
-/** Team mode on/off: the Head Coach / Coach layers and their screens. Off = plain sessions. */
-function TeamToggle(): JSX.Element {
-  const team = useTeamMode((t) => t.team);
-  const set = useTeamMode((t) => t.set);
-  const title = team
-    ? 'Team mode is on (Head Coach, Coach, Manager, Activity, History) — click for plain sessions. The Ground is laid out again.'
-    : 'Plain sessions — click to turn on team mode (Head Coach, Coach, Manager, Activity, History). The Ground is laid out again.';
-  return (
-    <button className={`icon-btn layout-toggle team-toggle ${team ? 'active' : ''}`} title={title} aria-label={title} aria-pressed={team} onClick={() => {
-        set(!team);
-        // the Ground has a layout for each mode: lay the cards out again for the one now on
-        autoArrange();
-      }}>
-      {/* two small people */}
-      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-        <circle cx="5.5" cy="5.5" r="2" fill="none" stroke="currentColor" />
-        <path d="M2 13c0-2.2 1.6-3.5 3.5-3.5S9 10.8 9 13" fill="none" stroke="currentColor" strokeLinecap="round" />
-        <circle cx="11" cy="6" r="1.7" fill="none" stroke="currentColor" />
-        <path d="M10.3 9.6c.3-.1.5-.1.7-.1 1.7 0 3 1.1 3 3.1" fill="none" stroke="currentColor" strokeLinecap="round" />
-      </svg>
-    </button>
-  );
-}
-
 function ThemeToggle(): JSX.Element {
   const [pref, setPref] = useState(getThemePref());
   useEffect(() => onThemeChange(() => setPref(getThemePref())), []);

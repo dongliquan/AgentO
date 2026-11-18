@@ -11,15 +11,12 @@ import { FolderTree, leafFolders, useExpanded } from './FileTree';
 
 const norm = (p: string): string => p.replace(/[\\/]+$/, '').toLowerCase().replace(/\//g, '\\');
 
-/** The project (not a part) a project id belongs to. */
 function rootOf(projects: Project[], id: string | undefined): Project | undefined {
-  const p = id ? projects.find((x) => x.id === id) : undefined;
-  if (!p) return undefined;
-  return p.parentId ? projects.find((x) => x.id === p.parentId) ?? p : p;
+  return id ? projects.find((x) => x.id === id) : undefined;
 }
 
 /**
- * Files tab: the folders of the selected session's project as a file tree (parts work in their project's folders).
+ * Files tab: the folders of the selected session's project as a file tree.
  * Follows the selection like the project filter; a file revealed from a chat ("Show in Files", a click on a file name)
  * switches to that file's project until another session is picked.
  */
@@ -31,7 +28,7 @@ export function FilesPanel(): JSX.Element {
   const revealNonce = useReveal((s) => s.nonce);
   const [revealed, setRevealed] = useState<string | null>(null);
   useEffect(() => setRevealed(null), [selectedId]);
-  const project = rootOf(projects, revealed ?? undefined) ?? rootOf(projects, selProjectId) ?? rootOf(projects, talk) ?? projects.find((p) => !p.parentId && !p.closed);
+  const project = rootOf(projects, revealed ?? undefined) ?? rootOf(projects, selProjectId) ?? rootOf(projects, talk) ?? projects.find((p) => !p.closed);
   const [expanded, toggle] = useExpanded();
   // a project's folders open by default (once each)
   useEffect(() => {
@@ -47,7 +44,7 @@ export function FilesPanel(): JSX.Element {
     if (!target) return;
     const low = norm(target);
     let best: { project: Project; folder: Folder } | undefined;
-    for (const p of projects.filter((x) => !x.parentId && !x.closed)) {
+    for (const p of projects.filter((x) => !x.closed)) {
       for (const f of p.folders) {
         const fp = norm(f.path);
         if (low.startsWith(fp + '\\') && (!best || fp.length > norm(best.folder.path).length)) best = { project: p, folder: f };

@@ -160,7 +160,6 @@ export interface ReportSession {
   id: string;
   resumeId?: string;
   title: string;
-  role: string;
   agent: string;
   projectId: string;
 }
@@ -219,7 +218,7 @@ export function usageReport(sessions: ReportSession[], days: number, includeOuts
         infos.push({
           key,
           title: s.title,
-          role: s.role,
+          inAgento: true,
           agent: s.agent,
           projectId: s.projectId,
           maxContext: st.maxCtx,
@@ -229,7 +228,7 @@ export function usageReport(sessions: ReportSession[], days: number, includeOuts
           tools: [...st.tools].map(([tool, [calls, bytes]]) => ({ tool, calls, bytes })).sort((a, b) => b.bytes - a.bytes)
         });
       } else if (!infos.some((i) => i.key === key)) {
-        infos.push({ key, title: dirLabel(d), role: 'outside', agent: 'claude', projectId: '', maxContext: st.maxCtx, lastContext: st.lastCtx, teamMessages: 0, teamMessageBytes: 0, tools: [] });
+        infos.push({ key, title: dirLabel(d), inAgento: false, agent: 'claude', projectId: '', maxContext: st.maxCtx, lastContext: st.lastCtx, teamMessages: 0, teamMessageBytes: 0, tools: [] });
       } else {
         const i = infos.find((x) => x.key === key)!;
         i.maxContext = Math.max(i.maxContext, st.maxCtx);

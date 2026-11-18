@@ -9,7 +9,7 @@ export function SplitView(): JSX.Element {
   const sessions = useStore((s) => s.sessions);
   const selectedId = useStore((s) => s.selectedId);
   const projects = useStore((s) => s.projects);
-  // the sidebar tree's order: project by project (a header each), coach first, then parts
+  // the sidebar tree's order: project by project
   const groups = useMemo(() => treeOrder(sessions, projects), [sessions, projects]);
   const list = groups.flatMap((g) => g.items.map((i) => i.session));
   // a session picked elsewhere (the tree, a notification, a report) is brought into view here
@@ -34,11 +34,11 @@ export function SplitView(): JSX.Element {
   }
   return (
     <div className="split" ref={grid}>
-      {/* the tree's order, four to a screen (2 × 2): each cell wears its project's color and names its project › part */}
+      {/* the tree's order, four to a screen (2 × 2): each cell wears its project's color and names its project */}
       {groups.flatMap((g) =>
-        g.items.map(({ session: s, part }) => (
-          <div className={`cell ${selectedId === s.id ? 'selected' : ''}`} key={s.id} data-session={s.id} style={pcStyle(g.color)} title={`${g.name}${part ? ` › ${part.name}` : ''}`}>
-            <span className="cell-tag">{g.name}{part ? ` › ${part.name}` : ''}</span>
+        g.items.map(({ session: s }) => (
+          <div className={`cell ${selectedId === s.id ? 'selected' : ''}`} key={s.id} data-session={s.id} style={pcStyle(g.color)} title={g.name}>
+            <span className="cell-tag">{g.name}</span>
             <SessionCard session={s} layout="static" selected={selectedId === s.id} />
           </div>
         ))

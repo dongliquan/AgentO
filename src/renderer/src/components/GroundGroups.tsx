@@ -4,24 +4,20 @@ import type { Project, Session } from '@shared/protocol';
 import { useStore } from '@/store';
 import { send } from '@/client';
 import { startDrag } from '@/lib/drag';
-import { teamOnly, useTeamMode } from '@/lib/teamMode';
 import { groupLayout, shownRect, type GroupLayout } from '@/lib/groups';
 import { pcStyle, projectColor, statusClass, statusLabel } from '@/lib/format';
 
 const PAD = 24;
 /** room above the cards for the label */
 const LABEL_H = 30;
-/** a project frame wraps its parts' frames */
-const OUTER_PAD = 52;
-const OUTER_LABEL_H = 34;
 
 /** A drag on a label ends with a click event; this swallows that click so it does not also toggle the group. */
 let dragEndedAt = 0;
 
 /**
- * Groups on the Ground, always shown: a labelled frame around each part's sessions (coach and players), and a larger
- * one around a whole project (its head coach and every part). Click a label to collapse / expand the group (a collapsed
- * group is a small box: name, size, status dots); drag a label to move the group. Drawn under the cards and links.
+ * Groups on the Ground, always shown: a labelled frame around each project's sessions. Click a label to collapse /
+ * expand the project (a collapsed project is a small box: name, size, status dots); drag a label to move the whole
+ * project. Drawn under the cards and links.
  */
 function GroundGroupsImpl({ layout }: { layout: GroupLayout }): JSX.Element {
   const projects = useStore((s) => s.projects);
@@ -29,23 +25,20 @@ function GroundGroupsImpl({ layout }: { layout: GroupLayout }): JSX.Element {
   const collapsed = useStore((s) => s.collapsedGroups);
   const toggle = useStore((s) => s.toggleGroup);
 
-  const team = useTeamMode((t) => t.team);
-  const all = [...sessions.values()].filter((s) => team || !teamOnly(s));
-  const tops = projects.filter((p) => !p.parentId && !p.closed);
-  const partsOf = (id: string): Project[] => projects.filter((p) => p.parentId === id);
-  const frame = (members: Session[], pad: number, label: number) => {
+  const all = [...sessions.values()];
+  const frame = (members: Session[]) => {
     const rects = members.map((s) => shownRect(s, layout));
     return {
-      x: Math.min(...rects.map((r) => r.x)) - pad,
-      y: Math.min(...rects.map((r) => r.y)) - pad - label,
-      r: Math.max(...rects.map((r) => r.x + r.w)) + pad,
-      b: Math.max(...rects.map((r) => r.y + r.h)) + pad
+      x: Math.min(...rects.map((r) => r.x)) - PAD,
+      y: Math.min(...rects.map((r) => r.y)) - PAD - LABEL_H,
+      r: Math.max(...rects.map((r) => r.x + r.w)) + PAD,
+      b: Math.max(...rects.map((r) => r.y + r.h)) + PAD
     };
   };
-  const label = (g: Project, members: Session[], kind: string): JSX.Element => (
+  const label = (g: Project, members: Session[]): JSX.Element => (
     <div
       className="ground-group-label"
-      title={`Click to ${collapsed.includes(g.id) ? 'expand' : 'collapse'} · drag to move the whole ${kind}`}
+      title={`Click to ${collapsed.includes(g.id) ? 'expand' : 'collapse'} · drag to move the whole project`}
       onPointerDown={(e) => moveGroup(e, members)}
       onClick={(e) => {
         e.stopPropagation();
@@ -59,38 +52,20 @@ function GroundGroupsImpl({ layout }: { layout: GroupLayout }): JSX.Element {
   );
 
   const out: JSX.Element[] = [];
-  for (const top of tops) {
-    const parts = partsOf(top.id);
-    const members = all.filter((s) => s.projectId === top.id || parts.some((p) => p.id === s.projectId));
+  for (const p of projects.filter((x) => !x.closed)) {
+    const members = all.filter((s) => s.projectId === p.id);
     if (members.length === 0) continue;
-    const box = layout.boxes.get(top.id);
+    const box = layout.boxes.get(p.id);
     if (box) {
-      out.push(<CollapsedBox key={top.id} project={top} members={members} box={box} label={label(top, members, 'project')} />);
+      out.push(<CollapsedBox key={p.id} project={p} members={members} box={box} label={label(p, members)} />);
       continue;
     }
-    // every project gets its frame, around all its sessions (head coach included); parts get their own frames inside
-    const f = frame(members, parts.length > 0 ? OUTER_PAD : PAD, parts.length > 0 ? OUTER_LABEL_H : LABEL_H);
+    const f = frame(members);
     out.push(
-      <div key={top.id} className="ground-group project" style={{ left: f.x, top: f.y, width: f.r - f.x, height: f.b - f.y, ...pcStyle(projectColor(top.id, projects)) }}>
-        {label(top, members, 'project')}
+      <div key={p.id} className="ground-group project" style={{ left: f.x, top: f.y, width: f.r - f.x, height: f.b - f.y, ...pcStyle(projectColor(p.id, projects)) }}>
+        {label(p, members)}
       </div>
     );
-    for (const g of parts) {
-      const m = all.filter((s) => s.projectId === g.id && s.role !== 'head');
-      if (m.length === 0) continue;
-      const kind = g.parentId ? 'part' : 'project';
-      const pbox = layout.boxes.get(g.id);
-      if (pbox) {
-        out.push(<CollapsedBox key={g.id} project={g} members={m} box={pbox} label={label(g, m, kind)} />);
-        continue;
-      }
-      const f = frame(m, PAD, LABEL_H);
-      out.push(
-        <div key={g.id} className={`ground-group ${g.parentId ? 'part' : ''}`} style={{ left: f.x, top: f.y, width: f.r - f.x, height: f.b - f.y }}>
-          {label(g, m, kind)}
-        </div>
-      );
-    }
   }
   return <>{out}</>;
 }
@@ -99,7 +74,7 @@ function GroundGroupsImpl({ layout }: { layout: GroupLayout }): JSX.Element {
 function CollapsedBox({ project, members, box, label }: { project: Project; members: Session[]; box: { x: number; y: number; w: number; h: number }; label: JSX.Element }): JSX.Element {
   const working = members.filter((s) => s.status === 'working' || s.status === 'starting').length;
   return (
-    <div className={`ground-group collapsed ${project.parentId ? 'part' : 'project'}`} style={{ left: box.x, top: box.y, width: box.w, height: box.h, ...pcStyle(projectColor(project.id, useStore.getState().projects)) }}>
+    <div className="ground-group collapsed project" style={{ left: box.x, top: box.y, width: box.w, height: box.h, ...pcStyle(projectColor(project.id, useStore.getState().projects)) }}>
       {label}
       <div className="collapsed-dots">
         {members.map((s) => (
@@ -135,9 +110,8 @@ export function useGroupLayout(): GroupLayout {
   const sessions = useStore((s) => s.sessions);
   const projects = useStore((s) => s.projects);
   const collapsed = useStore((s) => s.collapsedGroups);
-  const team = useTeamMode((t) => t.team);
   // memoized: the same object while nothing changed, so the memoized frames and links skip pan / zoom renders
-  return useMemo(() => groupLayout([...sessions.values()].filter((s) => team || !teamOnly(s)), projects, new Set(collapsed)), [sessions, projects, collapsed, team]);
+  return useMemo(() => groupLayout([...sessions.values()], projects, new Set(collapsed)), [sessions, projects, collapsed]);
 }
 
 /** Re-renders only when its own props change — not on every pan / zoom frame of the Ground. */
