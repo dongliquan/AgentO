@@ -157,7 +157,7 @@ hr { border: 0; margin: 2.2em 0 }   /* 선 없이 여백만 — 챕터 구분은
 
 ### <span class="n3">1.2</span> 설계 원칙
 
-1. 모든 세션은 대등하다. Head Coach·Coach·Part 같은 **필수 권한 계층은 두지 않는다**(1.1에서 제거했고, 2.0 main에서도 커밋 d6401b7로 제거했다). 큰 작업에서 한 세션이 다른 세션들에게 일을 나누는 **선택적 조정 역할은 허용**한다. 이것은 사용자가 정하는 쓰임새일 뿐, 별도 권한·도구·화면 계층이 아니다(D12).
+1. 모든 세션은 대등하다. Head Coach·Coach·Part 같은 **필수 권한 계층은 두지 않는다**(1.1에서 제거했고, 2.0 main에서도 커밋 「AgentO 2.0: Remove team hierarchy」로 제거했다). 큰 작업에서 한 세션이 다른 세션들에게 일을 나누는 **선택적 조정 역할은 허용**한다. 이것은 사용자가 정하는 쓰임새일 뿐, 별도 권한·도구·화면 계층이 아니다(D12).
 2. 기능을 더하기 전에 화면과 개념의 중복을 줄인다. 같은 일을 하는 화면은 합치거나 지운다.
 3. 세션 상태는 추측하지 않고 근거(프로세스, 제공자 이벤트, 대화 기록)로 표시한다. 근거가 없으면 "알 수 없음"으로 둔다.
 4. 상태의 단일 진실은 데몬이다. 화면은 표시와 입력만 맡는다.
@@ -196,7 +196,7 @@ hr { border: 0; margin: 2.2em 0 }   /* 선 없이 여백만 — 챕터 구분은
 <table>
 <thead><tr><th>번호</th><th>질문</th><th>선택지</th><th>제안</th></tr></thead>
 <tbody>
-<tr style="background:#f8f9fa"><td><b>D1</b></td><td>2.0은 어느 코드에서 시작하나</td><td>release/1.1(팀 코드 제거됨) · main(팀 코드 포함 2.0.0)</td><td><b>main에서 시작, 1.1의 팀 코드만 정리</b>(감독 결정 2026-11-18). 1.1의 팀 제거 커밋을 가져오고 남은 역할·파트를 걷어냈다(d6401b7, 브랜치 v2-remove-team)</td></tr>
+<tr style="background:#f8f9fa"><td><b>D1</b></td><td>2.0은 어느 코드에서 시작하나</td><td>release/1.1(팀 코드 제거됨) · main(팀 코드 포함 2.0.0)</td><td><b>main에서 시작, 1.1의 팀 코드만 정리</b>(감독 결정 2026-11-18). 1.1의 팀 제거 커밋을 가져오고 남은 역할·파트를 걷어냈다(커밋 「AgentO 2.0: Remove team hierarchy」)</td></tr>
 <tr style="background:#ffffff"><td><b>D2</b></td><td>Project / Part / Folder 구조</td><td>폴더 1개 = 작업공간(평면) · 프로젝트에 폴더 여러 개 · 지금처럼 파트까지</td><td><b>프로젝트(폴더 여러 개) 유지, 파트 삭제.</b> 한 프로젝트에 폴더 여러 개는 AgentO의 처음 목적이다</td></tr>
 <tr style="background:#f8f9fa"><td><b>D3</b></td><td>프로젝트 메모리의 원본 위치</td><td>데이터 폴더(지금) · 저장소 안 <code>.agento/</code></td><td><b>저장소 안 파일을 원본</b>으로 하고, 개인·비밀·로컬 전용은 데이터 폴더에 둔다. 폴더가 여러 개면 주 폴더 하나를 정해야 한다(6.2)</td></tr>
 <tr style="background:#ffffff"><td><b>D4</b></td><td>오른쪽 패널 탭</td><td>Files · Inbox · Inspector 3탭 · 1.1의 Session · Files · Inbox · Web</td><td><b>1.1의 4탭(Session · Files · Inbox · Web)을 유지.</b> Inspector는 별도 탭이 아니라 Session 안의 접힌 상세로 둔다. Web은 사용 기록을 보고 정한다</td></tr>
