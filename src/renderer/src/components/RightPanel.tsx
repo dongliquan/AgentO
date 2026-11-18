@@ -10,7 +10,7 @@ import { openNeed, useNeedsIds } from './NeedsYou';
 import { RECENT_MS, RecentToggle, useRecentOnly } from './RecentToggle';
 import { useNow } from '@/lib/hooks';
 import { openFile } from '@/lib/openfile';
-import { StatusBadge } from './StatusBadge';
+import { PresenceBadge } from './Presence';
 import { AgentIcon } from './AgentIcon';
 import { ChatView, Composer } from './ChatView';
 import { TerminalView } from './TerminalView';
@@ -202,7 +202,7 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
         <div className="rp-title">
           <AgentIcon kind={s.agent} color={s.color} size={16} />
           <span className="ellipsis" style={{ flex: 1 }} title={s.title}>{displayTitle(s)}</span>
-          <StatusBadge status={s.status} attention={s.attention} />
+          <PresenceBadge session={s} />
           {!termMode && (
             <button
               className={`icon-btn ${searchOpen || query ? 'on' : ''}`}

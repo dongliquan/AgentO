@@ -5,12 +5,13 @@ import type { AgentKind, Folder, Project, Session } from '@shared/protocol';
 import { useStore } from '@/store';
 import { send } from '@/client';
 import { removeSession, renameProject, renameSession, saveProject, selectAndReveal } from '@/commands';
-import { AGENT_LABELS, displayTitle, statusClass, statusLabel } from '@/lib/format';
+import { AGENT_LABELS, displayTitle } from '@/lib/format';
 import { pcStyle, projectColor } from '@/lib/format';
 import { useColorMenu } from './ProjectColorMenu';
 import { AgentPicker } from './AgentPicker';
 import { AgentIcon } from './AgentIcon';
 import { useNeedsIds } from './NeedsYou';
+import { presence } from '@/lib/presence';
 
 
 interface PickerState {
@@ -361,16 +362,15 @@ function aggregateStatus(list: Session[]): { state: AggState; text: string } {
  * (pulsing), needs an answer, hit its limit or failed; nothing while idle; the icon faded while it is not running.
  */
 function SessionIcon({ s }: { s: Session }): JSX.Element {
-  const st = statusClass(s);
   const asked = useNeedsIds((n) => n.ids.has(s.id));
-  const needs = s.permission !== undefined || (s.status === 'waiting' && s.attention === true) || asked;
-  const badge = s.status === 'working' || s.status === 'starting' ? 'working' : needs ? 'needs' : st === 'limit' ? 'limit' : s.status === 'error' ? 'error' : null;
-  const off = s.status === 'hibernated' || s.status === 'done';
+  const p = presence(s, asked);
+  const badge = p.kind === 'idle' || p.kind === 'off' ? null : p.kind;
+  const off = p.kind === 'off';
   // a stopped session says where it left off
   const last = useStore((st) => (off ? st.lastInfo.get(s.id) : undefined));
-  const tip = last ? `${statusLabel(s)}
+  const tip = last ? `${p.label}
 Asked: ${last.ask}
-Left at: ${last.reply}` : statusLabel(s);
+Left at: ${last.reply}` : p.label;
   return (
     <span className={`tree-icon ${off ? 'off' : ''}`} title={tip}>
       <AgentIcon kind={s.agent} color={s.color} />
