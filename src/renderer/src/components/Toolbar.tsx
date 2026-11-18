@@ -102,7 +102,7 @@ export function Toolbar(): JSX.Element {
         ) : project ? (
           <>
             <b>{project.name}</b>
-             › Sessions {count}
+            {' › '}Sessions {count}
           </>
         ) : (
           <b>No Open Project</b>

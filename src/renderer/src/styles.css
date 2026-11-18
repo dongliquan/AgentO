@@ -1768,3 +1768,22 @@ button.tl-all { color: var(--accent); border-color: var(--border); }
 .inbox-section + .inbox-list, .inbox-section + .inbox-none { margin-bottom: 14px; }
 .inbox-section .count { color: var(--warn); }
 .inbox-none { font-size: 12px; }
+
+/* ---------- 2.0 look (design 7.5, M2 · M3): rounded from the outside in, fewer lines, a floating left sidebar ---------- */
+:root { --r-panel: 12px; --r-card: 10px; --r-ctl: 6px; --line-soft: color-mix(in srgb, var(--border) 60%, transparent); }
+/* the left sidebar floats over the canvas background: inset, rounded, a soft shadow instead of a border line */
+.app-body { background: var(--bg); }
+.app-body > .sidebar {
+  margin: 8px 0 8px 8px; border: none; border-radius: var(--r-panel); overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 6px 20px -8px var(--shadow-panel);
+}
+/* the right panel stays against the content: no line, its shadow separates it */
+.app-body > .rightpanel { border-left: none; }
+.toolbar { border-bottom-color: var(--line-soft); }
+.sidebar-header, .sidebar-manager, .sidebar-head { border-bottom-color: var(--line-soft); }
+/* cards: one step smaller radius than the panels, a lighter edge */
+.card { border-radius: var(--r-card); border-color: var(--line-soft); }
+.btn { border-radius: var(--r-ctl); }
+.segmented { border-radius: calc(var(--r-ctl) + 1px); border-color: var(--line-soft); }
+.segmented button + button { border-left-color: var(--line-soft); }
+.menu-dropdown { border-radius: var(--r-card); border-color: var(--line-soft); }

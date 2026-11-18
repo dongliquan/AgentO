@@ -187,7 +187,8 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
         ) : (
           <span className="title ellipsis" title={s.title}>{displayTitle(s)}</span>
         )}
-        <span className="folder ellipsis" title={s.cwd}>{basename(s.cwd)}</span>
+        {/* a 1.x coach ran in a folder AgentO made (the app's team folder, head-<id>): its name is an internal id, not a place */}
+        <span className="folder ellipsis" title={s.cwd}>{/[\\/]agento[\\/]team[\\/]/i.test(s.cwd) ? '(AgentO folder)' : basename(s.cwd)}</span>
         {hasChat && (
           <div className="segmented sm" onPointerDown={(e) => e.stopPropagation()}>
             <button className={view === 'chat' ? 'active' : ''} onClick={() => setView('chat')}>Chat</button>
