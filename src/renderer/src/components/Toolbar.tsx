@@ -1,15 +1,39 @@
 import { useEffect, useState } from 'react';
 import { useStore, type ViewMode } from '@/store';
-import { autoArrange, fitAll, newSessionFor, newProject, runCommand } from '@/commands';
+import { autoArrange, fitAll, newSessionFor, runCommand } from '@/commands';
 import { kbd } from '@/lib/keys';
 import { getThemePref, onThemeChange, setThemePref, type ThemePref } from '@/lib/theme';
 
-/** the three ways to lay out the live sessions; Timeline (a record of finished work) stands apart from them */
-const MODES: { id: ViewMode; label: string }[] = [
-  { id: 'board', label: 'Ground' },
-  { id: 'split', label: 'Split' },
-  { id: 'tabs', label: 'Tabs' }
+/** the views, in one group: three layouts of the live sessions, and Today (what needs you, who works, what is done) */
+const MODES: { id: ViewMode; label: string; key: string; tip: string }[] = [
+  { id: 'board', label: 'Ground', key: 'Ctrl+1', tip: 'Every session as a card on one canvas' },
+  { id: 'split', label: 'Split', key: 'Ctrl+2', tip: 'Four sessions side by side' },
+  { id: 'tabs', label: 'Tabs', key: 'Ctrl+3', tip: 'One session at a time, by project' },
+  { id: 'today', label: 'Today', key: 'Ctrl+5', tip: 'What needs you, who is working, what got done, your to-dos' }
 ];
+
+/** small line icons for the Ground tools */
+function ToolIcon({ name }: { name: 'arrange' | 'fit' | 'focus' }): JSX.Element {
+  return (
+    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+      {name === 'arrange' && (
+        <>
+          <rect x="2" y="2" width="5" height="5" rx="1" />
+          <rect x="9" y="2" width="5" height="5" rx="1" />
+          <rect x="2" y="9" width="5" height="5" rx="1" />
+          <rect x="9" y="9" width="5" height="5" rx="1" />
+        </>
+      )}
+      {name === 'fit' && <path d="M2 5.5V2h3.5M10.5 2H14v3.5M14 10.5V14h-3.5M5.5 14H2v-3.5" />}
+      {name === 'focus' && (
+        <>
+          <rect x="4" y="4" width="8" height="8" rx="1.5" />
+          <path d="M1.5 4V1.5H4M12 1.5h2.5V4M14.5 12v2.5H12M4 14.5H1.5V12" />
+        </>
+      )}
+    </svg>
+  );
+}
 
 /** VS Code-style layout toggle: a panel outline with the left or right column filled when open. */
 function PanelIcon({ side, open }: { side: 'left' | 'right'; open: boolean }): JSX.Element {
@@ -65,16 +89,10 @@ export function Toolbar(): JSX.Element {
       )}
       <div className="segmented">
         {MODES.map((m) => (
-          <button key={m.id} className={viewMode === m.id ? 'active' : ''} onClick={() => setViewMode(m.id)} title={kbd(`Ctrl+${MODES.indexOf(m) + 1}`)}>
+          <button key={m.id} className={viewMode === m.id ? 'active' : ''} onClick={() => setViewMode(m.id)} title={kbd(`${m.label} — ${m.tip} (${m.key})`)}>
             {m.label}
           </button>
         ))}
-      </div>
-      <span className="toolbar-sep" />
-      <div className="segmented">
-        <button className={onToday ? 'active' : ''} onClick={() => setViewMode('today')} title={kbd('Today — what needs you, who is working, what got done, your to-dos (Ctrl+5)')}>
-          Today
-        </button>
       </div>
       <div className="breadcrumb">
         {onToday ? (
@@ -91,23 +109,31 @@ export function Toolbar(): JSX.Element {
         )}
       </div>
       <div className="spacer" />
-      {/* Auto Arrange moves the cards (and keeps them there); Fit All only moves the view; Focus opens one session full size
-          — session layout tools, not for the Timeline */}
+      {/* layout tools, as one quiet group: Arrange and Fit belong to the Ground; Focus opens the selected session full size */}
       {!onPage && (
-      <>
-      <button className="btn ghost" onClick={autoArrange} disabled={viewMode !== 'board'} title="Auto Arrange — lay every card out in a grid by project and keep it">Auto Arrange</button>
-      <button className="btn ghost" onClick={fitAll} disabled={viewMode !== 'board'} title="Fit All — zoom and pan so every card is in view (the cards do not move)">Fit All</button>
-      <button
-        className={`btn ghost ${focusMode ? 'on' : ''}`}
-        onClick={() => runCommand('view.focus-mode')}
-        disabled={!focusMode && !selectedId}
-        title={kbd(focusMode ? 'Exit Focus Mode (Esc / F11)' : selectedId ? 'Focus — the selected session full size, nothing else (F11)' : 'Focus — select a session first (F11)')}
-      >
-        {focusMode ? 'Exit Focus' : 'Focus'}
-      </button>
-      </>
+        <div className="tool-group">
+          {viewMode === 'board' && (
+            <>
+              <button className="icon-btn" onClick={autoArrange} title="Auto Arrange — lay every card out in a grid by project and keep it" aria-label="Auto Arrange">
+                <ToolIcon name="arrange" />
+              </button>
+              <button className="icon-btn" onClick={fitAll} title="Fit All — zoom and pan so every card is in view (the cards do not move)" aria-label="Fit All">
+                <ToolIcon name="fit" />
+              </button>
+            </>
+          )}
+          <button
+            className={`icon-btn ${focusMode ? 'on' : ''}`}
+            onClick={() => runCommand('view.focus-mode')}
+            disabled={!focusMode && !selectedId}
+            title={kbd(focusMode ? 'Exit Focus Mode (Esc / F11)' : selectedId ? 'Focus — the selected session full size, nothing else (F11)' : 'Focus — select a session first (F11)')}
+            aria-label="Focus"
+          >
+            <ToolIcon name="focus" />
+          </button>
+        </div>
       )}
-      <button className="btn" onClick={() => void newProject()} title="New project: name and folders">+ New Project</button>
+      {/* the one accented button; a new project is the + at the top of the project tree (and File › New Project) */}
       <button className="btn primary" onClick={() => newSessionFor()}>+ New Session</button>
       {!detached && (
         <button className={`icon-btn layout-toggle ${rightOpen ? 'on' : ''}`} title={kbd(`${rightOpen ? 'Hide' : 'Show'} Details Panel (Ctrl+Alt+B)`)} onClick={toggleRight}>

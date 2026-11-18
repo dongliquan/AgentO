@@ -1753,3 +1753,7 @@ button.tl-all { color: var(--accent); border-color: var(--border); }
 .presence.p-error { color: var(--err); }
 .presence.p-off { opacity: 0.75; }
 @media (prefers-reduced-motion: reduce) { .pdot.p-working, .pdot.p-needs { animation: none; } }
+
+/* the Ground / Focus tools: icons in one quiet group (no background until hovered) */
+.tool-group { display: inline-flex; align-items: center; gap: 2px; padding: 0 4px; }
+.tool-group .icon-btn:disabled { opacity: 0.35; cursor: default; }
