@@ -1762,3 +1762,9 @@ button.tl-all { color: var(--accent); border-color: var(--border); }
 .app-menu-btn { flex: none; width: 28px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted); -webkit-app-region: no-drag; }
 .app-menu-btn:hover, .app-menu-btn.open { background: var(--panel2); color: var(--text); }
 .topbar .app-name { flex: none; font-size: 12px; font-weight: 600; color: var(--text); }
+
+/* Inbox: what needs the manager on top (its own list, counted on the tab), the history below */
+.inbox-section { display: flex; align-items: center; gap: 6px; margin: 4px 0 6px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.inbox-section + .inbox-list, .inbox-section + .inbox-none { margin-bottom: 14px; }
+.inbox-section .count { color: var(--warn); }
+.inbox-none { font-size: 12px; }

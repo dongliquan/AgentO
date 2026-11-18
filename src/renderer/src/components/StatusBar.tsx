@@ -121,7 +121,7 @@ export function StatusBar(): JSX.Element {
         );
       })}
       <span className="seg click" title="Refresh usage" onClick={() => send({ type: 'usage.refresh' })}>↻</span>
-      <span className="seg click" onClick={() => setActivity('inbox')}>Inbox {unread}</span>
+      <span className="seg click" onClick={() => setActivity('inbox')} title={`Inbox — ${unread} unread notice${unread === 1 ? '' : 's'}`}>Inbox</span>
       <NotifyMenu />
       <span className="seg">{Math.round(zoom * 100)}%</span>
     </div>
