@@ -46,8 +46,7 @@ export function StatusBar(): JSX.Element {
   const waiting = count('waiting');
   const sel = selectedId ? sessions.get(selectedId) : undefined;
   const own = sel ? projects.find((p) => p.id === sel.projectId) : undefined;
-  const root = own?.parentId ? projects.find((p) => p.id === own.parentId) : own;
-  const project = root && !root.closed ? root : projects.find((p) => !p.parentId && !p.closed);
+  const project = own && !own.closed ? own : projects.find((p) => !p.closed);
   // Only agents that have at least one session (i.e. actually used).
   const usedAgents = agents.filter((a) => list.some((s) => s.agent === a.kind));
 

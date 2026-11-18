@@ -10,12 +10,10 @@ import { StatusBar } from '@/components/StatusBar';
 import { Palette } from '@/components/Palette';
 import { NewSessionDialog } from '@/components/NewSessionDialog';
 import { PromptDialog } from '@/components/PromptDialog';
-import { OrderFlowDialog } from '@/components/OrderFlow';
 import { NewProjectDialog } from '@/components/NewProjectDialog';
 import { FileRefMenu } from '@/components/FileRefMenu';
 import { ProjectColorMenu } from '@/components/ProjectColorMenu';
 import { NeedsYouWatcher } from '@/components/NeedsYou';
-import { DelegationWatcher } from '@/components/Delegations';
 import { PathMenu } from '@/components/PathMenu';
 import { UsageDialog } from '@/components/UsageDialog';
 import { FindBar } from '@/components/FindBar';
@@ -87,12 +85,10 @@ export function PanelsApp(): JSX.Element {
       <PromptDialog />
       <UsageDialog />
       <FindBar />
-      <OrderFlowDialog />
       <NewProjectDialog />
       <FileRefMenu />
       <ProjectColorMenu />
       <NeedsYouWatcher />
-      <DelegationWatcher />
       <PathMenu />
     </div>
   );

@@ -67,11 +67,10 @@ export function TabView(): JSX.Element {
         })}
       </div>
       <div className="tabstrip" style={pcStyle(activeGroup?.color ?? '#64748b')}>
-        {activeGroup?.items.map(({ session: s, part }) => (
-          <button key={s.id} className={`tab ${s.id === active?.id ? 'active' : ''}`} onClick={() => open(s.id)} title={`${part ? `${part.name} › ` : ''}${s.title}\n${s.cwd}`}>
+        {activeGroup?.items.map(({ session: s }) => (
+          <button key={s.id} className={`tab ${s.id === active?.id ? 'active' : ''}`} onClick={() => open(s.id)} title={`${s.title}\n${s.cwd}`}>
             <span className={`status-dot ${statusClass(s)}`} />
             <AgentIcon kind={s.agent} color={s.color} />
-            {part && <span className="tab-part">{part.name}</span>}
             <span className="ellipsis">{s.title}</span>
           </button>
         ))}

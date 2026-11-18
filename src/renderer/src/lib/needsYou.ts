@@ -72,9 +72,8 @@ export function askedLines(text: string): string[] {
 
 const QUESTION_MAX_AGE_MS = 3 * 86_400_000;
 
-/** Conversation sizes that call for a fresh start (players do the work and grow faster than coordinators). */
+/** Conversation size that calls for a fresh start. */
 const CONTEXT_WARN = 225_000;
-const CONTEXT_WARN_COORD = 150_000;
 
 /* dismissed questions (item ids), per browser */
 const KEY = 'asm.needsYou.dismissed';
@@ -173,7 +172,7 @@ export function computeNeeds(sessions: Map<string, Session>, inbox: InboxItem[],
   for (const s of sessions.values()) {
     if (closed.has(s.id)) continue;
     // a conversation that has grown large: every turn re-reads it (Claude: one click starts it fresh from a note)
-    const big = s.role === 'player' ? CONTEXT_WARN : CONTEXT_WARN_COORD;
+    const big = CONTEXT_WARN;
     if (s.agent === 'claude' && (s.context ?? 0) >= big && s.status === 'waiting') {
       const key = `c:${s.id}:${s.resumeId ?? ''}`;
       if (!gone.has(key)) out.push({ sessionId: s.id, kind: 'context', text: `Its conversation is ${Math.round((s.context ?? 0) / 1000)}K tokens — every turn re-reads all of it. A fresh start continues from a handoff note (the earlier conversation can be restored).`, at: s.updatedAt, key });

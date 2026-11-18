@@ -16,7 +16,7 @@
     "dist:win": "electron-vite build && electron-builder --win",
     "dist:mac": "electron-vite build && electron-builder --mac",
     "daemon": "electron-vite build && node out/daemon/index.js",
-    "smoke": "electron-vite build && node tests/smoke/daemon.cjs",
+    "smoke": "electron-vite build && node tests/smoke/daemon.cjs && node tests/smoke/migrate.cjs",
     "smoke:ui": "node tests/smoke/ui.cjs"
   },
   "dependencies": {

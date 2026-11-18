@@ -3,7 +3,8 @@
  */
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
-import { PROJECT_COLORS, type AutopilotState, type Folder, type InboxItem, type Project, type Routine, type Session, type SessionRole, type SessionStatus, type AgentKind } from '@shared/protocol';
+import { PROJECT_COLORS, type AutopilotState, type Folder, type InboxItem, type Project, type Session, type SessionStatus, type AgentKind } from '@shared/protocol';
+import path from 'node:path';
 import { dbPath, ensureDir, dataDir } from './paths';
 import { ensureMemory, memoryPath } from './memory';
 
@@ -11,7 +12,6 @@ interface ProjectRow {
   id: string;
   name: string;
   created_at: number;
-  parent_id: string | null;
   closed: number | null;
   color: string | null;
   sort_order: number | null;
@@ -23,19 +23,6 @@ interface FolderRow {
   path: string;
   name: string;
   auto_trust: number | null;
-}
-interface RoutineRow {
-  id: string;
-  name: string;
-  target: string;
-  text: string;
-  every_min: number | null;
-  daily_at: string | null;
-  enabled: number;
-  next_at: number;
-  runs: number;
-  last_run_at: number | null;
-  created_at: number;
 }
 interface SessionRow {
   id: string;
@@ -62,7 +49,6 @@ interface SessionRow {
   rows: number;
   command: string | null;
   args: string | null;
-  role: string | null;
   sort_order: number | null;
 }
 interface InboxRow {
@@ -127,27 +113,6 @@ CREATE TABLE IF NOT EXISTS inbox (
   read INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_inbox_session ON inbox(session_id, created_at);
-CREATE TABLE IF NOT EXISTS order_task (
-  id TEXT PRIMARY KEY,
-  created_at INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS order_done (
-  id TEXT PRIMARY KEY,
-  done_at INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS routines (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  target TEXT NOT NULL,
-  text TEXT NOT NULL,
-  every_min INTEGER,
-  daily_at TEXT,
-  enabled INTEGER NOT NULL DEFAULT 1,
-  next_at INTEGER NOT NULL,
-  runs INTEGER NOT NULL DEFAULT 0,
-  last_run_at INTEGER,
-  created_at INTEGER NOT NULL
-);
 `;
 
 function rowToSession(r: SessionRow): StoredSession {
@@ -157,7 +122,6 @@ function rowToSession(r: SessionRow): StoredSession {
     folderId: r.folder_id,
     cwd: r.cwd,
     agent: r.agent as AgentKind,
-    role: r.role === 'head' || r.role === 'coach' ? (r.role as SessionRole) : 'player',
     title: r.title,
     status: r.status as SessionStatus,
     createdAt: r.created_at,
@@ -196,23 +160,6 @@ function rowToSession(r: SessionRow): StoredSession {
 
 function rowToFolder(f: FolderRow): Folder {
   return { id: f.id, projectId: f.project_id, path: f.path, name: f.name, ...(f.auto_trust ? { autoTrust: true } : {}) };
-}
-
-function rowToRoutine(r: RoutineRow): Routine {
-  const out: Routine = {
-    id: r.id,
-    name: r.name,
-    target: JSON.parse(r.target) as Routine['target'],
-    text: r.text,
-    enabled: r.enabled === 1,
-    nextAt: r.next_at,
-    runs: r.runs,
-    createdAt: r.created_at
-  };
-  if (r.every_min != null) out.everyMinutes = r.every_min;
-  if (r.daily_at != null) out.dailyAt = r.daily_at;
-  if (r.last_run_at != null) out.lastRunAt = r.last_run_at;
-  return out;
 }
 
 function rowToInbox(r: InboxRow): InboxItem {
@@ -254,8 +201,6 @@ export class Store {
     this.migrate();
   }
 
-  /** Columns added after the first release. */
-  /** Small JSON values that must survive a restart (the team's queues). */
   /** The next task id of a project ("#T12"): one counter per project, kept in kv. */
   nextTaskId(projectId: string): string {
     const counts = this.getKv<Record<string, number>>('tasks') ?? {};
@@ -282,7 +227,6 @@ export class Store {
     this.db.exec('CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
     const cols = new Set((this.db.prepare('PRAGMA table_info(sessions)').all() as { name: string }[]).map((c) => c.name));
     if (!cols.has('sort_order')) this.db.exec('ALTER TABLE sessions ADD COLUMN sort_order REAL');
-    if (!cols.has('role')) this.db.exec("ALTER TABLE sessions ADD COLUMN role TEXT NOT NULL DEFAULT 'player'");
     if (!cols.has('prev_resume_ids')) this.db.exec('ALTER TABLE sessions ADD COLUMN prev_resume_ids TEXT');
     if (!cols.has('model_pref')) this.db.exec('ALTER TABLE sessions ADD COLUMN model_pref TEXT');
     if (!cols.has('mode')) this.db.exec('ALTER TABLE sessions ADD COLUMN mode TEXT');
@@ -290,21 +234,82 @@ export class Store {
     if (!inboxCols.has('from_id')) this.db.exec('ALTER TABLE inbox ADD COLUMN from_id TEXT');
     if (!inboxCols.has('task_id')) this.db.exec('ALTER TABLE inbox ADD COLUMN task_id TEXT');
     const projectCols = new Set((this.db.prepare('PRAGMA table_info(projects)').all() as { name: string }[]).map((c) => c.name));
-    if (!projectCols.has('parent_id')) this.db.exec('ALTER TABLE projects ADD COLUMN parent_id TEXT');
     if (!projectCols.has('closed')) this.db.exec('ALTER TABLE projects ADD COLUMN closed INTEGER');
     if (!projectCols.has('color')) this.db.exec('ALTER TABLE projects ADD COLUMN color TEXT');
     if (!projectCols.has('autopilot')) this.db.exec('ALTER TABLE projects ADD COLUMN autopilot TEXT');
     // projects from before colors: one each, in creation order
-    const uncolored = this.db.prepare('SELECT id FROM projects WHERE parent_id IS NULL AND color IS NULL ORDER BY created_at').all() as { id: string }[];
+    const uncolored = this.db.prepare(`SELECT id FROM projects WHERE color IS NULL${projectCols.has('parent_id') ? ' AND parent_id IS NULL' : ''} ORDER BY created_at`).all() as { id: string }[];
     for (const { id } of uncolored) this.db.prepare('UPDATE projects SET color = ? WHERE id = ?').run(this.nextColor(), id);
     const folderCols = new Set((this.db.prepare('PRAGMA table_info(folders)').all() as { name: string }[]).map((c) => c.name));
     if (!projectCols.has('sort_order')) this.db.exec('ALTER TABLE projects ADD COLUMN sort_order REAL');
     if (!folderCols.has('auto_trust')) this.db.exec('ALTER TABLE folders ADD COLUMN auto_trust INTEGER NOT NULL DEFAULT 0');
-    // the AI "manager" became the head coach (the user is the manager)
-    this.db.exec("UPDATE sessions SET role = 'head' WHERE role = 'manager'");
-    this.db.exec("UPDATE sessions SET title = 'Head Coach' WHERE role = 'head' AND title = 'Manager'");
-    // a project's head coach is called "Coach" (the team-wide one stays "Head Coach")
-    this.db.exec("UPDATE sessions SET title = 'Coach · ' || substr(title, 14) WHERE role = 'head' AND project_id <> '' AND title LIKE 'Head Coach · %'");
+    if (projectCols.has('parent_id')) this.migrateNoTeam();
+  }
+
+  /**
+   * 2.0 (schema 2): no parts and no team layer. Done once (kv 'schema'), in one transaction; the old columns
+   * (projects.parent_id, sessions.role) and tables (routines, order_*) are left as they are, so a 1.x build can still
+   * open the file.
+   * - A part's sessions move into its project, after the project's own sessions (its former Coach first; the tree
+   *   order kept). A part folder
+   *   whose path the project already has is merged into that folder; any other part folder moves to the project.
+   * - A part whose project is gone becomes a project of its own.
+   * - Sessions outside any project (the 1.x team-wide Head Coach) or in a deleted one go to a closed project
+   *   "Archive (1.x)", made only when there are such sessions. Former coaches stay in their project as plain sessions.
+   */
+  private migrateNoTeam(): void {
+    if ((this.getKv<number>('schema') ?? 1) >= 2) return;
+    type PartRow = { id: string; name: string; parent_id: string; sort_order: number | null; created_at: number };
+    type FolderRow2 = { id: string; project_id: string; path: string };
+    type SessionRow2 = { id: string; project_id: string; folder_id: string; sort_order: number | null; created_at: number; role: string | null };
+    const norm = (p: string): string => path.resolve(p).replace(/[\\/]+$/, '').toLowerCase();
+    const byOrder = (a: { sort_order: number | null; created_at: number }, b: { sort_order: number | null; created_at: number }): number =>
+      (a.sort_order ?? Number.MAX_SAFE_INTEGER) - (b.sort_order ?? Number.MAX_SAFE_INTEGER) || a.created_at - b.created_at;
+    this.db.transaction(() => {
+      const ids = new Set((this.db.prepare('SELECT id FROM projects').all() as { id: string }[]).map((r) => r.id));
+      const parts = (this.db.prepare('SELECT id, name, parent_id, sort_order, created_at FROM projects WHERE parent_id IS NOT NULL').all() as PartRow[]).sort(byOrder);
+      const folders = this.db.prepare('SELECT id, project_id, path FROM folders').all() as FolderRow2[];
+      const hasRole = (this.db.prepare('PRAGMA table_info(sessions)').all() as { name: string }[]).some((c) => c.name === 'role');
+      const sessions = this.db.prepare(`SELECT id, project_id, folder_id, sort_order, created_at, ${hasRole ? 'role' : 'NULL AS role'} FROM sessions`).all() as SessionRow2[];
+      const setSession = this.db.prepare('UPDATE sessions SET project_id = ?, folder_id = ?, sort_order = ? WHERE id = ?');
+      for (const parent of new Set(parts.map((p) => p.parent_id))) {
+        if (!ids.has(parent)) continue;
+        // the project's former Coach stays on top (1.x showed it above the project's sessions)
+        const own = sessions.filter((x) => x.project_id === parent).sort((a, b) => Number(b.role === 'head') - Number(a.role === 'head') || byOrder(a, b));
+        const moved: { s: SessionRow2; folder: string }[] = [];
+        for (const part of parts.filter((p) => p.parent_id === parent)) {
+          // the part's folders: merged into the project's folder of the same path, else moved over
+          const remap = new Map<string, string>();
+          for (const f of folders.filter((x) => x.project_id === part.id)) {
+            const same = folders.find((x) => x.project_id === parent && norm(x.path) === norm(f.path));
+            if (same) {
+              remap.set(f.id, same.id);
+              this.db.prepare('DELETE FROM folders WHERE id = ?').run(f.id);
+            } else {
+              this.db.prepare('UPDATE folders SET project_id = ? WHERE id = ?').run(parent, f.id);
+              f.project_id = parent;
+            }
+          }
+          for (const x of sessions.filter((y) => y.project_id === part.id).sort(byOrder)) moved.push({ s: x, folder: remap.get(x.folder_id) ?? x.folder_id });
+          this.db.prepare('DELETE FROM projects WHERE id = ?').run(part.id);
+        }
+        own.forEach((x, i) => setSession.run(parent, x.folder_id, i + 1, x.id));
+        moved.forEach(({ s: x, folder }, i) => setSession.run(parent, folder, own.length + i + 1, x.id));
+      }
+      // parts whose project is gone: projects of their own
+      for (const part of parts.filter((p) => !ids.has(p.parent_id))) this.db.prepare('UPDATE projects SET parent_id = NULL, color = ? WHERE id = ?').run(this.nextColor(), part.id);
+      this.db.exec('UPDATE projects SET parent_id = NULL');
+      // sessions outside any project
+      const known = new Set((this.db.prepare('SELECT id FROM projects').all() as { id: string }[]).map((r) => r.id));
+      const loose = (this.db.prepare('SELECT id, project_id FROM sessions').all() as { id: string; project_id: string }[]).filter((x) => !known.has(x.project_id));
+      if (loose.length) {
+        const id = randomUUID();
+        this.db.prepare('INSERT INTO projects (id, name, created_at, color, closed) VALUES (?, ?, ?, ?, 1)').run(id, 'Archive (1.x)', Date.now(), this.nextColor());
+        for (const x of loose) this.db.prepare('UPDATE sessions SET project_id = ? WHERE id = ?').run(id, x.id);
+      }
+      this.setKv('schema', 2);
+    })();
+    this.projectsCache = null;
   }
 
   close(): void {
@@ -334,11 +339,10 @@ export class Store {
       name: p.name,
       createdAt: p.created_at,
       folders: byProject.get(p.id) ?? [],
-      ...(p.parent_id ? { parentId: p.parent_id } : {}),
       ...(p.closed ? { closed: true } : {}),
       ...(p.color ? { color: p.color } : {}),
-      ...(p.autopilot && !p.parent_id ? { autopilot: JSON.parse(p.autopilot) as AutopilotState } : {}),
-      ...(p.parent_id ? {} : { memory: memoryPath(p.id) })
+      ...(p.autopilot ? { autopilot: JSON.parse(p.autopilot) as AutopilotState } : {}),
+      memory: memoryPath(p.id)
     }));
   }
 
@@ -348,12 +352,12 @@ export class Store {
     return r?.at ?? undefined;
   }
 
-  /** Move a project before another of its siblings (same parent), or to the end; the siblings are renumbered. */
+  /** Move a project before another, or to the end; the projects are renumbered. */
   moveProject(id: string, beforeId?: string): void {
     const all = this.listProjects();
     const me = all.find((p) => p.id === id);
     if (!me) throw new Error('Project not found');
-    const siblings = all.filter((p) => (p.parentId ?? null) === (me.parentId ?? null) && p.id !== id);
+    const siblings = all.filter((p) => p.id !== id);
     const at = beforeId ? siblings.findIndex((p) => p.id === beforeId) : -1;
     siblings.splice(at < 0 ? siblings.length : at, 0, me);
     const set = this.db.prepare('UPDATE projects SET sort_order = ? WHERE id = ?');
@@ -363,19 +367,19 @@ export class Store {
 
   /** The first project color no project uses yet (then they repeat, least used first). */
   private nextColor(): string {
-    const used = (this.stmt('SELECT color FROM projects WHERE parent_id IS NULL AND color IS NOT NULL').all() as { color: string }[]).map((r) => r.color);
+    const used = (this.stmt('SELECT color FROM projects WHERE color IS NOT NULL').all() as { color: string }[]).map((r) => r.color);
     const count = (c: string): number => used.filter((u) => u === c).length;
     return [...PROJECT_COLORS].sort((a, b) => count(a) - count(b) || PROJECT_COLORS.indexOf(a) - PROJECT_COLORS.indexOf(b))[0]!;
   }
 
   setProjectColor(id: string, color: string): void {
     this.projectsCache = null;
-    this.stmt('UPDATE projects SET color = ? WHERE id = ? AND parent_id IS NULL').run(color, id);
+    this.stmt('UPDATE projects SET color = ? WHERE id = ?').run(color, id);
   }
 
   setAutopilot(id: string, state: AutopilotState | null): void {
     this.projectsCache = null;
-    this.stmt('UPDATE projects SET autopilot = ? WHERE id = ? AND parent_id IS NULL').run(state ? JSON.stringify(state) : null, id);
+    this.stmt('UPDATE projects SET autopilot = ? WHERE id = ?').run(state ? JSON.stringify(state) : null, id);
   }
 
   setProjectClosed(id: string, closed: boolean): void {
@@ -383,17 +387,15 @@ export class Store {
     this.stmt('UPDATE projects SET closed = ? WHERE id = ?').run(closed ? 1 : 0, id);
   }
 
-  /** parentId: create a part of that (top-level) project */
-  createProject(name: string, parentId?: string): Project {
+  createProject(name: string): Project {
     this.projectsCache = null;
-    const color = parentId ? undefined : this.nextColor();
-    const p: Project = { id: randomUUID(), name, createdAt: Date.now(), folders: [], ...(parentId ? { parentId } : {}), ...(color ? { color } : {}) };
-    this.stmt('INSERT INTO projects (id, name, created_at, parent_id, color) VALUES (?, ?, ?, ?, ?)').run(p.id, p.name, p.createdAt, parentId ?? null, color ?? null);
-    if (!parentId) ensureMemory(p.id, p.name);
+    const color = this.nextColor();
+    const p: Project = { id: randomUUID(), name, createdAt: Date.now(), folders: [], color };
+    this.stmt('INSERT INTO projects (id, name, created_at, color) VALUES (?, ?, ?, ?)').run(p.id, p.name, p.createdAt, color);
+    ensureMemory(p.id, p.name);
     return p;
   }
 
-  /** Deletes the project and its parts. */
   renameProject(id: string, name: string): void {
     this.projectsCache = null;
     this.stmt('UPDATE projects SET name = ? WHERE id = ?').run(name, id);
@@ -401,7 +403,6 @@ export class Store {
 
   deleteProject(id: string): void {
     this.projectsCache = null;
-    this.stmt('DELETE FROM projects WHERE parent_id = ?').run(id);
     this.stmt('DELETE FROM projects WHERE id = ?').run(id);
   }
 
@@ -418,64 +419,6 @@ export class Store {
   getFolder(id: string): Folder | undefined {
     const r = this.stmt('SELECT * FROM folders WHERE id = ?').get(id) as FolderRow | undefined;
     return r ? rowToFolder(r) : undefined;
-  }
-
-  /* ---------- routines ---------- */
-
-  /** The manager's orders marked done (Tasks), by order record id. */
-  listDoneOrders(): Record<string, number> {
-    const rows = this.stmt('SELECT id, done_at FROM order_done').all() as { id: string; done_at: number }[];
-    return Object.fromEntries(rows.map((r) => [r.id, r.done_at]));
-  }
-
-  /** The manager's orders added as tasks explicitly (Tasks › Add Task), by order record id. */
-  listTaskOrders(): string[] {
-    return (this.stmt('SELECT id FROM order_task').all() as { id: string }[]).map((r) => r.id);
-  }
-
-  markTaskOrder(id: string): void {
-    this.stmt('INSERT OR IGNORE INTO order_task (id, created_at) VALUES (?, ?)').run(id, Date.now());
-  }
-
-  setOrderDone(id: string, done: boolean): void {
-    if (done) this.stmt('INSERT OR REPLACE INTO order_done (id, done_at) VALUES (?, ?)').run(id, Date.now());
-    else this.stmt('DELETE FROM order_done WHERE id = ?').run(id);
-  }
-
-  listRoutines(): Routine[] {
-    return (this.stmt('SELECT * FROM routines ORDER BY created_at').all() as RoutineRow[]).map(rowToRoutine);
-  }
-
-  getRoutine(id: string): Routine | undefined {
-    const r = this.stmt('SELECT * FROM routines WHERE id = ?').get(id) as RoutineRow | undefined;
-    return r ? rowToRoutine(r) : undefined;
-  }
-
-  saveRoutine(r: Routine): void {
-    this.stmt(
-        `INSERT INTO routines (id, name, target, text, every_min, daily_at, enabled, next_at, runs, last_run_at, created_at)
-         VALUES (@id, @name, @target, @text, @every_min, @daily_at, @enabled, @next_at, @runs, @last_run_at, @created_at)
-         ON CONFLICT(id) DO UPDATE SET name=excluded.name, target=excluded.target, text=excluded.text,
-           every_min=excluded.every_min, daily_at=excluded.daily_at, enabled=excluded.enabled, next_at=excluded.next_at,
-           runs=excluded.runs, last_run_at=excluded.last_run_at`
-      )
-      .run({
-        id: r.id,
-        name: r.name,
-        target: JSON.stringify(r.target),
-        text: r.text,
-        every_min: r.everyMinutes ?? null,
-        daily_at: r.dailyAt ?? null,
-        enabled: r.enabled ? 1 : 0,
-        next_at: r.nextAt,
-        runs: r.runs,
-        last_run_at: r.lastRunAt ?? null,
-        created_at: r.createdAt
-      });
-  }
-
-  deleteRoutine(id: string): void {
-    this.stmt('DELETE FROM routines WHERE id = ?').run(id);
   }
 
   updateFolder(id: string, folderPath: string, name: string): void {
@@ -507,15 +450,15 @@ export class Store {
   upsertSession(s: StoredSession): void {
     this.stmt(
         `INSERT INTO sessions (id, project_id, folder_id, cwd, agent, title, color, status, pid, resume_id,
-           created_at, updated_at, exit_code, x, y, w, h, cols, rows, command, args, role, sort_order, prev_resume_ids, model_pref, mode)
+           created_at, updated_at, exit_code, x, y, w, h, cols, rows, command, args, sort_order, prev_resume_ids, model_pref, mode)
          VALUES (@id, @project_id, @folder_id, @cwd, @agent, @title, @color, @status, @pid, @resume_id,
-           @created_at, @updated_at, @exit_code, @x, @y, @w, @h, @cols, @rows, @command, @args, @role, @sort_order, @prev_resume_ids, @model_pref, @mode)
+           @created_at, @updated_at, @exit_code, @x, @y, @w, @h, @cols, @rows, @command, @args, @sort_order, @prev_resume_ids, @model_pref, @mode)
          ON CONFLICT(id) DO UPDATE SET
            project_id=excluded.project_id, folder_id=excluded.folder_id, cwd=excluded.cwd, agent=excluded.agent,
            title=excluded.title, color=excluded.color, status=excluded.status, pid=excluded.pid,
            resume_id=excluded.resume_id, updated_at=excluded.updated_at, exit_code=excluded.exit_code,
            x=excluded.x, y=excluded.y, w=excluded.w, h=excluded.h, cols=excluded.cols, rows=excluded.rows,
-           command=excluded.command, args=excluded.args, role=excluded.role, sort_order=excluded.sort_order,
+           command=excluded.command, args=excluded.args, sort_order=excluded.sort_order,
            prev_resume_ids=excluded.prev_resume_ids, model_pref=excluded.model_pref, mode=excluded.mode`
       )
       .run({
@@ -543,7 +486,6 @@ export class Store {
         rows: s.rows,
         command: s.command ?? null,
         args: s.args ? JSON.stringify(s.args) : null,
-        role: s.role,
         sort_order: s.order ?? null
       });
   }
@@ -554,12 +496,10 @@ export class Store {
     this.stmt("DELETE FROM inbox WHERE session_id = ? AND kind NOT IN ('directive', 'report')").run(id);
   }
 
-  /** A deleted project's records: all inbox rows of these sessions, and the done / task marks on them. */
+  /** A deleted project's records: all inbox rows of these sessions. */
   purgeRecords(sessionIds: string[]): void {
     const del = this.db.transaction((ids: string[]) => {
       for (const id of ids) this.stmt('DELETE FROM inbox WHERE session_id = ? OR from_id = ?').run(id, id);
-      this.stmt('DELETE FROM order_done WHERE id NOT IN (SELECT id FROM inbox)').run();
-      this.stmt('DELETE FROM order_task WHERE id NOT IN (SELECT id FROM inbox)').run();
     });
     del(sessionIds);
   }

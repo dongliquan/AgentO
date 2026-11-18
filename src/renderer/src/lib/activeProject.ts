@@ -1,24 +1,17 @@
-import type { Session } from '@shared/protocol';
 import { useStore } from '@/store';
 
 /**
- * The head coach to open the Ground on: the project in progress — its head coach working, else anyone in it working
- * or asking something, else the project with the latest activity. Closed projects are skipped.
+ * The session to open the Ground on: one that is working, else one asking something, else the one with the latest
+ * activity. Sessions of closed projects are skipped.
  */
-export function activeHeadCoach(): string | undefined {
+export function activeSession(): string | undefined {
   const { sessions, projects } = useStore.getState();
-  const open = projects.filter((p) => !p.parentId && !p.closed);
-  const all = [...sessions.values()];
+  const open = new Set(projects.filter((p) => !p.closed).map((p) => p.id));
   let best: { id: string; score: number; at: number } | undefined;
-  for (const p of open) {
-    const head = all.find((s) => s.role === 'head' && s.projectId === p.id);
-    if (!head) continue;
-    const ids = new Set([p.id, ...projects.filter((x) => x.parentId === p.id).map((x) => x.id)]);
-    const members: Session[] = all.filter((s) => ids.has(s.projectId));
-    const busy = (s: Session): boolean => s.status === 'working' || s.status === 'starting';
-    const score = busy(head) ? 3 : members.some(busy) ? 2 : members.some((s) => s.attention) ? 1 : 0;
-    const at = Math.max(head.updatedAt, ...members.map((s) => s.updatedAt));
-    if (!best || score > best.score || (score === best.score && at > best.at)) best = { id: head.id, score, at };
+  for (const s of sessions.values()) {
+    if (!open.has(s.projectId)) continue;
+    const score = s.status === 'working' || s.status === 'starting' ? 2 : s.attention ? 1 : 0;
+    if (!best || score > best.score || (score === best.score && s.updatedAt > best.at)) best = { id: s.id, score, at: s.updatedAt };
   }
   return best?.id;
 }

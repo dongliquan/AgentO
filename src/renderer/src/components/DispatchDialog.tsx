@@ -1,19 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { DispatchRequest } from '@shared/extra';
-import type { Project, Session } from '@shared/protocol';
+import type { Project } from '@shared/protocol';
 import { useStore } from '@/store';
 import { send } from '@/client';
-import { displayTitle, normPath, pcStyle, projectColor, rootProject } from '@/lib/format';
+import { displayTitle, normPath, pcStyle, projectColor } from '@/lib/format';
 import { useToasts } from '@/lib/notify';
 
-/** The open project whose folders hold the repository (the deepest folder wins); a part counts for its project. */
+/** The open project whose folders hold the repository (the deepest folder wins). */
 export function projectOfRepo(repo: string, projects: Project[]): Project | undefined {
   const r = normPath(repo);
-  const closed = new Set(projects.filter((p) => !p.parentId && p.closed).map((p) => p.id));
+  const closed = new Set(projects.filter((p) => p.closed).map((p) => p.id));
   let best: { project: Project; len: number } | undefined;
   for (const p of projects) {
-    const root = rootProject(p.id, projects);
-    if (!root || closed.has(root.id)) continue;
+    const root = p;
+    if (closed.has(root.id)) continue;
     for (const f of p.folders) {
       const fp = normPath(f.path);
       if ((r === fp || r.startsWith(fp + '\\')) && (!best || fp.length > best.len)) best = { project: root, len: fp.length };
@@ -25,7 +25,7 @@ export function projectOfRepo(repo: string, projects: Project[]): Project | unde
 /** Changed files a commit request names (the list from its ref file, else the count in the link). */
 const fileCount = (req: DispatchRequest): number | undefined => req.fileList?.length ?? req.files;
 
-/** The order the project's coach receives: what was asked, the data from the link, and the rules (no force, report back). */
+/** The request the picked session receives: what was asked, the data from the link, and the rules (no force, report back). */
 export function dispatchOrder(req: DispatchRequest): string {
   const lines = [`[Request from ${req.from} — ${req.kind}]`, `Repository: ${req.repo}`];
   if (req.branch) lines.push(`Branch: ${req.branch}`);
@@ -50,8 +50,8 @@ export function dispatchOrder(req: DispatchRequest): string {
 
 /**
  * Requests from other apps (ReadO's Commit / Push → `agento://dispatch`): the manager confirms each one, and it goes
- * to the coach of the project that owns the repository as an order. A repository outside every open project's folders
- * is refused (shown, never sent). Main window only.
+ * to a session of the project that owns the repository (picked in the dialog) as a message. A repository outside
+ * every open project's folders is refused (shown, never sent). Main window only.
  */
 export function DispatchDialog(): JSX.Element | null {
   const [queue, setQueue] = useState<DispatchRequest[]>([]);
@@ -67,7 +67,18 @@ export function DispatchDialog(): JSX.Element | null {
   );
   const req = queue[0];
   const project = useMemo(() => (req ? projectOfRepo(req.repo, projects) : undefined), [req, projects]);
-  const lead = useMemo(() => leadOf(project, sessions), [project, sessions]);
+  // the sessions that can take it: Claude / Codex sessions of that project, the most recent first
+  const candidates = useMemo(
+    () =>
+      project
+        ? [...sessions.values()]
+            .filter((s) => s.projectId === project.id && (s.agent === 'claude' || s.agent === 'codex'))
+            .sort((a, b) => b.updatedAt - a.updatedAt)
+        : [],
+    [project, projects, sessions]
+  );
+  const [targetId, setTargetId] = useState('');
+  const target = candidates.find((s) => s.id === targetId) ?? candidates[0];
   const [showFiles, setShowFiles] = useState(false);
   if (!req) return null;
   const next = (): void => {
@@ -75,9 +86,13 @@ export function DispatchDialog(): JSX.Element | null {
     setQueue((q) => q.slice(1));
   };
   const accept = (): void => {
-    if (!project) return;
-    send({ type: 'team.order', target: { kind: 'project', projectId: project.id }, text: dispatchOrder(req) });
-    useToasts.getState().push({ title: `Sent to ${project.name}`, body: `${req.kind === 'commit' ? 'Commit' : 'Push'} · ${req.repo}` });
+    if (!project || !target) return;
+    const text = dispatchOrder(req);
+    // like a message typed in the session: kept in its record, typed in now when it runs, else it is woken first
+    send({ type: 'session.note', id: target.id, text });
+    const live = target.status === 'working' || target.status === 'waiting' || target.status === 'starting';
+    send({ type: live && target.pid !== undefined ? 'session.paste' : 'session.message', id: target.id, text });
+    useToasts.getState().push({ title: `Sent to ${displayTitle(target)}`, body: `${req.kind === 'commit' ? 'Commit' : 'Push'} · ${req.repo}` });
     next();
   };
   return (
@@ -104,27 +119,29 @@ export function DispatchDialog(): JSX.Element | null {
           {req.msg && (<><dt>Message draft</dt><dd>{req.msg}</dd></>)}
         </dl>
         {showFiles && req.fileList && <pre className="dispatch-files">{req.fileList.join('\n')}</pre>}
-        {project ? (
+        {project && target ? (
           <div className="dispatch-to">
             Goes to <span className="project-tag" style={pcStyle(projectColor(project.id, projects))}>{project.name}</span>
-            {lead ? <> · <b>{lead}</b></> : ' · its lead'} as an order. It will {req.kind === 'commit' ? 'commit (no push)' : 'push (never force)'} and report back.
+            {' · '}
+            <select value={target.id} onChange={(e) => setTargetId(e.target.value)}>
+              {candidates.map((s) => (
+                <option key={s.id} value={s.id}>{displayTitle(s)}</option>
+              ))}
+            </select>
+            {' '}as a message. It will {req.kind === 'commit' ? 'commit (no push)' : 'push (never force)'} and tell you the result.
           </div>
+        ) : project ? (
+          <div className="dispatch-refused">That project has no Claude or Codex session to take this. Start one in it first.</div>
         ) : (
           <div className="dispatch-refused">This repository is not in any open project's folders, so AgentO will not act on it. Add the folder to a project first.</div>
         )}
         <div className="actions">
           {queue.length > 1 && <span className="muted grow">{queue.length - 1} more waiting</span>}
           <button className="btn" onClick={next}>{project ? 'Cancel' : 'Close'}</button>
-          {project && <button className="btn primary" onClick={accept}>Send to {lead ?? project.name}</button>}
+          {project && target && <button className="btn primary" onClick={accept}>Send to {displayTitle(target)}</button>}
         </div>
       </div>
     </div>
   );
 }
 
-/** Who receives a project order: its head coach ("Coach"), else nobody named (the daemon picks the part leads). */
-function leadOf(project: Project | undefined, sessions: Map<string, Session>): string | undefined {
-  if (!project) return undefined;
-  for (const s of sessions.values()) if (s.role === 'head' && s.projectId === project.id) return `Coach · ${displayTitle(s)}`;
-  return undefined;
-}

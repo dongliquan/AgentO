@@ -1,20 +1,18 @@
 import { create } from 'zustand';
 import { useGitSubjects } from '@/lib/gitSubjects';
-import type { AgentConnection, ClaudeSessionInfo, FsEntry, InboxItem, Project, Routine, ServerMessage, Session, SessionLast, SessionStatus, TaskRec, UsageInfo, UsageReport } from '@shared/protocol';
+import type { AgentConnection, ClaudeSessionInfo, FsEntry, InboxItem, Project, ServerMessage, Session, SessionLast, SessionStatus, TaskRec, UsageInfo, UsageReport } from '@shared/protocol';
 import type { AgentDefEx } from '@shared/extra';
 import { emitTerm } from '@/lib/termbus';
 import { appendBuffer, dropBuffer, setBuffer } from '@/lib/buffers';
-import { arrangeSimple, arrangeTeam } from '@shared/layout';
-import { isTeamMode } from '@/lib/teamMode';
+import { arrangeSimple } from '@shared/layout';
 import { closedSessionIds, openSessions } from '@/lib/closedIds';
 import { applyChatSnapshot, applyChatUpsert, dropChat } from '@/lib/chat';
-import { useActivitySub } from '@/lib/activitySub';
 
 export const ZOOM_MIN = 0.2;
 export const ZOOM_MAX = 2.5;
-export type ViewMode = 'board' | 'split' | 'tabs' | 'timeline' | 'today';
+export type ViewMode = 'board' | 'split' | 'tabs' | 'today';
 /** orders: the Manager tab (conversation + order box) */
-export type RightTab = 'detail' | 'files' | 'inbox' | 'orders' | 'log' | 'web';
+export type RightTab = 'detail' | 'files' | 'inbox' | 'web';
 /** projects: the left sidebar's tree · inbox: also opens the right panel's Inbox tab */
 export type ActivityView = 'projects' | 'inbox';
 
@@ -46,7 +44,6 @@ export interface AppState {
   sessions: Map<string, Session>;
   inbox: InboxItem[];
   /** repeating orders (Manager tab) */
-  routines: Routine[];
   /** the daemon's task ledger by key ("<project>/#T12") */
   ledger: Map<string, TaskRec>;
   /** where stopped sessions left off (asked for by LastInfoWatcher) */
@@ -73,7 +70,7 @@ export interface AppState {
   rightOpen: boolean;
   /** main window: the sidebar and right panel are shown in the separate panels window instead */
   panelsDetached: boolean;
-  /** Ground: ids of collapsed groups (projects / parts), remembered per viewer */
+  /** Ground: ids of collapsed projects, remembered per viewer */
   collapsedGroups: string[];
   rightTab: RightTab;
   activity: ActivityView;
@@ -91,7 +88,6 @@ export interface AppState {
   agentConnections: AgentConnection[] | null;
   claudeSessions: { path: string; items: ClaudeSessionInfo[] } | null;
   /** the manager's orders marked done (Tasks): order record id → when */
-  doneOrders: Record<string, number>;
   /** Quick Open file search: the latest answer (ref = the query it answers) */
   fileSearch: { ref: string; items: { path: string; root: string }[] } | null;
   activeTabSessionId: string | null;
@@ -186,7 +182,6 @@ export const useStore = create<AppState>((set, get) => ({
   projects: [],
   sessions: new Map(),
   inbox: [],
-  routines: [],
   ledger: new Map(),
   lastInfo: new Map(),
   restorable: { at: 0, ids: [] },
@@ -208,7 +203,7 @@ export const useStore = create<AppState>((set, get) => ({
   rightOpen: readFlag('asm.rightOpen', true),
   panelsDetached: false,
   collapsedGroups: readList('asm.collapsedGroups'),
-  rightTab: 'orders',
+  rightTab: 'detail',
   activity: 'projects',
   paletteOpen: false,
   paletteMode: 'quick',
@@ -222,7 +217,6 @@ export const useStore = create<AppState>((set, get) => ({
   agentConnections: null,
   claudeSessions: null,
   fileSearch: null,
-  doneOrders: {},
   activeTabSessionId: null,
 
   fsLists: new Map(),
@@ -242,8 +236,6 @@ export const useStore = create<AppState>((set, get) => ({
           projects: msg.projects,
           sessions,
           inbox: msg.inbox,
-          doneOrders: msg.doneOrders ?? {},
-          routines: msg.routines ?? [],
           ledger: new Map((msg.ledger ?? []).map((r) => [r.key, r])),
           restorable: msg.restorable ?? { at: 0, ids: [] },
           usage: msg.usage,
@@ -254,9 +246,8 @@ export const useStore = create<AppState>((set, get) => ({
       }
       case 'projects': {
         const sel = get().selectedId ? get().sessions.get(get().selectedId!) : undefined;
-        const top = sel ? msg.projects.find((p) => p.id === sel.projectId) : undefined;
-        const root = top?.parentId ? msg.projects.find((p) => p.id === top.parentId) : top;
-        set({ projects: msg.projects, ...(root?.closed ? { selectedId: null } : {}) });
+        const own = sel ? msg.projects.find((p) => p.id === sel.projectId) : undefined;
+        set({ projects: msg.projects, ...(own?.closed ? { selectedId: null } : {}) });
         break;
       }
       case 'session.upsert': {
@@ -326,17 +317,11 @@ export const useStore = create<AppState>((set, get) => ({
         set({ ledger });
         break;
       }
-      case 'routines':
-        set({ routines: msg.routines });
-        break;
       case 'usage.report':
         set({ usageReport: msg.report });
         break;
       case 'agents.status':
         set({ agentConnections: msg.items });
-        break;
-      case 'orders.done':
-        set({ doneOrders: msg.done });
         break;
       case 'fs.search.result':
         set({ fileSearch: { ref: msg.ref, items: msg.items } });
@@ -425,11 +410,7 @@ export const useStore = create<AppState>((set, get) => ({
     }
     set({ collapsedGroups: next });
   },
-  // 'log' (the team's log) is a view of the Activity tab, which is the 'inbox' tab
-  setRightTab: (t) => {
-    if (t === 'log') useActivitySub.getState().set('log');
-    set({ rightTab: t === 'log' ? 'inbox' : t, rightOpen: true });
-  },
+  setRightTab: (t) => set({ rightTab: t, rightOpen: true }),
   setActivity: (a) => {
     const patch: Partial<AppState> = { activity: a };
     if (a === 'inbox') {
@@ -453,13 +434,12 @@ export const useStore = create<AppState>((set, get) => ({
   closeAgents: () => set({ agentsOpen: false }),
   setActiveTabSession: (id) => set({ activeTabSessionId: id }),
 
-  /** Team layout from src/shared/layout.ts (players tall, coaches wide; links run through empty space). */
+  /** Grid layout by project from src/shared/layout.ts. */
   autoArrange: () => {
     const sessions = new Map(get().sessions);
     // closed projects keep their layout for when they are opened again
-    const projects = get().projects.filter((p) => !p.closed && !get().projects.some((x) => x.id === p.parentId && x.closed));
-    // plain sessions: a plain grid by project; team mode: the team layout (Head Coach, Coaches, corridors)
-    const placed = isTeamMode() ? arrangeTeam(openSessions(sessions, get().projects), projects) : arrangeSimple(openSessions(sessions, get().projects), projects);
+    const projects = get().projects.filter((p) => !p.closed);
+    const placed = arrangeSimple(openSessions(sessions, get().projects), projects);
     for (const [id, r] of placed) {
       const cur = sessions.get(id);
       if (cur) sessions.set(id, { ...cur, ...r });

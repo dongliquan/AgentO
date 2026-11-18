@@ -139,7 +139,7 @@ function outside(id: string, sessions: SessionManager): ClaudeSessionInfo | unde
   };
 }
 
-/** Adds the picked sessions as stopped players of the project (part) that resume their conversation. */
+/** Adds the picked sessions as stopped sessions of the project that resume their conversation. */
 export function importClaudeSessions(
   store: Store,
   sessions: SessionManager,
@@ -163,7 +163,6 @@ export function importClaudeSessions(
         // resume in the folder the conversation ran in: Claude Code finds it by that folder
         cwd: fs.existsSync(info.cwd) ? info.cwd : folder.path,
         agent: 'claude',
-        role: 'player',
         title,
         resumeId: id
       })

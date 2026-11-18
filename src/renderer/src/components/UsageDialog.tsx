@@ -5,7 +5,7 @@ import { send } from '@/client';
 import { projectColor } from '@/lib/format';
 
 type Range = 1 | 7 | 30;
-type GroupBy = 'project' | 'session' | 'role' | 'model' | 'time';
+type GroupBy = 'project' | 'session' | 'model' | 'time';
 
 const TEAM_COLOR = '#64748b';
 const OUTSIDE_COLOR = '#94a3b8';
@@ -20,7 +20,6 @@ export function fmt(n: number): string {
 }
 const pct = (a: number, b: number): string => (b > 0 ? `${Math.round((a / b) * 100)}%` : '—');
 const total = (b: { input: number; output: number; cacheWrite: number; cacheRead: number }): number => b.input + b.output + b.cacheWrite + b.cacheRead;
-const ROLE_NAME: Record<string, string> = { head: 'Coach', coach: 'Part coach', player: 'Player', outside: 'Outside AgentO' };
 const shortModel = (m: string): string => m.replace(/^claude-/, '').replace(/-\d{8}$/, '') || '?';
 
 interface Agg {
@@ -41,7 +40,7 @@ function add(a: Agg, b: UsageBucket): void {
   a.turns += b.turns;
 }
 
-/** Manager › Usage: tokens spent by every Claude session, by project, time, session, role and model — and where to save. */
+/** Manager › Usage: tokens spent by every Claude session, by project, time, session and model — and where to save. */
 export function UsageDialog(): JSX.Element | null {
   const open = useStore((s) => s.usageOpen);
   const close = useStore((s) => s.closeUsage);
@@ -130,7 +129,7 @@ export function UsageDialog(): JSX.Element | null {
               <div className="usage-table-head">
                 <h4>Breakdown</h4>
                 <div className="seg">
-                  {(['project', 'session', 'role', 'model', 'time'] as GroupBy[]).map((g) => (
+                  {(['project', 'session', 'model', 'time'] as GroupBy[]).map((g) => (
                     <button key={g} className={groupBy === g ? 'on' : ''} onClick={() => setGroupBy(g)}>
                       {g === 'time' ? (days === 1 ? 'Hour' : 'Day') : g[0]!.toUpperCase() + g.slice(1)}
                     </button>
@@ -183,23 +182,18 @@ interface Built {
   tips: { title: string; body: string }[];
 }
 
-function build(r: UsageReport, projects: { id: string; name: string; parentId?: string; color?: string }[], days: number): Built {
+function build(r: UsageReport, projects: { id: string; name: string; color?: string }[], days: number): Built {
   const info = new Map(r.sessions.map((s) => [s.key, s]));
-  const rootOf = (id: string): { id: string; name: string; parentId?: string; color?: string } | undefined => {
-    const p = projects.find((x) => x.id === id);
-    return p?.parentId ? projects.find((x) => x.id === p.parentId) : p;
-  };
   const groupOf = (key: string): { name: string; color: string } => {
     if (key.startsWith('outside:')) return { name: 'Outside AgentO', color: OUTSIDE_COLOR };
     const s = info.get(key);
-    const root = s?.projectId ? rootOf(s.projectId) : undefined;
-    if (!root) return { name: 'Team', color: TEAM_COLOR };
+    const root = s?.projectId ? projects.find((x) => x.id === s.projectId) : undefined;
+    if (!root) return { name: 'No project', color: TEAM_COLOR };
     return { name: root.name, color: projectColor(root.id, projects) };
   };
   const all = empty('All');
   const byProject = new Map<string, Agg>();
   const bySession = new Map<string, Agg>();
-  const byRole = new Map<string, Agg>();
   const byModel = new Map<string, Agg>();
   const sessionModels = new Map<string, Set<string>>();
   // periods: every hour of the last 24 h, or every day of the range (gaps stay visible)
@@ -232,9 +226,7 @@ function build(r: UsageReport, projects: { id: string; name: string; parentId?: 
     };
     add(get(byProject, g.name, g.name, g.color), b);
     const s = info.get(b.key);
-    add(get(bySession, b.key, s ? `${s.title}${s.role === 'outside' ? '' : ` · ${g.name}`}` : b.key, g.color), b);
-    const role = s?.role === 'head' && !s.projectId ? 'Head Coach' : ROLE_NAME[s?.role ?? 'outside'] ?? s?.role ?? '?';
-    add(get(byRole, role), b);
+    add(get(bySession, b.key, s ? `${s.title}${s.inAgento ? ` · ${g.name}` : ''}` : b.key, g.color), b);
     add(get(byModel, shortModel(b.model)), b);
     (sessionModels.get(b.key) ?? sessionModels.set(b.key, new Set()).get(b.key)!).add(shortModel(b.model));
     const p = periods[periodIndex(b.hour)]!;
@@ -263,7 +255,7 @@ function build(r: UsageReport, projects: { id: string; name: string; parentId?: 
     all,
     groups,
     periods,
-    tables: { project: sorted(byProject), session: sorted(bySession), role: sorted(byRole), model: sorted(byModel), time: timeRows },
+    tables: { project: sorted(byProject), session: sorted(bySession), model: sorted(byModel), time: timeRows },
     sessions,
     tips: tips(all, sessions)
   };
@@ -273,7 +265,7 @@ function build(r: UsageReport, projects: { id: string; name: string; parentId?: 
 function tips(all: Agg, sessions: Built['sessions']): Built['tips'] {
   const out: Built['tips'] = [];
   const t = total(all);
-  const team = sessions.filter((s) => s.role !== 'outside');
+  const team = sessions.filter((s) => s.inAgento);
   out.push({
     title: `${pct(all.cacheRead, t)} of the tokens are context read again.`,
     body: 'Every call re-reads the whole conversation so far (system prompt, tools, files read, replies). Fewer calls on a shorter context is what saves — not shorter messages.'
@@ -282,43 +274,12 @@ function tips(all: Agg, sessions: Built['sessions']): Built['tips'] {
   if (big.length)
     out.push({
       title: 'Long-lived contexts:',
-      body: `${big.map((s) => `${s.title} (peak ${fmt(s.maxContext)})`).join(', ')}. Start these fresh (/clear) or /compact once an order is reported — the team log and files keep the state.`
-    });
-  const leads = team.filter((s) => s.role === 'head' || s.role === 'coach');
-  const doing = leads
-    .map((s) => {
-      const work = s.tools.filter((x) => /^(Edit|Write|MultiEdit|NotebookEdit|Bash)$/.test(x.tool));
-      const calls = work.reduce((a, x) => a + x.calls, 0);
-      return { s, calls, list: work.map((x) => `${x.tool}×${x.calls}`).join(' ') };
-    })
-    .filter((x) => x.calls >= 10)
-    .sort((a, b) => b.calls - a.calls)
-    .slice(0, 4);
-  if (doing.length)
-    out.push({
-      title: 'Coordinators doing the work:',
-      body: `${doing.map((x) => `${x.s.title} (${x.list})`).join(', ')}. Every command's output stays in a coach's context and is re-read on each later call; leave running and editing to players.`
-    });
-  const readers = leads
-    .map((s) => ({ s, bytes: s.tools.filter((x) => x.tool === 'Read').reduce((a, x) => a + x.bytes, 0) }))
-    .filter((x) => x.bytes >= 200_000)
-    .sort((a, b) => b.bytes - a.bytes)
-    .slice(0, 4);
-  if (readers.length)
-    out.push({
-      title: 'Large files read by coaches:',
-      body: `${readers.map((x) => `${x.s.title} (${fmt(x.bytes)} chars)`).join(', ')}. Ask a player for a summary instead of reading whole files (images and PDFs are the heaviest).`
-    });
-  const top = leads.filter((s) => s.models.some((m) => /fable|opus|mythos/.test(m)));
-  if (top.length)
-    out.push({
-      title: 'Coordination on the top model:',
-      body: `${top.length} coach session(s) run on ${[...new Set(top.flatMap((s) => s.models))].join(', ')}. Splitting orders and reviewing reports runs well on a lighter model (e.g. Sonnet) at a fraction of the usage; keep the strongest model for players.`
+      body: `${big.map((s) => `${s.title} (peak ${fmt(s.maxContext)})`).join(', ')}. Start these fresh (/clear) or /compact once a piece of work is done — the project memory and files keep the state.`
     });
   const trafficChars = team.reduce((a, s) => a + s.teamMessageBytes + s.tools.filter((x) => x.tool.startsWith('mcp__agento__')).reduce((b, x) => b + x.bytes, 0), 0);
   out.push({
     title: `Messages between sessions are small: ~${fmt(trafficChars / 3)} tokens (${pct(trafficChars / 3, t)}).`,
-    body: 'Orders, reports and AgentO tool results barely register; read_session is the largest of them. Trimming them further would not change the total much.'
+    body: 'Requests, answers and AgentO tool results barely register; read_session is the largest of them. Trimming them further would not change the total much.'
   });
   return out;
 }
@@ -445,7 +406,7 @@ function Table({ rows, all }: { rows: Agg[]; all: Agg }): JSX.Element {
 
 function Traffic({ sessions, all }: { sessions: Built['sessions']; all: Agg }): JSX.Element {
   const rows = sessions
-    .filter((s) => s.role !== 'outside')
+    .filter((s) => s.inAgento)
     .map((s) => {
       const agento = s.tools.filter((x) => x.tool.startsWith('mcp__agento__'));
       const toolChars = agento.reduce((a, x) => a + x.bytes, 0);

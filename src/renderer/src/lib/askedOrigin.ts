@@ -6,7 +6,7 @@ import type { InboxItem } from '@shared/protocol';
  * The session's report that holds the question is found by what the question says (the report that shares the most
  * of its words, newest first). That report belongs to the order it answers: its own number when it has one, else the
  * message the session had received just before and that shares most with it (a "finished" report of another session,
- * or the manager's own order). The session is the one that finished it, or else the one the coach handed work to
+ * or the manager's own order). The session is the one that finished it, or else the one the asking session handed work to
  * for that order.
  */
 export interface AskedOrigin {
@@ -71,7 +71,7 @@ export function findOrigin(inbox: InboxItem[], sessionId: string, question: stri
   };
   let since = 0;
   const handedTo = (t: number): string | undefined => {
-    // the session this coach last handed work to for that order, before time t
+    // the session this one last handed work to for that order, before time t
     let h: InboxItem | undefined;
     for (const it of inbox) {
       if (it.kind === 'directive' && it.fromId === sessionId && it.sessionId !== sessionId && it.createdAt >= since && it.createdAt <= t + 60_000 && (!h || it.createdAt > h.createdAt)) h = it;
@@ -94,7 +94,7 @@ export function findOrigin(inbox: InboxItem[], sessionId: string, question: stri
     }
   }
   if (!from) return {};
-  // finished by another session: that session; the manager's own order: whoever the coach handed it to
+  // finished by another session: that session; the manager's own order: whoever it was handed to
   const other = from.fromId !== 'user' && from.fromId !== sessionId ? from.fromId : undefined;
   return { taskId: from.taskId, aboutId: other ?? handedTo(source.createdAt) };
 }

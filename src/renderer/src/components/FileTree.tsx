@@ -240,7 +240,7 @@ function FolderIcon({ open }: { open: boolean }): JSX.Element {
 const norm = (p: string): string => p.replace(/[\\/]+$/, '').toLowerCase().replace(/\//g, '\\');
 
 /**
- * The folders a project / part actually works in: a folder that contains another of its folders is left out, so a
+ * The folders a project actually works in: a folder that contains another of its folders is left out, so a
  * parent and its subfolder never sit side by side at one level.
  */
 export function leafFolders(folders: Folder[]): Folder[] {

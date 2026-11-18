@@ -24,7 +24,7 @@ export function ImportClaudeDialog(): JSX.Element | null {
     const closed = closedProjectIds(allProjects);
     return allProjects.filter((p) => !closed.has(p.id));
   }, [allProjects]);
-  /** every folder of every open project / part, as "<project> › <part> · <folder>" */
+  /** every folder of every open project, as "<project> · <folder>" */
   const folders = useMemo(
     () => projects.flatMap((p) => p.folders.map((f) => ({ key: `${p.id}|${f.id}`, projectId: p.id, folder: f, label: `${projectLabel(p.id, projects)} · ${f.name}` }))),
     [projects]

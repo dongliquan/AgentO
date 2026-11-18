@@ -11,7 +11,7 @@ export interface Todo {
   doneAt?: number;
   /** the project it goes to as an order */
   projectId?: string;
-  /** sent to the project's coach (now), or scheduled for 09:00 */
+  /** 1.x only (sent to the project's coach, or scheduled for 09:00); no longer set */
   sentAt?: number;
   scheduled?: string;
 }

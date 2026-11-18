@@ -1,13 +1,9 @@
 /**
- * Team layer, modelled on a football club. The user is the manager and gives orders; the sessions collaborate:
- * - head coach: optional, one per daemon; splits cross-project orders among the coaches and reports to the user.
- * - coach: optional, one per project; manages and questions that project's players. A player can be promoted to
- *   "playing coach" (keeps coding in its project folder, gains the coach tools).
- * - player: an ordinary session inside a project; does the actual work. All coding goes to Claude.
+ * Sessions working together. Every session is equal (no hierarchy): a session asks another session of its project
+ * for something and gets the answer back. The user works with any session directly.
  *
- * Team sessions reach this daemon's MCP endpoint (POST http://127.0.0.1:<port>/mcp/<sessionId>, Streamable HTTP with
- * JSON responses). Every role sees the same tool list; permissions are checked per call against the caller's current
- * role, so a role change applies without a restart.
+ * Sessions reach this daemon's MCP endpoint (POST http://127.0.0.1:<port>/mcp/<sessionId>, Streamable HTTP with
+ * JSON responses); every session sees the same tools.
  *
  * Messages between sessions go through an outbox: delivered as one bracketed paste when the target is idle, held while
  * it works or sits on a permission/trust prompt. When a directed session finishes, whoever sent the directive gets an
@@ -17,19 +13,18 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { AgentKind, ChatEntry, Project, Session, SessionRole, TeamOrderTarget } from '@shared/protocol';
+import type { ChatEntry, Project, Session } from '@shared/protocol';
 import type { Store, StoredSession } from './store';
 import type { SessionManager } from './sessions';
 import { attachmentsDir, dataDir, ensureDir } from './paths';
 import { TranscriptParser, findTranscript, readTranscriptLines } from './transcript';
 import { log } from './log';
-import { arrangeTeam } from '@shared/layout';
 import { plainTerminalLines } from '@shared/plaintext';
 import { LIMIT_RE, PROMPT_RE, limitResetText } from '@shared/prompts';
 import { findCodexRollout, readCodex } from './codex';
 import { Ledger } from './ledger';
 import { MEMORY_MODES_HELP, MEMORY_SECTIONS, MEMORY_TOOL_DESCRIPTION, ensureMemory, memorySystemPrompt, updateMemory, type MemoryMode, type MemorySection } from './memory';
-import { AUTO_MIN_GAP_MS, AUTO_FRESH, AUTO_IDLE_MS, AUTO_MIN_CONTEXT, AUTO_MIN_CONTEXT_COORD, HANDOFF_CONTINUE, HANDOFF_REQUEST, conversationStart, handoffDir, handoffPath, AUTO_OVERSIZE_FACTOR, AUTO_OVERSIZE_IDLE_MS, AUTO_MANAGER_QUIET_MS, HANDOFF_MARK } from './freshstart';
+import { AUTO_MIN_GAP_MS, AUTO_FRESH, AUTO_IDLE_MS, AUTO_MIN_CONTEXT, HANDOFF_CONTINUE, HANDOFF_REQUEST, conversationStart, handoffDir, handoffPath, AUTO_OVERSIZE_FACTOR, AUTO_OVERSIZE_IDLE_MS, AUTO_MANAGER_QUIET_MS, HANDOFF_MARK } from './freshstart';
 
 export const MCP_SERVER_NAME = 'agento';
 const MAX_BODY = 1024 * 1024;
@@ -37,37 +32,9 @@ const MAX_WAIT_S = 600;
 /** Team traffic is recorded in full (the Log tab shows it) up to this length. */
 const LOG_TEXT_MAX = 4000;
 
-/**
- * Token economy for the coordinators (head coaches, coaches — Claude): they split orders and review reports, so
- * - a lighter model and effort (env AGENTO_COACH_MODEL, default "sonnet"; AGENTO_COACH_EFFORT, default "medium";
- *   empty = the CLI's default),
- * - no editing tools (Edit/Write/MultiEdit/NotebookEdit): the work and its output belong in players' contexts,
- * - auto-compact at AGENTO_COACH_COMPACT_PCT % of the context window (default 60; empty = the CLI's default).
- * Players: Opus 5.5 unless picked (env AGENTO_PLAYER_MODEL; empty = the CLI's default, Fable on most plans — the
- * manager does not want Fable unless chosen). Applies at the next start/resume of a session.
- */
+/** The model a Claude session starts with unless one was picked (env AGENTO_PLAYER_MODEL; empty = Opus 5.5, never the CLI default). */
 const envOr = (k: string, d: string): string => (process.env[k] !== undefined ? process.env[k]!.trim() : d);
-// never empty: the CLI's own default is Fable on most plans, which the manager does not want unless chosen
-const COORDINATOR_MODEL = envOr('AGENTO_COACH_MODEL', 'sonnet') || 'sonnet';
 const PLAYER_MODEL = envOr('AGENTO_PLAYER_MODEL', 'claude-opus-5-5') || 'claude-opus-5-5';
-const COORDINATOR_EFFORT = envOr('AGENTO_COACH_EFFORT', 'medium');
-const COORDINATOR_COMPACT_PCT = envOr('AGENTO_COACH_COMPACT_PCT', '60');
-const COORDINATOR_ARGS = (pick?: string): string[] => [
-  ...(pick || COORDINATOR_MODEL ? ['--model', pick || COORDINATOR_MODEL] : []),
-  ...(COORDINATOR_EFFORT ? ['--effort', COORDINATOR_EFFORT] : []),
-  '--disallowedTools', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit'
-];
-
-/** How a coordinator keeps its context (and so every later call) small — in the head coach and coach instructions. */
-const LEAN_CONTEXT = `## Keep your context small
-
-Everything you read stays in your conversation and is read again on every later call, so:
-- Do not build, test, or run long commands yourself — have a player do it and report the result. If you must run one,
-  keep its output short (\`| tail -n 40\`, \`--quiet\`).
-- Do not read whole large files, images or PDFs; ask a player for a summary or read only the lines you need.
-- \`read_session\` with a small \`max_entries\` (5–10) is usually enough; the "[AgentO] … finished" message already
-  carries the last reply.
-- Editing tools are switched off for you: players change files.`;
 /** Per-call tool timeout given to the CLIs: longer than the longest wait_for_sessions. */
 const TOOL_TIMEOUT_S = MAX_WAIT_S + 60;
 /** Codex reads the bearer token for the MCP endpoint from this env var (set per launch). */
@@ -82,20 +49,13 @@ const START_SETTLE_MS = 5_000;
 const TRUST_SETTLE_MS = 8_000;
 /** Waiting must hold this long before a directed session counts as finished (status flips on output pauses). */
 const SETTLE_MS = 4_000;
-/** Autopilot: a Coach resting this long with nothing out is told to carry on; limits so it cannot spin */
+/** Autopilot: the lead session resting this long with nothing out is told to carry on; limits so it cannot spin */
 const AUTOPILOT_SETTLE_MS = 15_000;
 /** a session woken after being stopped this long is told how long it was away */
 const STOPPED_NOTE_MS = 20 * 60_000;
 const AUTOPILOT_MAX_PER_HOUR = 6;
 const AUTOPILOT_MAX_IDLE = 2;
-const AUTOPILOT_RULES =
-  '[AgentO Autopilot] The manager is away; the work on this project goes on without them.\n' +
-  '- Do not stop to ask the manager. When a decision is open, choose the option you recommend, do it, and record it with `update_memory` (section Decisions, one line: what and why). Say it in your next `report_up` as "Assumed: …" with directive=false — do not wait for an answer.\n' +
-  '- Only what nobody but the manager can do (credentials, passwords, access to production, destructive or irreversible actions) is skipped: add one line to the memory section Open ("Manager: …") and carry on with the other work.\n' +
-  '- Keep handing the next pieces of the plan to the players, check each result before the next piece, and use the reviewer when there is one. Never end your answer with a question.\n' +
-  '- Work only on what is still open: unfinished orders, the memory sections Open and Decisions. Never report again what was already reported; do not repeat or summarize finished work.\n' +
-  '- When nothing is open any more, answer with only the line `AUTOPILOT DONE` (no report). When the whole plan was finished and checked in this run, send one `report_up` with the new results first, and end your answer with `AUTOPILOT DONE`.';
-/** Autopilot for a single session (no Coach): it does the work itself, one open piece at a time */
+/** Autopilot: one session does the work itself, one open piece at a time */
 const AUTOPILOT_RULES_SOLO =
   '[AgentO Autopilot] The manager is away; keep working on this project without them.\n' +
   '- Do not stop to ask the manager. When a decision is open, choose the option you recommend, do it, and record it with `update_memory` (section Decisions, one line: what and why). Say it in your answer as "Assumed: …" — do not wait for an answer.\n' +
@@ -105,26 +65,9 @@ const AUTOPILOT_RULES_SOLO =
   '- When nothing is open any more, answer with only the line `AUTOPILOT DONE`. When the whole plan was finished and checked in this run, say what is new in a few lines first, and end your answer with `AUTOPILOT DONE`.';
 /** a rider (a note that only goes along with another message) is delivered on its own after this long */
 const RIDE_MAX_MS = 15 * 60_000;
-/** an FYI to a coach about what the manager told a player directly: it goes along with the coach's next work, or is dropped */
-const FYI_MAX_MS = 3 * 60 * 60_000;
-/** shorter direct inputs ("응", "A", "진행해줘") say nothing a coach could use */
-const FYI_MIN_CHARS = 12;
-/** how long reports to a coordinator are held so several arrive in one turn */
-const REPORT_BATCH_MS = 20_000;
 /** Messages a session may send per window — stops two sessions from bouncing messages forever. */
 const RATE_WINDOW_MS = 10 * 60_000;
-const RATE_LIMIT: Record<SessionRole, number> = { head: 60, coach: 60, player: 12 };
-
-/** Agents a coach can run on. The head coach and players are always Claude. */
-export const COACH_AGENTS = ['claude', 'codex', 'gemini'] as const;
-export type CoachAgent = (typeof COACH_AGENTS)[number];
-
-/** Instruction file each CLI reads from its working directory. */
-const INSTRUCTION_FILES: Record<CoachAgent, string> = { claude: 'CLAUDE.md', codex: 'AGENTS.md', gemini: 'GEMINI.md' };
-/** First line of generated instruction files; while it is there the file is regenerated, delete it to keep edits. */
-const GENERATED_MARK = '<!-- agento:generated — delete this line to keep your own edits -->';
-
-const ROLE_NAME: Record<SessionRole, string> = { head: 'head coach', coach: 'coach', player: 'player' };
+const RATE_LIMIT = 12;
 /** Shown as the sender of the user's orders. */
 const USER = 'the manager (the user)';
 /** sender of what the user types into a session directly (the renderer tells these from orders by it) */
@@ -136,8 +79,6 @@ interface ToolDef {
   name: string;
   description: string;
   inputSchema: Json;
-  /** roles allowed to call it (checked per call, the list itself is the same for everyone) */
-  roles: SessionRole[];
   run: (caller: StoredSession, args: Json) => Promise<string> | string;
 }
 
@@ -165,13 +106,13 @@ interface Queued {
   text: string;
   /** set when this is a directive (its completion is reported back to the sender) */
   from?: string;
-  /** false: a note that waits for the session's next work instead of waking it (e.g. "you are now the coach") */
+  /** false: a note that waits for the session's next work instead of waking it (e.g. an FYI) */
   wake?: boolean;
   /** never delivered on its own, even to an idle session: it goes along with the next message that is (saves a turn) */
   ride?: boolean;
   /** when it was queued (a rider waits at most RIDE_MAX_MS) */
   at?: number;
-  /** a report / answer (not a directive): to a head coach or coach it waits REPORT_BATCH_MS so close ones arrive together */
+  /** a report / answer (not a directive) */
   report?: boolean;
   /** a directive's task id (becomes the pending work's id when delivered) */
   task?: string;
@@ -187,7 +128,6 @@ class ToolError extends Error {}
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const num = (v: unknown, def: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : def);
 const clip = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n)}… (+${s.length - n} chars)` : s);
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Strip ANSI/OSC sequences and carriage-return overdraws from raw terminal output. */
 /** The user picked a Codex Windows sandbox mode themselves ([windows] sandbox = … in ~/.codex/config.toml). */
@@ -231,147 +171,18 @@ function chatLine(e: ChatEntry): string | null {
   }
 }
 
-const TEAM_INTRO = `This is an AgentO team, organised like a football club:
-- the **manager** is the user — they give the orders and may run several projects at once;
-- a **project** is one piece of work (e.g. a shop page); it is split into **parts** (e.g. planning, development, QA);
-- each project has an optional **head coach** (its PM) that splits orders among the parts' coaches and reports to the user;
-- each part has an optional **coach** that manages and questions the part's players (a player may be the "playing
-  coach" of its part);
-- **players** are the sessions inside a part and do the actual work. All coding is done by Claude players.
-Every order and task you receive carries an id like #T12 in its header: AgentO tracks the work by it, so quote it when you report about that task.
-
-Messages from other sessions arrive as text starting with "[Message from …]", "[Order from …]" or "[AgentO] …".`;
-
-/** "Shop › 개발" for a part, "Shop" for a project. */
-function projectPath(id: string, projects: Project[]): string {
-  const p = projects.find((x) => x.id === id);
-  if (!p) return '(deleted project)';
-  const parent = p.parentId ? projects.find((x) => x.id === p.parentId) : undefined;
-  return parent ? `${parent.name} › ${p.name}` : p.name;
+function projectName(id: string, projects: Project[]): string {
+  return projects.find((x) => x.id === id)?.name ?? '(deleted project)';
 }
 
 /** Optional CLI dialogs AgentO closes with Esc (they would swallow team messages as keystrokes). */
 const OPTIONAL_DIALOGS = [/Teach\s*auto\s*mode\s*about\s*your\s*environment/i];
 
-/** The cross-check reviewer every new project gets: a Codex session (a second model) beside the Claude players. */
-export const REVIEWER_TITLE = 'Codex 검토';
-
-function headMd(project: Project | undefined, projects: Project[]): string {
-  const parts = project ? projects.filter((p) => p.parentId === project.id).map((p) => `- ${p.name} (id ${p.id})`).join('\n') : '';
-  const scope = project
-    ? `You are the **head coach** (PM) of the project "${project.name}" (id ${project.id}). Its parts:
-
-${parts || '- (no parts yet)'}`
-    : `You are the **head coach of the whole team** — the one head coach that belongs to no project. Orders the manager
-gives without picking a project come to you:
-
-- Decide which project the order is about (\`list_projects\`, \`list_sessions\`, and \`read_session\` on the project head
-  coaches if needed) and \`send_to_session\` it to that project's head coach — or to several, each with its own part.
-- If it fits no existing project, \`create_project\` (name, optional folders, brief): the new project gets its own
-  head coach, which receives your brief as its first order.
-- A project that has a head coach ("Coach"): send only to that Coach, never to its players or part coaches — it hands the
-  work on (AgentO refuses the direct send). Only a project without a head coach is reached through its coach or first
-  player (\`list_sessions\` shows roles).
-- You coordinate; you do not implement. When the projects report back, \`report_up\` the joined result to the manager.`;
-  return `${GENERATED_MARK}
-# Role: Head Coach${project ? ` — ${project.name}` : ''}
-
-${TEAM_INTRO}
-
-${scope}
-
-## How to work
-
-- Orders from the manager (the user) come to you: split them into tasks and hand each task straight to the player
-  who does it (\`send_to_session\`). You manage the parts' players yourself — no coach in between (a coach that only
-  passes your messages on costs tokens and time). A part that does have a coach: give it to the coach.
-- Do not make coaches (\`make_coach\`) unless a part has 4 or more players that need constant review, or the
-  manager asks for one.
-- Every message that reaches you costs a turn that re-reads your whole conversation, so: give a player its related
-  tasks in one message, not one by one; for a small task whose result you will not review, send it with
-  \`directive=false\` and ask the player to \`report_up\` only if it is blocked — then no completion report wakes you.
-- If the project folder is the empty default one under \`~/AgentO Projects/\` and the real location of the work
-  exists (the manager named it, or a player created it), call \`set_project_folder\` so the Files tab shows it.
-- Do not do the implementation yourself.
-- When you ask the manager something (in your answer or a \`report_up\`), put each question on its own line and start it
-  with the \`#T\` number of the order it belongs to and the name of the session it is about, e.g.
-  "#T405 · 상품상세: 별도 작업으로 다루실까요?". Several questions at once: one line each, so the manager can tell them apart.
-- Instructions must be self-contained: goal, files/scope, constraints, and what "done" means.
-- When a session finishes what you sent, you get an "[AgentO] … finished" message with its last reply — no need to poll.
-  Its last reply is normally enough — \`read_session\` (max_entries 3) only when it is unclear. Decide the next step,
-  and \`report_up\` to the manager when an order is done or blocked.
-- To the manager, only what needs the manager: the result when an order is done, or a blocker / decision — one
-  message, essentials only (what changed, where, what to decide). No progress notes and no restating of the order:
-  the manager watches progress in AgentO. When your turn ends right after handing work on, answer in one line
-  ("→ <session>: <task>"), not a summary.
-- Questions you cannot answer yourself go to the manager with \`report_up\`.
-- Project memory (\`update_memory\`): the short note every session of the project gets at start — keep it current.
-  When a piece finishes or a decision is made, put what the others need there (Decisions · Conventions · Map ·
-  Don't · Open), one line each; replace or remove lines that are outdated. It is what lets conversations start short.${project ? `
-- Review: if your project has a Codex session titled "${REVIEWER_TITLE}" (\`list_sessions\`), it is the cross-check reviewer —
-  a second model. Claude players do the work; before you report a finished piece to the manager, \`send_to_session\` the
-  reviewer what to check (goal, changed files or commits, how to verify). It reviews only and does not edit files.
-  Put its verdict in your report and send real problems back to the player. Never give it implementation work.` : ''}
-
-${LEAN_CONTEXT}
-`;
-}
-
-function coachMd(project: Project): string {
-  const folders = project.folders.map((f) => `- ${f.path}`).join('\n') || '- (no folders yet)';
-  return `${GENERATED_MARK}
-# Role: Coach — ${project.name}
-
-${TEAM_INTRO}
-
-You are the **coach** of the project "${project.name}" (id ${project.id}).
-
-## How to work
-
-- Break the orders you receive into tasks and assign them to this project's players (\`send_to_session\`). Create a
-  player (\`create_session\`) only when the work needs another pair of hands.
-- Ask questions — to players about progress and blockers; to whoever gave you the order when priorities are unclear.
-- Do not do the implementation yourself; Claude players do all the coding. You may read the project folders to review.
-- When a player finishes what you sent, you get an "[AgentO] … finished" message with its last reply — no need to poll.
-  Its last reply is normally enough (\`read_session\` only when unclear); assign the next task, and \`report_up\` when the
-  order is done or blocked.
-- Upward, only what is needed: the result when the order is done, or a blocker / decision — one message, essentials
-  only. No progress notes. When your turn ends right after handing work on, answer in one line ("→ <session>: <task>").
-- Project memory (\`update_memory\`): when a piece finishes or a decision is made, put what every session of the
-  project needs there (Decisions · Conventions · Map · Don't · Open), one line each; drop outdated lines.
-- Players may ask you questions; answer them with \`send_to_session\`.
-- When you ask the manager something (in your answer or a \`report_up\`), put each question on its own line and start it
-  with the \`#T\` number of the order it belongs to and the name of the session it is about, e.g.
-  "#T405 · 상품상세: 별도 작업으로 다루실까요?". Several questions at once: one line each, so the manager can tell them apart.
-
-${LEAN_CONTEXT}
-
-## Project folders
-
-${folders}
-
-`;
-}
-
-const PLAYER_INSTRUCTIONS = `AgentO team tools. ${TEAM_INTRO}
-You are a **player**: do the work you are given in your project folder. When you are blocked or unsure, ask whoever
-gave you the work (your head coach, or your coach if your part has one) with report_up instead of stopping. When a
-teammate's work affects yours, coordinate with them (list_sessions, read_session, send_to_session to a teammate). Do
-not send a message just to acknowledge — whoever gave you the work is told automatically when you finish, so do not
-\`report_up\` a finished task either: ending your answer is the report. \`report_up\` only when you are blocked or need
-a decision.
-When you learn something every teammate needs — a convention, where something is, a trap — add one line to the
-project memory with \`update_memory\` (Conventions / Map / Don't); it is given to every session at start.
-End a finished task with a short report. Its first line names the feature in a few words, as
-"Feature: <what was added or changed>" (in the language you report in, e.g. "기능: 상품 상세 리뷰 정렬 추가") — the
-manager's Timeline lists features by this line. Then: what you did, the files you changed (paths), how it was checked,
-and what needs a decision — a few lines, not the whole story (it is read by someone managing several players).`;
-
-const PLAYING_COACH_NOTE = (project: string): string =>
-  `[AgentO] You are now the playing coach of the project "${project}". Keep doing your own work, and also manage this ` +
-  `project's other players: assign tasks with send_to_session, create players with create_session, review their ` +
-  `results (you get an "[AgentO] … finished" message when one finishes), and report_up to the manager when an order is ` +
-  `done or blocked.`;
+const PLAYER_INSTRUCTIONS = `AgentO tools. Other sessions of this project run beside you.
+- list_sessions shows them; read_session shows what one of them is doing or did; send_to_session asks one of them for something — its answer comes back to you as an "[AgentO] … finished" message, so do not wait for it.
+- Messages from other sessions arrive as text starting with "[Message from …]" or "[AgentO] …". Each carries an id like #T12: quote it when you answer about that request.
+- Whoever sent you a request is told automatically when you finish, so ending your answer is the report. Use report_up only when you are blocked or need a decision.
+- When you learn something every session of the project needs — a convention, where something is, a trap — add one line to the project memory with update_memory (Conventions / Map / Don't); it is given to every session at start.`;
 
 export class Team {
   /** when each session was woken for queued messages lately (the crash-loop guard) */
@@ -424,18 +235,11 @@ export class Team {
     return (this.outbox.get(id) ?? []).some((q) => !q.ride);
   }
 
-  /** Still on an order: a directive from the manager not yet finished, messages queued, or working. */
-  stillOn(ids: string[]): boolean {
-    return ids.some((id) => {
-      const s = this.sessions.get(id);
-      return this.pending.get(id)?.from === 'user' || this.hasMail(id) || s?.status === 'working' || s?.status === 'starting';
-    });
-  }
   /** fresh starts under way: the handoff note asked for, and when */
   private fresh = new Map<string, { file: string; at: number; why: 'manual' | 'auto'; timer: NodeJS.Timeout | null; started: boolean }>();
   /** messages waiting until their target is idle */
   private outbox = new Map<string, Queued[]>();
-  /* autopilot (memory only): the Coach's settle timer, the last team traffic per project, the run's bookkeeping */
+  /* autopilot (memory only): the lead session's settle timer, the last team traffic per project, the run's bookkeeping */
   private apTimers = new Map<string, NodeJS.Timeout>();
   private apActive = new Map<string, number>();
   private apRun = new Map<string, { at: number; idle: number; window: number[] }>();
@@ -447,12 +251,8 @@ export class Team {
   private sent = new Map<string, number[]>();
   /** called after a team message was typed into a session (the UI replays it in the card's message box) */
   onDelivered: (sessionId: string, text: string) => void = () => {};
-  /** called after the project / part tree changed (a head coach organizing its project) */
+  /** called after the project list changed (a session moved, a closed project opened) */
   onProjects: () => void = () => {};
-  /** starts a project the way Orders › New project does (project, folders, head coach, brief) — wired by the daemon */
-  startProject: (name: string, folders: string[], brief: string, plan: boolean) => Session = () => {
-    throw new Error('startProject is not wired');
-  };
   /** who gave each session its latest directive (session id or 'user') — report_up goes back there */
   private director = new Map<string, string>();
 
@@ -476,17 +276,12 @@ export class Team {
       this.autoDismiss(id);
     });
     // Waiting is the normal resting state inside team work; the user hears about it through reports instead.
-    sessions.quietWaiting = (s) =>
-      s.role !== 'player' ||
-      this.pending.has(s.id) ||
-      this.outbox.has(s.id) ||
-      // a player with a coach or head coach above it: they hear about it, the user gets their reports instead
-      this.coachOf(s.projectId) !== undefined ||
-      this.all().some((h) => h.role === 'head' && h.projectId === this.rootOf(s.projectId));
+    // Waiting is the normal resting state of a session that took part in a request: its sender hears about it instead.
+    sessions.quietWaiting = (s) => this.pending.has(s.id) || this.outbox.has(s.id);
     this.ledger = new Ledger(store);
     this.restore();
     this.reconcileLedger();
-    // a daemon that restarted while a Coach was resting: no status event comes, so look every 2 minutes
+    // a daemon that restarted while the lead session was resting: no status event comes, so look every 2 minutes
     setInterval(() => this.autopilotSweep(), 2 * 60_000).unref();
     setInterval(() => {
       this.flush();
@@ -519,7 +314,7 @@ export class Team {
     const key = `${id}:${s.pid}`;
     // cheap checks first: this runs on every output chunk
     const out = this.sessions.outputSinceInput(id);
-    // every Claude session is started with AgentO's attachments folder (and a Coach with its project folders): the
+    // every Claude session is started with AgentO's attachments folder (and a session outside its project's folders with those folders): the
     // "Adding a new directory" question can come up in any of them, whatever folder the session works in
     if (s.agent === 'claude' && /new\s*directory/i.test(out)) this.autoAddDir(id, s, out);
     if (!this.trustable(s)) return;
@@ -541,7 +336,7 @@ export class Team {
 
   /**
    * Claude Code asks "Adding a new directory: <dir> … No, exit / Yes, add it" for every extra folder it is started with
-   * (--add-dir: the project folders of a Coach). Left open it holds the Coach for good and swallows every message.
+   * (--add-dir). Left open it holds the session for good and swallows every message.
    * Said yes for AgentO's own folders and the folders the manager registered (or below one), in any Claude session; anything else is left to the manager.
    */
   private autoAddDir(id: string, s: StoredSession, out: string): void {
@@ -606,64 +401,13 @@ export class Team {
     return this.sessions.stored();
   }
 
-  /** Top-level project of a project or part ('' — the team-wide head coach — stays ''). */
-  private rootOf(projectId: string): string {
-    if (!projectId) return '';
-    return this.project(projectId)?.parentId ?? projectId;
-  }
-
-  /** The head coach of a top-level project, else the team-wide one (projectId '') if there is one. */
-  headOf(rootId: string): StoredSession | undefined {
-    const heads = this.all().filter((s) => s.role === 'head');
-    return heads.find((s) => s.projectId === rootId && rootId !== '') ?? heads.find((s) => s.projectId === '');
-  }
-
-  /**
-   * A project was started from the UI: the team-wide Head Coach is told, quietly (it waits for the Head Coach's next work,
-   * no turn of its own), so it knows the project and its Coach exists when it routes later orders.
-   */
-  announceProject(projectId: string, coachId: string): void {
-    const hc = this.all().find((s) => s.role === 'head' && s.projectId === '');
-    const project = this.project(projectId);
-    const coach = this.sessions.get(coachId);
-    if (!hc || !project || !coach) return;
-    const folders = project.folders.map((f) => f.path).join(', ');
-    this.enqueue(hc.id, {
-      text: `[AgentO] FYI — the manager started a new project "${project.name}" (id ${project.id.slice(0, 8)}). Its Coach is "${coach.title}" (${coach.id.slice(0, 8)}) and already has the brief; folders: ${folders || 'none'}. Send later orders for this project to that Coach. No reply needed.`,
-      wake: false
-    });
-  }
-
-  /** Who receives an order for a project: project → its head coach, else its parts' leads; part → its lead. */
-  private recipientsFor(projectId: string): StoredSession[] {
-    const p = this.project(projectId);
-    if (!p) return [];
-    if (p.parentId) {
-      const lead = this.leadOf(p.id);
-      return lead ? [lead] : [];
-    }
-    const head = this.all().find((s) => s.role === 'head' && s.projectId === p.id);
-    if (head) return [head];
-    const parts = this.store.listProjects().filter((x) => x.parentId === p.id);
-    return [p, ...parts].map((x) => this.leadOf(x.id)).filter((x): x is StoredSession => x !== undefined);
-  }
-
-  private coachOf(projectId: string): StoredSession | undefined {
-    return this.all().find((s) => s.role === 'coach' && s.projectId === projectId);
-  }
-
-  /** Who takes a project-level order: its coach, else its first player. */
-  private leadOf(projectId: string): StoredSession | undefined {
-    return this.coachOf(projectId) ?? this.all().filter((s) => s.role === 'player' && s.projectId === projectId).sort((a, b) => a.createdAt - b.createdAt)[0];
-  }
-
   private project(id: string): Project | undefined {
     return this.store.listProjects().find((p) => p.id === id);
   }
 
-  /** A new task id for work sent to this session: numbered per (top-level) project, "#T<n>"; the team head's work: "#T<n>" of a shared counter. */
+  /** A new task id for work sent to this session: numbered per project, "#T<n>" (a session outside any project: a shared counter). */
   private newTask(target: StoredSession): string {
-    return this.store.nextTaskId(this.rootProject(target.projectId)?.id ?? 'team');
+    return this.store.nextTaskId(this.project(target.projectId)?.id ?? 'team');
   }
 
   /** The task a session is on right now (its pending directive), for the messages it sends about it. */
@@ -673,15 +417,15 @@ export class Team {
 
   /* ---------- task ledger ---------- */
 
-  /** The ledger project key of a session's work: its top-level project ('' for the team head coach). */
+  /** The ledger project key of a session's work: its project ('' when it has none). */
   private ledgerProject(sessionId: string): string {
     const s = this.sessions.get(sessionId);
-    return s ? this.rootProject(s.projectId)?.id ?? '' : '';
+    return s ? this.project(s.projectId)?.id ?? '' : '';
   }
 
   /** A task was handed to `target` (by a session or 'user'). */
   private openTask(task: string, from: string, target: StoredSession, text: string): void {
-    const projectId = this.rootProject(target.projectId)?.id ?? '';
+    const projectId = this.project(target.projectId)?.id ?? '';
     const body = text.replace(/^\s*\[[^\]\n]{0,160}\]\s*/, '').replace(/\*\*|`/g, '');
     const first = body.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
     const parentTask = from !== 'user' ? this.taskOf(from) : undefined;
@@ -715,35 +459,15 @@ export class Team {
     for (const r of this.ledger.openOf(sessionId)) if (r.state === 'asking') this.ledger.set(r.projectId, r.id, 'reported', 'answered');
   }
 
-  /** The top-level project a project id belongs to (a part's project; a project is its own; none for the team head). */
-  private rootProject(id: string): Project | undefined {
-    const p = this.project(id);
-    return p?.parentId ? this.project(p.parentId) : p;
-  }
-
   /* ---------- folders, creation, launch ---------- */
 
   private teamDir(): string {
     return ensureDir(path.join(dataDir(), 'team'));
   }
 
-  /** Write a generated instruction file unless the user took it over (removed the marker line). */
-  private writeInstructions(file: string, content: string): void {
-    let cur: string | undefined;
-    try {
-      cur = fs.readFileSync(file, 'utf8');
-    } catch {
-      /* missing */
-    }
-    // pre-marker files from the "manager" design are regenerated too
-    if (cur === undefined || cur.startsWith(GENERATED_MARK) || /^# Role: (?:Manager|Coach)/.test(cur)) {
-      if (cur !== content) fs.writeFileSync(file, content);
-    }
-  }
-
   /**
-   * A project (and its parts) is being deleted: forget its sessions' queues, and remove what AgentO made for it — the
-   * head coach / coach folders under the app's team folder and the sessions' MCP configs. The project's own folders
+   * A project is being deleted: forget its sessions' queues, and remove what AgentO made for it — the sessions' MCP
+   * configs and the folders of its 1.x coaches under the app's team folder. The project's own folders
    * (the user's code) and the CLIs' conversation files are never touched.
    */
   forgetProject(projectIds: string[], sessionIds: string[]): void {
@@ -777,67 +501,51 @@ export class Team {
     }
   }
 
-  /** Head coach folder: team/head-<projectId> (team/head-coach for the team-wide one). */
-  headDir(projectId: string, cwd?: string): string {
-    const dir = ensureDir(cwd ?? path.join(this.teamDir(), projectId ? `head-${projectId}` : 'head-coach'));
-    this.writeInstructions(path.join(dir, 'CLAUDE.md'), headMd(projectId ? this.project(projectId) : undefined, this.store.listProjects()));
-    return dir;
+  /**
+   * 1.x wrote role instructions ("# Role: Head Coach …") into its coaches' folders under the app's team folder; a
+   * former coach that resumes there would still read itself as one. The files AgentO generated (first line the
+   * marker) are removed; a file the user took over (marker line deleted) stays.
+   */
+  removeTeamInstructions(): void {
+    const team = this.teamDir();
+    let dirs: string[] = [];
+    try {
+      dirs = fs.readdirSync(team).filter((n) => /^(?:head|coach)-/.test(n));
+    } catch {
+      return;
+    }
+    for (const d of dirs) {
+      for (const name of ['CLAUDE.md', 'AGENTS.md', 'GEMINI.md']) {
+        const file = path.join(team, d, name);
+        try {
+          if (fs.readFileSync(file, 'utf8').startsWith('<!-- agento:generated')) {
+            fs.rmSync(file, { force: true });
+            log.info('team: removed the 1.x role instructions', file);
+          }
+        } catch {
+          /* no such file */
+        }
+      }
+    }
   }
 
-  coachDir(project: Project): string {
-    const dir = ensureDir(path.join(this.teamDir(), `coach-${project.id}`));
-    for (const name of Object.values(INSTRUCTION_FILES)) this.writeInstructions(path.join(dir, name), coachMd(project));
-    return dir;
-  }
-
-  /** The session's project (or the project its part belongs to) is closed: nothing wakes it or is delivered to it. */
+  /** The session's project is closed: nothing wakes it or is delivered to it. */
   isClosed(projectId: string): boolean {
     if (!projectId) return false;
-    const root = this.rootOf(projectId);
-    return this.store.listProjects().some((p) => p.id === root && p.closed === true);
+    return this.store.listProjects().some((p) => p.id === projectId && p.closed === true);
   }
 
   /**
-   * A head coach / coach needs a closed project (it sent work to a session there, or made a player in it): it is opened
-   * again, as the manager's Open does — sessions stay stopped until they get work, which is what the delivery does.
-   * Paused routines stay paused. Only those two tool calls open a project: a session finishing while its project is
-   * being closed must not open it again.
-   */
-  private openForWork(projectId: string, why: string): void {
-    if (!this.isClosed(projectId)) return;
-    const root = this.rootOf(projectId);
-    this.store.setProjectClosed(root, false);
-    this.onProjects();
-    log.info('team: opened the closed project', root, '—', why);
-  }
-
-  /** A folder a part may use: an existing project folder or a subfolder of one (it inherits the auto-trust). */
-  private checkFolder(top: Project, p: string): { path: string; autoTrust: boolean } {
-    if (!p.trim()) throw new ToolError('Give a folder path');
-    const full = path.resolve(p);
-    const parent = top.folders.find((f) => {
-      const base = path.resolve(f.path).toLowerCase();
-      return full.toLowerCase() === base || full.toLowerCase().startsWith(base + path.sep);
-    });
-    if (!parent) throw new ToolError(`${full} is not inside the project's folders (${top.folders.map((f) => f.path).join(', ')})`);
-    if (!fs.existsSync(full) || !fs.statSync(full).isDirectory()) throw new ToolError(`${full} does not exist`);
-    return { path: full, autoTrust: parent.autoTrust === true };
-  }
-
-  /**
-   * Move a session into a project / part (keeping its folder and conversation; the folder is registered there), and
-   * put it before `beforeId` among that part's sessions (else last). Same part: only the order changes.
+   * Move a session into a project (keeping its folder and conversation; the folder is registered there), and put it
+   * before `beforeId` among that project's sessions (else last). Same project: only the order changes.
    */
   moveSession(id: string, destId: string, beforeId?: string): void {
     const t = this.sessions.get(id);
     const projects = this.store.listProjects();
     const dest = projects.find((p) => p.id === destId);
     if (!t || !dest) throw new Error('Session or project not found');
-    if (t.role === 'head') throw new Error('The head coach stays at the project level');
-    const fromRoot = this.rootOf(t.projectId);
     if (t.projectId !== dest.id) {
-      if (!t.folderId) throw new Error(`"${t.title}" is a dedicated coach (its own folder) and cannot be moved`);
-      if (t.role === 'coach') this.sessions.setRole(t.id, 'player'); // a part's coach does not lead the next one
+      if (!t.folderId) throw new Error(`"${t.title}" has no folder and cannot be moved`);
       const path0 = projects.flatMap((p) => p.folders).find((f) => f.id === t.folderId)?.path;
       if (!path0) throw new Error(`The folder of "${t.title}" is not registered`);
       const same = (a: string, b: string): boolean => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
@@ -845,70 +553,16 @@ export class Team {
       this.sessions.moveTo(t.id, dest.id, folder.id);
       this.onProjects();
     }
-    // the part's order: everyone but the head coach, the moved one put before `beforeId`
+    // the project's order: the moved one put before `beforeId`
     const key = (s: StoredSession): number => s.order ?? Number.MAX_SAFE_INTEGER;
     const members = this.all()
-      .filter((s) => s.projectId === dest.id && s.role !== 'head' && s.id !== id)
+      .filter((s) => s.projectId === dest.id && s.id !== id)
       .sort((a, b) => key(a) - key(b) || a.createdAt - b.createdAt);
     const at = beforeId ? members.findIndex((s) => s.id === beforeId) : -1;
     members.splice(at >= 0 ? at : members.length, 0, this.sessions.get(id)!);
     members.forEach((s, i) => this.sessions.setOrder(s.id, i + 1));
-    this.arrange(this.rootOf(dest.id));
-    if (fromRoot !== this.rootOf(dest.id)) this.arrange(fromRoot);
   }
 
-  /** Lay out one project's cards like Auto Arrange (head coach on top, a block per part). */
-  arrange(rootId: string): void {
-    const projects = this.store.listProjects();
-    const ids = new Set([rootId, ...projects.filter((p) => p.parentId === rootId).map((p) => p.id)]);
-    const all = this.all();
-    for (const [id, r] of arrangeTeam(all, projects)) {
-      const s = this.sessions.get(id);
-      if (s && ids.has(s.projectId)) this.sessions.update(id, r);
-    }
-  }
-
-  /** After a daemon restart, bring the head coaches back (they run their projects' daily cycle). */
-  resumeHeads(): void {
-    for (const h of this.all().filter((s) => s.role === 'head')) {
-      if (this.isClosed(h.projectId)) continue;
-      if (this.sessions.isLive(h.id) || !(h.status === 'hibernated' || h.status === 'error' || h.status === 'done')) continue;
-      try {
-        this.sessions.resume(h.id);
-      } catch (e) {
-        log.warn('team: head coach resume failed', h.title, e);
-      }
-    }
-  }
-
-  /** One head coach per top-level project ('' = a team-wide head coach, the earlier design). */
-  createHead(projectId = ''): Session {
-    const project = projectId ? this.project(projectId) : undefined;
-    if (projectId && !project) throw new Error('Project not found');
-    if (project?.parentId) throw new Error('A head coach belongs to a project, not to a part');
-    if (this.all().some((s) => s.role === 'head' && s.projectId === projectId)) throw new Error('That project already has a head coach');
-    const head = this.sessions.create({
-      projectId,
-      folderId: '',
-      cwd: this.headDir(projectId),
-      agent: 'claude',
-      role: 'head',
-      title: project ? `Coach · ${project.name}` : 'Head Coach'
-    });
-    // its place in the team layout right away (a new project: the next spot in the grid), as Auto Arrange would
-    if (projectId) this.arrange(projectId);
-    return head;
-  }
-
-  createCoach(projectId: string, agent: AgentKind = 'claude'): Session {
-    const project = this.project(projectId);
-    if (!project) throw new Error('Project not found');
-    if (this.coachOf(projectId)) throw new Error(`"${project.name}" already has a coach`);
-    if (!(COACH_AGENTS as readonly string[]).includes(agent)) throw new Error(`A coach cannot run on ${agent}`);
-    return this.sessions.create({ projectId, folderId: '', cwd: this.coachDir(project), agent, role: 'coach', title: `Coach · ${project.name}` });
-  }
-
-  /** Player ⇄ playing coach. A dedicated coach (own folder) cannot become a player. */
   /** The user's own message to a session (not an order): woken if stopped, typed in once it is ready. */
   message(id: string, text: string): void {
     const s = this.sessions.get(id);
@@ -934,7 +588,6 @@ export class Team {
     if (this.sessions.isLive(id)) this.taskState(id, task, 'working');
     this.answered(id);
     this.record(s, 'directive', { id: 'user', title: DIRECT }, text, true, task);
-    this.tellCoach(s, text, task);
     if (this.pending.has(id)) return;
     // stopped: message() queues it and wakes the session; it is tracked when delivered
     if (!this.sessions.isLive(id)) {
@@ -945,33 +598,6 @@ export class Team {
     // the composer types before it reports the note: the turn may already be running
     const p = this.pending.get(id);
     if (p && (s.status === 'working' || s.status === 'starting')) p.started = true;
-  }
-
-  /**
-   * The manager told a player something directly: its project's Coach would not know (a quarter of the manager's
-   * messages go to players). A one-line FYI rides along with the Coach's next work — no turn of its own, dropped after
-   * FYI_MAX_MS if the Coach had no work meanwhile — and later ones about the same player fold into it (last three).
-   */
-  private tellCoach(player: StoredSession, text: string, task: string | undefined): void {
-    if (player.role !== 'player' || player.agent !== 'claude') return;
-    const root = this.rootOf(player.projectId);
-    const coach = this.all().find((x) => x.role === 'head' && x.projectId === root && x.agent === 'claude');
-    if (!coach || coach.id === player.id || this.isClosed(player.projectId)) return;
-    const body = text.replace(/\[Attached image[^\]]*\]/g, '').replace(/\s+/g, ' ').trim();
-    if (body.length < FYI_MIN_CHARS || body.startsWith('/')) return;
-    const key = `fyi:${player.id}`;
-    const q = this.outbox.get(coach.id) ?? [];
-    const prev = q.find((x) => x.key === key);
-    const lines = [...(prev?.lines ?? []), `${task ? `${task} ` : ''}${clip(body, 160)}`].slice(-3);
-    const item: Queued = {
-      text: `[AgentO] FYI — the manager told "${player.title}" (${player.id.slice(0, 8)}) directly (not an order to you; no reply needed):\n${lines.map((l) => `- ${l}`).join('\n')}`,
-      ride: true,
-      wake: false,
-      expires: Date.now() + FYI_MAX_MS,
-      key,
-      lines
-    };
-    this.outbox.set(coach.id, [...q.filter((x) => x !== prev), { ...item, at: Date.now() }]);
   }
 
   /**
@@ -1056,7 +682,7 @@ export class Team {
     for (const s of this.all()) {
       if (s.agent !== 'claude' || !this.sessions.isLive(s.id) || s.status !== 'waiting') continue;
       if (this.fresh.has(s.id) || this.pending.has(s.id) || this.hasMail(s.id) || this.isClosed(s.projectId)) continue;
-      const min = s.role === 'player' ? AUTO_MIN_CONTEXT : AUTO_MIN_CONTEXT_COORD;
+      const min = AUTO_MIN_CONTEXT;
       const size = s.context ?? 0;
       if (size < min) continue;
       // oversized: every turn re-reads it — cleared after a short pause, even while the manager uses the session
@@ -1077,98 +703,34 @@ export class Team {
     }
   }
 
-  /** quiet: the note to the session waits for its next work instead of waking it (organizing stopped sessions) */
-  setRole(id: string, role: SessionRole, quiet = false): void {
-    const s = this.sessions.get(id);
-    if (!s) throw new Error('Session not found');
-    if (role === s.role) return;
-    const wake = quiet && !this.sessions.isLive(id) ? { wake: false } : {};
-    if (role === 'coach') {
-      if (s.role !== 'player') throw new Error('Only a player can become the playing coach');
-      const project = this.project(s.projectId);
-      if (!project) throw new Error('Project not found');
-      if (this.coachOf(s.projectId)) throw new Error(`"${project.name}" already has a coach`);
-      this.sessions.setRole(id, 'coach');
-      this.enqueue(id, { text: PLAYING_COACH_NOTE(project.name), ...wake });
-    } else if (role === 'player') {
-      if (s.role !== 'coach' || !s.folderId) throw new Error('Only a playing coach can go back to being a player');
-      this.sessions.setRole(id, 'player');
-      this.handOver(s, wake);
-      this.enqueue(id, {
-        text: '[AgentO] You are a player again: do your own work. The head coach now manages this part directly — report_up goes to it.',
-        ...wake
-      });
-    } else {
-      throw new Error('Use the Head Coach button to create the head coach');
-    }
-  }
-
-  /**
-   * A coach stepped down: the work it handed out now reports to the head coach (pending reports, report_up), and the
-   * head coach is told which players it manages directly from now on and what is still out.
-   */
-  private handOver(coach: StoredSession, wake: { wake?: boolean }): void {
-    const head = this.headOf(this.rootOf(coach.projectId));
-    if (!head) return;
-    const out: string[] = [];
-    for (const [target, p] of this.pending) {
-      if (p.from !== coach.id) continue;
-      p.from = head.id;
-      out.push(`- ${this.sessions.get(target)?.title ?? target} (session ${target})`);
-    }
-    for (const [target, from] of this.director) if (from === coach.id) this.director.set(target, head.id);
-    const part = this.project(coach.projectId);
-    const players = this.all().filter((x) => x.projectId === coach.projectId && x.role === 'player');
-    this.enqueue(head.id, {
-      text:
-        `[AgentO] "${coach.title}" is no longer the coach of the part "${part?.name ?? coach.projectId}" (it is a player again). ` +
-        `You manage that part's players directly now: ${players.map((x) => `"${x.title}"`).join(', ') || '(none)'}.` +
-        (out.length ? `\nStill working on tasks the coach sent — their reports come to you:\n${out.join('\n')}` : '') +
-        `\nNo reply needed.`,
-      ...wake
-    });
-  }
-
   private mcpUrl(s: StoredSession): string {
     return `http://127.0.0.1:${this.conn.port}/mcp/${s.id}`;
   }
 
-  /** Folders a coach (its project's) or the head coach (every project's, it keeps the WBS) may read and edit. */
+  /**
+   * The project folders a session outside them may read and edit: a session with no project folder of its own (a 1.x
+   * coach that runs in a folder under the app's team folder) gets every folder of its project.
+   */
   private projectFolders(s: StoredSession): string[] {
-    if (s.role === 'head') {
-      const tree = this.store.listProjects().filter((p) => !s.projectId || this.rootOf(p.id) === s.projectId);
-      return [...new Set(tree.flatMap((p) => p.folders.map((f) => f.path)))];
-    }
-    if (s.role !== 'coach') return [];
-    return (this.project(s.projectId)?.folders ?? []).filter((f) => f.id !== s.folderId).map((f) => f.path);
+    if (s.folderId) return [];
+    return (this.project(s.projectId)?.folders ?? []).map((f) => f.path);
   }
 
   /**
-   * Environment per launch: Codex reads the MCP bearer token from TOKEN_ENV. Gemini in a folder AgentO made for it
-   * (a dedicated coach) skips its folder-trust prompt — untrusted folders also ignore the .gemini settings with the MCP
-   * connection.
+   * Environment per launch: Codex reads the MCP bearer token from TOKEN_ENV.
    */
   launchEnv(s: StoredSession): Record<string, string> {
     if (s.agent === 'codex') return { [TOKEN_ENV]: this.conn.token };
-    // coordinators compact their conversation early: a long context is re-read on every call
-    if (s.agent === 'claude' && s.role !== 'player' && COORDINATOR_COMPACT_PCT) return { CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: COORDINATOR_COMPACT_PCT };
-    if (s.agent === 'gemini' && s.role !== 'player' && !s.folderId) return { GEMINI_CLI_TRUST_WORKSPACE: 'true' };
     return {};
   }
 
   /**
-   * Extra CLI args per launch: the MCP connection and (dedicated coach) the project folders.
-   * - claude: --mcp-config file, tools pre-allowed (every role, players included)
+   * Extra CLI args per launch: the MCP connection and (a session outside its project's folders) the project folders.
+   * - claude: --mcp-config file, tools pre-allowed
    * - codex:  -c overrides (no quotes or spaces, so they survive Windows command-line quoting); token from env
-   * - gemini: settings file .gemini/settings.json — only for coaches (it lives in the working folder, and a player's
-   *           working folder is the user's project)
+   * - gemini: settings file .gemini/settings.json — only in a folder AgentO made (it lives in the working folder)
    */
   launchExtras(s: StoredSession): string[] {
-    if (s.role === 'head') this.headDir(s.projectId, s.cwd);
-    if (s.role === 'coach' && !s.folderId) {
-      const project = this.project(s.projectId);
-      if (project) this.coachDir(project);
-    }
     if (s.agent === 'codex') {
       const key = `mcp_servers.${MCP_SERVER_NAME}`;
       return [
@@ -1177,12 +739,9 @@ export class Team {
         '-c', `${key}.default_tools_approval_mode=auto`,
         '-c', `${key}.tool_timeout_sec=${TOOL_TIMEOUT_S}`,
         '-c', `${key}.startup_timeout_sec=20`,
-        // a coach / head coach plans, delegates and reviews — it reads, it does not edit: a read-only sandbox where
-        // commands run without asking (an approval prompt would stall the team; anything else fails in the sandbox)
-        ...(s.role !== 'player' ? ['-c', 'approval_policy=never', '-c', 'sandbox_mode=read-only'] : []),
-        // a player edits code like a Claude player does (no sandbox, the user's own rights): the Windows sandbox
+        // it edits code like a Claude session does (no sandbox, the user's own rights): the Windows sandbox
         // ("unelevated") denies writes in large workspaces such as a folder of many repositories
-        ...(s.role === 'player' ? ['-c', 'sandbox_mode=danger-full-access'] : []),
+        '-c', 'sandbox_mode=danger-full-access',
         // on Windows, first runs ask which sandbox to set up and wait there; without the user's own choice in
         // ~/.codex/config.toml, take the one that needs no administrator rights
         ...(process.platform === 'win32' && !codexSandboxChosen() ? ['-c', 'windows.sandbox=unelevated'] : []),
@@ -1190,7 +749,8 @@ export class Team {
       ];
     }
     if (s.agent === 'gemini') {
-      if (s.role === 'player' || s.folderId) return [];
+      // the settings file lives in the working folder: only in a folder AgentO made, never in the user's project
+      if (s.folderId) return [];
       const file = path.join(ensureDir(path.join(s.cwd, '.gemini')), 'settings.json');
       let settings: Json = {};
       try {
@@ -1227,14 +787,13 @@ export class Team {
     // headless: permission questions come to AgentO through the MCP server (answered by the manager or a trusted folder)
     if (s.mode === 'headless') extras.push('--permission-prompt-tool', `mcp__${MCP_SERVER_NAME}__permission`, '--permission-mode', 'acceptEdits');
     // the project memory: what every session of the project should know, read on every call (kept short by its caps)
-    const root = this.rootProject(s.projectId);
+    const root = this.project(s.projectId);
     if (root) {
       ensureMemory(root.id, root.name);
       const mem = memorySystemPrompt(root.id, root.name);
       if (mem) extras.push('--append-system-prompt', mem);
     }
-    if (s.role !== 'player') extras.push(...COORDINATOR_ARGS(s.modelPref));
-    else if (s.modelPref || PLAYER_MODEL) extras.push('--model', s.modelPref || PLAYER_MODEL);
+    if (s.modelPref || PLAYER_MODEL) extras.push('--model', s.modelPref || PLAYER_MODEL);
     return extras;
   }
 
@@ -1257,30 +816,10 @@ export class Team {
 
   /* ---------- scope ---------- */
 
-  /**
-   * head coach → everything in its project (the team-wide one: everything) · coach → its part, the sibling parts'
-   * coaches and its head coach · player → its part, and its head coach when the part has no coach.
-   */
+  /** Every other session of the caller's project (a session outside any project sees none). */
   private inScope(caller: StoredSession, target: StoredSession): boolean {
     if (target.id === caller.id) return false;
-    if (caller.role === 'head') return !caller.projectId || (target.role !== 'head' && this.rootOf(target.projectId) === caller.projectId);
-    const root = this.rootOf(caller.projectId);
-    if (target.role === 'head') return target.id === this.headOf(root)?.id && (caller.role === 'coach' || !this.coachOf(caller.projectId));
-    if (target.projectId === caller.projectId) return true;
-    // no team in the project (plain sessions): sessions of the same project, its parts too, can ask each other
-    if (caller.role === 'player' && target.role === 'player' && root !== '' && this.rootOf(target.projectId) === root && !this.headOf(root)) return true;
-    return caller.role === 'coach' && target.role === 'coach' && root !== '' && this.rootOf(target.projectId) === root;
-  }
-
-  /**
-   * The team-wide Head Coach sends to a project's Coach, not past it to the project's players or part coaches (it may
-   * still read them). A project without a Coach is reached directly.
-   */
-  private viaProjectCoach(caller: StoredSession, t: StoredSession): void {
-    if (caller.role !== 'head' || caller.projectId || t.role === 'head' || !t.projectId) return;
-    const coach = this.headOf(this.rootOf(t.projectId));
-    if (!coach) return;
-    throw new ToolError(`"${t.title}" belongs to a project that has its own Coach. Send this to "${coach.title}" (id ${coach.id}) — it hands the work to its players.`);
+    return caller.projectId !== '' && target.projectId === caller.projectId;
   }
 
   private target(caller: StoredSession, args: Json): StoredSession {
@@ -1293,10 +832,7 @@ export class Team {
     }
     if (!t) throw new ToolError(`No session with id "${id}". Use list_sessions.`);
     if (!this.inScope(caller, t)) {
-      // say who can relay it, so the caller goes up the chain instead of giving up
-      const up = caller.role === 'player' ? this.coachOf(caller.projectId) ?? this.headOf(this.rootOf(caller.projectId)) : caller.role === 'coach' ? this.headOf(this.rootOf(caller.projectId)) : undefined;
-      const hint = up ? ` Ask "${up.title}" (id ${up.id}) to pass it on — use report_up or send_to_session to it.` : '';
-      throw new ToolError(`Session "${t.title}" is outside your scope.${hint}`);
+      throw new ToolError(`Session "${t.title}" is in another project: sessions can only ask sessions of their own project.`);
     }
     return t;
   }
@@ -1305,9 +841,8 @@ export class Team {
     return {
       session_id: s.id,
       title: s.title,
-      role: s.role === 'coach' && s.folderId ? 'playing coach' : ROLE_NAME[s.role],
       agent: s.agent,
-      project: s.projectId ? projectPath(s.projectId, projects) : '(team)',
+      project: s.projectId ? projectName(s.projectId, projects) : '(none)',
       project_id: s.projectId || null,
       status: s.status,
       running: this.sessions.isLive(s.id),
@@ -1321,14 +856,14 @@ export class Team {
   private label(from: string): string {
     if (from === 'user') return USER;
     const s = this.sessions.get(from);
-    return s ? `"${s.title}" (${ROLE_NAME[s.role]}, session ${s.id})` : 'a removed session';
+    return s ? `"${s.title}" (session ${s.id})` : 'a removed session';
   }
 
   /** Team traffic record; `from` is a session or the user ('user'). */
   private record(target: StoredSession, kind: 'directive' | 'report', from: { id: string; title: string }, message: string, read = true, task?: string): string {
     const text = `${from.title} → ${target.title}: ${clip(message.trim(), LOG_TEXT_MAX)}`;
     const item = this.store.addInbox(target.id, kind, text, read, from.id, Date.now(), task);
-    this.apActive.set(this.rootOf(target.projectId), Date.now());
+    this.apActive.set(target.projectId, Date.now());
     this.onInbox();
     return item.id;
   }
@@ -1393,8 +928,6 @@ export class Team {
       if (this.isClosed(t.projectId)) continue;
       // only riders (a delegation note, a progress report): wait for something worth a turn — but not forever
       if (queue.every((q) => q.ride) && (queue.some((q) => q.expires !== undefined) || Date.now() - Math.min(...queue.map((q) => q.at ?? 0)) < RIDE_MAX_MS)) continue;
-      // reports for a head coach / coach: wait a little for the others (players finishing close together → one turn)
-      if (t.role !== 'player' && queue.every((q) => q.report || q.ride) && Date.now() - Math.min(...queue.map((q) => q.at ?? 0)) < REPORT_BATCH_MS) continue;
       if (!this.sessions.isLive(id)) {
         if (queue.every((q) => q.wake === false)) continue; // only notes: they ride along with its next work
         if (!this.resuming.has(id) && t.status !== 'starting') {
@@ -1450,12 +983,6 @@ export class Team {
       const before = this.pending.get(id);
       const directive = [...queue].reverse().find((q) => q.from !== undefined);
       if (directive?.from) this.trackDirective(id, directive.from, directive.task);
-      // a head coach / coach got its players' results: what it makes of them goes up to whoever it works for (the
-      // manager for a head coach) even if it forgets report_up — otherwise the outcome stays in its own conversation
-      else if (t.role !== 'player' && queue.some((q) => q.report) && !this.pending.has(id)) {
-        const up = this.director.get(id) ?? (t.role === 'head' ? 'user' : this.headOf(this.rootOf(t.projectId))?.id);
-        if (up) this.trackDirective(id, up);
-      }
       const pend = this.pending.get(id);
       if (pend && directive?.from) pend.text = text;
       try {
@@ -1488,24 +1015,22 @@ export class Team {
 
   /* ---------- autopilot ---------- */
 
-  /** Switch a project's autopilot on or off (the Coach is told the rules when it goes on). */
+  /** Switch a project's autopilot on or off (the lead session is told the rules when it goes on). */
   setAutopilot(projectId: string, on: boolean, leadId?: string): void {
     const root = this.project(projectId);
-    if (!root || root.parentId) throw new Error('Autopilot belongs to a whole project');
-    const head = this.all().find((x) => x.role === 'head' && x.projectId === root.id);
-    // with a Coach the Coach leads; without one a single session does the work itself
-    const solo = !head && leadId ? this.sessions.get(leadId) : undefined;
-    const coach = head ?? solo;
-    if (solo && this.rootOf(solo.projectId) !== root.id) throw new Error('That session is not in this project');
+    if (!root) throw new Error('Project not found');
+    // one session carries the project on: it does the work itself
+    const lead = leadId ? this.sessions.get(leadId) : undefined;
+    if (lead && lead.projectId !== root.id) throw new Error('That session is not in this project');
     if (on) {
-      if (!coach) throw new Error('The project has no Coach, and no session was picked to carry it on');
-      if (coach.agent !== 'claude') throw new Error('Autopilot needs a Claude Coach');
+      if (!lead) throw new Error('Pick the session that carries the project on');
+      if (lead.agent !== 'claude') throw new Error('Autopilot needs a Claude session');
       if (this.isClosed(root.id)) throw new Error('Open the project first');
       const now = Date.now();
-      this.store.setAutopilot(root.id, { on: true, since: now, continues: 0, lastAt: now, note: 'Switched on', ...(solo ? { leadId: solo.id } : {}) });
+      this.store.setAutopilot(root.id, { on: true, since: now, continues: 0, lastAt: now, note: 'Switched on', leadId: lead.id });
       this.apRun.set(root.id, { at: 0, idle: 0, window: [] });
       this.apActive.set(root.id, now);
-      this.enqueue(coach.id, { text: `${solo ? AUTOPILOT_RULES_SOLO : AUTOPILOT_RULES}\nAutopilot is on now. First, in this answer: write down what "finished" means for this project and what is still open — read the plan documents and the memory, then record it with \`update_memory\` in the section Open (one line per open piece, "Done when: …" as the first line). Then start on it. If nothing is open, answer only AUTOPILOT DONE — do not report finished work again.`, wake: true });
+      this.enqueue(lead.id, { text: `${AUTOPILOT_RULES_SOLO}\nAutopilot is on now. First, in this answer: write down what "finished" means for this project and what is still open — read the plan documents and the memory, then record it with \`update_memory\` in the section Open (one line per open piece, "Done when: …" as the first line). Then start on it. If nothing is open, answer only AUTOPILOT DONE — do not report finished work again.`, wake: true });
     } else {
       const cur = root.autopilot;
       this.store.setAutopilot(root.id, cur ? { ...cur, on: false, lastAt: Date.now(), note: 'Switched off' } : null);
@@ -1513,20 +1038,19 @@ export class Team {
     this.onProjects();
   }
 
-  private autopilotStop(root: Project, coach: StoredSession, note: string): void {
+  private autopilotStop(root: Project, lead: StoredSession, note: string): void {
     const cur = root.autopilot;
     this.store.setAutopilot(root.id, cur ? { ...cur, on: false, lastAt: Date.now(), note } : null);
-    this.store.addInbox(coach.id, 'waiting', `${root.name} — Autopilot off: ${note}`);
+    this.store.addInbox(lead.id, 'waiting', `${root.name} — Autopilot off: ${note}`);
     this.onInbox();
     this.onProjects();
     log.info('team: autopilot off', root.name, note);
   }
 
-  /** A Coach that rests with autopilot on is looked at after a short settle (a new turn cancels it). */
+  /** The lead session resting with autopilot on is looked at after a short settle (a new turn cancels it). */
   private autopilotWatch(s: Session): void {
-    const lead = this.rootProject(s.projectId)?.autopilot?.leadId;
-    // the project's Coach, or the one session a Coach-less project's autopilot was switched on for
-    if (lead ? lead !== s.id : s.role !== 'head' || !s.projectId) return;
+    // only the one session the project's autopilot was switched on for
+    if (this.project(s.projectId)?.autopilot?.leadId !== s.id) return;
     const prev = this.apTimers.get(s.id);
     if (s.status !== 'waiting') {
       if (prev) {
@@ -1535,7 +1059,7 @@ export class Team {
       }
       return;
     }
-    if (!this.rootProject(s.projectId)?.autopilot?.on) return;
+    if (!this.project(s.projectId)?.autopilot?.on) return;
     if (prev) clearTimeout(prev);
     this.apTimers.set(
       s.id,
@@ -1550,36 +1074,31 @@ export class Team {
     for (const s of this.all()) if (s.status === 'waiting' && !this.apTimers.has(s.id)) this.autopilotWatch(s);
   }
 
-  private autopilotCheck(coachId: string): void {
-    const coach = this.sessions.get(coachId);
-    const root = coach ? this.rootProject(coach.projectId) : undefined;
+  private autopilotCheck(leadId: string): void {
+    const lead = this.sessions.get(leadId);
+    const root = lead ? this.project(lead.projectId) : undefined;
     const ap = root?.autopilot;
-    if (!coach || !root || !ap?.on || coach.status !== 'waiting') return;
+    if (!lead || !root || !ap?.on || lead.status !== 'waiting') return;
     // closed, paused by the usage limit, or stuck on a prompt: not a pause to act on
-    if (this.isClosed(root.id) || this.limited(coach) || this.needsAttention(coach)) return;
-    // work is out, or something is on its way to the Coach: its results come back by themselves
-    const solo = coach.role !== 'head';
-    const mine = solo ? [] : this.all().filter((m) => m.id !== coach.id && this.rootOf(m.projectId) === root.id);
-    const busy = mine.some(
-      (m) => m.status === 'working' || m.status === 'starting' || this.pending.get(m.id)?.from === coach.id || (this.outbox.get(m.id) ?? []).some((q) => q.from === coach.id)
-    );
-    if (busy || (this.outbox.get(coach.id) ?? []).length > 0) return;
-    if (/AUTOPILOT\s+DONE/i.test(this.lastReply(coach, 3000))) {
-      this.autopilotStop(root, coach, 'finished — the Coach reported AUTOPILOT DONE');
+    if (this.isClosed(root.id) || this.limited(lead) || this.needsAttention(lead)) return;
+    // something is on its way to it: wait for that
+    if ((this.outbox.get(lead.id) ?? []).length > 0) return;
+    if (/AUTOPILOT\s+DONE/i.test(this.lastReply(lead, 3000))) {
+      this.autopilotStop(root, lead, 'finished — the session reported AUTOPILOT DONE');
       return;
     }
     const now = Date.now();
     const run = this.apRun.get(root.id) ?? { at: 0, idle: 0, window: [] };
     run.window = run.window.filter((t) => now - t < 3_600_000);
     if (run.window.length >= AUTOPILOT_MAX_PER_HOUR) {
-      this.autopilotStop(root, coach, `paused — ${AUTOPILOT_MAX_PER_HOUR} continues in an hour (switch it on again to go on)`);
+      this.autopilotStop(root, lead, `paused — ${AUTOPILOT_MAX_PER_HOUR} continues in an hour (switch it on again to go on)`);
       return;
     }
     // told to carry on last time, and nothing was handed out or reported since: no progress
     if (run.at && (this.apActive.get(root.id) ?? 0) <= run.at) run.idle++;
     else run.idle = 0;
     if (run.idle >= AUTOPILOT_MAX_IDLE) {
-      this.autopilotStop(root, coach, `stopped — no progress after ${AUTOPILOT_MAX_IDLE} continues`);
+      this.autopilotStop(root, lead, `stopped — no progress after ${AUTOPILOT_MAX_IDLE} continues`);
       return;
     }
     run.at = now;
@@ -1588,8 +1107,8 @@ export class Team {
     const n = ap.continues + 1;
     this.store.setAutopilot(root.id, { ...ap, continues: n, lastAt: now, note: `Continue #${n}` });
     this.onProjects();
-    this.enqueue(coach.id, {
-      text: `${solo ? AUTOPILOT_RULES_SOLO : AUTOPILOT_RULES}\nNothing is running now. Take the next open piece from the memory section Open and ${solo ? 'do it yourself' : 'hand it out'} (remove a line from Open with \`update_memory\` when its piece is finished and checked); if Open is empty, answer only AUTOPILOT DONE (no report of finished work).`,
+    this.enqueue(lead.id, {
+      text: `${AUTOPILOT_RULES_SOLO}\nNothing is running now. Take the next open piece from the memory section Open and do it yourself (remove a line from Open with \`update_memory\` when its piece is finished and checked); if Open is empty, answer only AUTOPILOT DONE (no report of finished work).`,
       wake: true
     });
     log.info('team: autopilot continue', root.name, n);
@@ -1666,17 +1185,17 @@ export class Team {
     this.pending.delete(s.id);
     for (const other of p.also ?? []) this.complete(s, { from: other, at: p.at, started: true, timer: null });
     const reply = this.lastReply(s, 1500);
-    // a coach's turn usually ends after delegating, so it "replied"; a player's turn is the work itself
-    const state = s.status !== 'waiting' ? `stopped (${s.status})` : s.role === 'player' ? 'finished' : 'replied';
+    // a turn that ended right after passing the work on "replied" (the result comes later); otherwise it is the work itself
+    const state = s.status !== 'waiting' ? `stopped (${s.status})` : p.delegated ? 'replied' : 'finished';
     if (s.status !== 'waiting') this.taskState(s.id, p.task, 'blocked', `the session stopped (${s.status})`);
     else {
-      this.taskState(s.id, p.task, state === 'replied' && p.delegated ? 'handed' : 'reported');
+      this.taskState(s.id, p.task, state === 'replied' ? 'handed' : 'reported');
       // what the manager typed into it during this turn was part of the same turn
       for (const r of this.ledger.openOf(s.id)) if (r.from === 'user' && r.state === 'working' && r.id !== p.task) this.taskState(s.id, r.id, 'reported');
     }
     if (p.from === 'user') {
-      // a coordinator that just handed the work on has no result yet: recorded as "handed on" (shown faintly, no alert)
-      const shown = state === 'replied' && p.delegated ? 'handed on' : state;
+      // a session that just handed the work on has no result yet: recorded as "handed on" (shown faintly, no alert)
+      const shown = state === 'replied' ? 'handed on' : state;
       this.store.addInbox(s.id, 'report', `${s.title} ${shown}: ${clip(reply.trim(), LOG_TEXT_MAX) || '(no reply text)'}`, false, s.id, Date.now(), p.task);
       this.onInbox();
       return;
@@ -1684,9 +1203,9 @@ export class Team {
     const sender = this.sessions.get(p.from);
     if (!sender) return;
     this.enqueue(sender.id, {
-      text: `[AgentO] "${s.title}" (${ROLE_NAME[s.role]}, session ${s.id.slice(0, 8)}) ${state} the task you sent${p.task ? ` (${p.task})` : ''}. Its last reply:\n${reply || '(no reply text)'}`,
+      text: `[AgentO] "${s.title}" (session ${s.id.slice(0, 8)}) ${state} the task you sent${p.task ? ` (${p.task})` : ''}. Its last reply:\n${reply || '(no reply text)'}`,
       report: true,
-      // a head coach / coach whose turn ended after handing the work on: its real result comes later with report_up —
+      // a session whose turn ended after handing the work on: its real result comes later —
       // this note rides along with that instead of costing the sender a turn now
       ...(state === 'replied' ? { ride: true } : {})
     });
@@ -1728,9 +1247,9 @@ export class Team {
   private checkRate(caller: StoredSession): void {
     const now = Date.now();
     const list = (this.sent.get(caller.id) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
-    if (list.length >= RATE_LIMIT[caller.role]) {
+    if (list.length >= RATE_LIMIT) {
       throw new ToolError(
-        `You sent ${list.length} messages in the last 10 minutes, the limit for a ${ROLE_NAME[caller.role]}. ` +
+        `You sent ${list.length} messages in the last 10 minutes, the limit. ` +
           'Stop messaging; continue your own work or report_up.'
       );
     }
@@ -1752,8 +1271,6 @@ export class Team {
       const p = this.pending.get(caller.id);
       if (p) p.delegated = true;
     }
-    // a head coach / coach sending work into a closed project: it is opened (else the message would wait there for good)
-    if (!ride && (caller.role === 'head' || caller.role === 'coach')) this.openForWork(t.projectId, `${caller.title} sent a message to "${t.title}"`);
     this.enqueue(t.id, directive ? { text, from: caller.id, task } : ride ? { text, ride: true, report: true } : { text, report: true });
     this.record(t, directive ? 'directive' : 'report', caller, message, true, task);
     const queued = this.outbox.has(t.id);
@@ -1763,250 +1280,14 @@ export class Team {
     );
   }
 
-  /** The user's order (Orders panel, or a routine run named by `via`). Returns the recipients' titles. */
-  /** task: the manager added it as a task (it shows in Tasks even before any work is handed out) */
-  order(target: TeamOrderTarget, message: string, via?: string, task = false): string[] {
-    if (!message.trim()) throw new Error('The order is empty');
-    const recipients: StoredSession[] = [];
-    const closed = (projectId: string): boolean => this.isClosed(projectId);
-    if (target.kind === 'session') {
-      const s = this.sessions.get(target.sessionId);
-      if (!s) throw new Error('Session not found');
-      if (s.projectId && closed(s.projectId)) throw new Error('That project is closed — open it first');
-      recipients.push(s);
-    } else if (target.kind === 'project') {
-      if (closed(target.projectId)) throw new Error('That project is closed — open it first');
-      recipients.push(...this.recipientsFor(target.projectId));
-      if (recipients.length === 0) throw new Error('That project has no head coach, coach or players yet');
-    } else if (target.kind === 'projects') {
-      const open = [...new Set(target.projectIds)].filter((id) => !closed(id));
-      if (open.length === 0) throw new Error('Those projects are closed — open them first');
-      for (const id of open) recipients.push(...this.recipientsFor(id));
-      if (recipients.length === 0) throw new Error('Those projects have no head coach, coach or players yet');
-    } else {
-      const global = this.all().find((s) => s.role === 'head' && s.projectId === '');
-      if (global) recipients.push(global);
-      else for (const p of this.store.listProjects().filter((x) => !x.parentId && !x.closed)) recipients.push(...this.recipientsFor(p.id));
-      if (recipients.length === 0) throw new Error('There is no head coach, coach or player to receive the order');
-    }
-    const projectName = (id: string): string => this.store.listProjects().find((p) => p.id === id)?.name ?? id;
-    for (const r of recipients) {
-      const tid = this.newTask(r);
-      this.openTask(tid, 'user', r, message);
-      this.answered(r.id);
-      let text = `[Order from ${USER}${via ? ` — ${via}` : ''} — ${tid}]\n${message.trim()}`;
-      if (target.kind === 'projects') {
-        // the same order went to the other projects: each works on its own side; the manager joins the reports
-        const others = [...new Set(target.projectIds)].filter((id) => id !== r.projectId && !closed(id)).map(projectName);
-        if (others.length) text += `\n\n(The same order also went to: ${others.join(', ')}. Handle your project's side of it and report_up as usual.)`;
-      }
-      if (r.role === 'player' && target.kind !== 'session') {
-        text += '\n\n(You are leading this order for your project: share the work with your teammates — list_sessions, send_to_session.)';
-      }
-      this.enqueue(r.id, { text, from: 'user', task: tid });
-      const id = this.record(r, 'directive', { id: 'user', title: via ? `Manager (you) · ${via}` : 'Manager (you)' }, message, true, tid);
-      if (task) this.store.markTaskOrder(id);
-    }
-    this.lastRecipients = recipients.map((r) => r.id);
-    return recipients.map((r) => r.title);
-  }
-
   /* ---------- tools ---------- */
 
   private readonly tools: ToolDef[] = [
-    {
-      name: 'list_projects',
-      description: 'Head coach only. List your project and its parts with folders, coach session and player count.',
-      inputSchema: { type: 'object', properties: {} },
-      roles: ['head'],
-      run: (caller) => {
-        const all = this.all();
-        const projects = this.store.listProjects();
-        const tree = projects.filter((p) => !caller.projectId || this.rootOf(p.id) === caller.projectId);
-        const out = tree.map((p) => ({
-          project_id: p.id,
-          name: p.name,
-          kind: p.parentId ? `part of ${projects.find((x) => x.id === p.parentId)?.name ?? '?'}` : 'project',
-          folders: p.folders.map((f) => ({ folder_id: f.id, name: f.name, path: f.path })),
-          coach_session_id: all.find((s) => s.role === 'coach' && s.projectId === p.id)?.id ?? null,
-          players: all.filter((s) => s.role === 'player' && s.projectId === p.id).length
-        }));
-        return JSON.stringify(out, null, 2);
-      }
-    },
-    {
-      name: 'create_part',
-      description:
-        'Head coach only. Create a part of your project (an area of work such as planning, front-end, QA) — or return ' +
-        'the existing part with that name. Its folders: `folders` (paths, a project folder or a subfolder of one), else ' +
-        "the project's folders. Then create_session players in it or move_session sessions into it.",
-      inputSchema: {
-        type: 'object',
-        properties: { name: { type: 'string' }, folders: { type: 'array', items: { type: 'string' }, description: 'Optional folder paths' } },
-        required: ['name']
-      },
-      roles: ['head'],
-      run: (caller, args) => {
-        const name = str(args['name']).trim();
-        if (!name) throw new ToolError('Give the part a name');
-        if (!caller.projectId) throw new ToolError('You are not the head coach of a project');
-        const existing = this.store.listProjects().find((p) => p.parentId === caller.projectId && p.name === name);
-        if (existing) return JSON.stringify({ part_id: existing.id, name, created: false, folders: existing.folders.map((f) => f.path) });
-        const top = this.project(caller.projectId);
-        if (!top) throw new ToolError('Your project is gone');
-        const want = Array.isArray(args['folders']) ? (args['folders'] as unknown[]).map(str).filter(Boolean) : [];
-        const folders = want.length ? want.map((p) => this.checkFolder(top, p)) : top.folders.map((f) => ({ path: f.path, autoTrust: f.autoTrust === true }));
-        const part = this.store.createProject(name, caller.projectId);
-        for (const f of folders) this.store.addFolder(part.id, f.path, path.basename(f.path) || f.path, f.autoTrust);
-        this.onProjects();
-        return JSON.stringify({ part_id: part.id, name, created: true, folders: folders.map((f) => f.path) });
-      }
-    },
-    {
-      name: 'create_project',
-      description:
-        "Team head coach only (the head coach that belongs to no project). Start a new project for an order that fits none of the existing ones: " +
-        'the project, its folders (`folders` — existing paths; none: a new folder under ~/AgentO Projects/<name>), and its own head ' +
-        'coach, which gets `brief` as its first order (what to build, how to proceed). With `plan` the new head coach reports its ' +
-        'team and plan to the manager first and waits for the go. Returns the project and head coach ids. For an order that ' +
-        'belongs to an existing project, send_to_session that project\'s head coach instead (list_projects, list_sessions).',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          name: { type: 'string' },
-          folders: { type: 'array', items: { type: 'string' }, description: 'Optional existing folder paths' },
-          brief: { type: 'string', description: 'The first order for the new head coach' },
-          plan: { type: 'boolean', description: 'Report the plan first and wait for the go (default true)' }
-        },
-        required: ['name', 'brief']
-      },
-      roles: ['head'],
-      run: (caller, args) => {
-        if (caller.projectId) throw new ToolError('Only the team head coach starts projects; you lead one project. Ask the manager with report_up.');
-        const name = str(args['name']).trim();
-        const brief = str(args['brief']).trim();
-        if (!name || !brief) throw new ToolError('Give the project a name and a brief');
-        const folders = Array.isArray(args['folders']) ? (args['folders'] as unknown[]).map(str).filter(Boolean) : [];
-        let head: Session;
-        try {
-          head = this.startProject(name, folders, brief, args['plan'] !== false);
-        } catch (e) {
-          throw new ToolError(e instanceof Error ? e.message : String(e));
-        }
-        const project = this.store.listProjects().find((p) => !p.parentId && p.name === name);
-        return JSON.stringify({ project_id: project?.id ?? '', name, head_coach_id: head.id, head_coach: head.title, folders: project?.folders.map((f) => f.path) ?? [] });
-      }
-    },
-    {
-      name: 'set_project_folder',
-      description:
-        'Head coach only. The project was started without a folder, so it has the empty default one under ' +
-        "~/AgentO Projects/. Once the real working folder exists, point the project at it (an existing absolute path). " +
-        'Only that empty default folder is replaced; sessions already running keep their working folder.',
-      inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
-      roles: ['head'],
-      run: (caller, args) => {
-        const top = this.project(caller.projectId);
-        if (!top) throw new ToolError('No project.');
-        const full = path.resolve(str(args['path']));
-        if (!fs.existsSync(full) || !fs.statSync(full).isDirectory()) throw new ToolError(`${full} does not exist`);
-        if (top.folders.some((f) => path.resolve(f.path).toLowerCase() === full.toLowerCase())) return `${full} is already a project folder.`;
-        const defRoot = path.join(os.homedir(), 'AgentO Projects').toLowerCase() + path.sep;
-        const empty = (d: string): boolean => {
-          try { return fs.readdirSync(d).length === 0; } catch { return false; }
-        };
-        const def = top.folders.find((f) => path.resolve(f.path).toLowerCase().startsWith(defRoot) && empty(f.path));
-        if (!def) throw new ToolError('The project has no empty default folder to replace. Ask the manager to change the folder in the Files tab.');
-        this.store.updateFolder(def.id, full, path.basename(full) || full);
-        this.onProjects();
-        return `Project folder changed from ${def.path} to ${full}.`;
-      }
-    },
-    {
-      name: 'add_part_folder',
-      description:
-        "Head coach only. Add a folder to a part (a project folder or a subfolder of one, e.g. the part's module), so " +
-        'its players can be created there.',
-      inputSchema: { type: 'object', properties: { part_id: { type: 'string' }, path: { type: 'string' } }, required: ['part_id', 'path'] },
-      roles: ['head'],
-      run: (caller, args) => {
-        const top = this.project(caller.projectId);
-        const part = this.store.listProjects().find((p) => p.id === str(args['part_id']) && p.parentId === caller.projectId);
-        if (!top || !part) throw new ToolError('No such part in your project. Use list_projects.');
-        const f = this.checkFolder(top, str(args['path']));
-        if (part.folders.some((x) => path.resolve(x.path).toLowerCase() === path.resolve(f.path).toLowerCase())) return `"${part.name}" already has ${f.path}.`;
-        this.store.addFolder(part.id, f.path, path.basename(f.path) || f.path, f.autoTrust);
-        this.onProjects();
-        return `Added ${f.path} to "${part.name}".`;
-      }
-    },
-    {
-      name: 'move_session',
-      description:
-        'Head coach only. Move a session of your project into one of its parts (part_id from create_part / ' +
-        'list_projects), or back to the project itself (part_id = the project id). It keeps its folder and conversation ' +
-        'and is not woken.',
-      inputSchema: { type: 'object', properties: { session_id: { type: 'string' }, part_id: { type: 'string' } }, required: ['session_id', 'part_id'] },
-      roles: ['head'],
-      run: (caller, args) => {
-        const t = this.target(caller, args);
-        const partId = str(args['part_id']);
-        const dest = this.store.listProjects().find((p) => p.id === partId && (p.id === caller.projectId || p.parentId === caller.projectId));
-        if (!dest) throw new ToolError('No such part in your project. Use create_part or list_projects.');
-        if (t.projectId === dest.id) return `"${t.title}" is already in "${dest.name}".`;
-        try {
-          this.moveSession(t.id, dest.id);
-        } catch (e) {
-          throw new ToolError(e instanceof Error ? e.message : String(e));
-        }
-        return `Moved "${t.title}" into "${dest.name}".`;
-      }
-    },
-    {
-      name: 'make_coach',
-      description:
-        "Head coach only. Make a player the playing coach of its part (one per part): it keeps its own work and also " +
-        'manages the part. It is told the next time it gets work — not woken now. role "player" turns a playing coach ' +
-        'back into a player. Rarely needed: you manage the players yourself; only a part with 4 or more players that ' +
-        'needs constant review gets a coach.',
-      inputSchema: {
-        type: 'object',
-        properties: { session_id: { type: 'string' }, role: { type: 'string', enum: ['coach', 'player'], description: 'Default coach' } },
-        required: ['session_id']
-      },
-      roles: ['head'],
-      run: (caller, args) => {
-        const t = this.target(caller, args);
-        const role = str(args['role']) === 'player' ? 'player' : 'coach';
-        try {
-          this.setRole(t.id, role, true);
-        } catch (e) {
-          throw new ToolError(e instanceof Error ? e.message : String(e));
-        }
-        this.arrange(caller.projectId);
-        return `"${t.title}" is now ${role === 'coach' ? 'the playing coach' : 'a player'} of "${this.project(t.projectId)?.name ?? '?'}".`;
-      }
-    },
-    {
-      name: 'rename_session',
-      description: 'Head coach only. Give a session a short, clear title (what it works on).',
-      inputSchema: { type: 'object', properties: { session_id: { type: 'string' }, title: { type: 'string' } }, required: ['session_id', 'title'] },
-      roles: ['head'],
-      run: (caller, args) => {
-        const t = this.target(caller, args);
-        const title = str(args['title']).trim().slice(0, 60);
-        if (!title) throw new ToolError('The title is empty');
-        const old = t.title;
-        this.sessions.update(t.id, { title });
-        return `Renamed "${old}" to "${title}".`;
-      }
-    },
     {
       // Claude Code's permission prompt (headless sessions, --permission-prompt-tool): allow in a trusted folder, else ask the manager
       name: 'permission',
       description: 'Internal: Claude Code asks whether a tool may be used (headless sessions). Not for sessions to call.',
       inputSchema: { type: 'object', properties: { tool_name: { type: 'string' }, input: { type: 'object' }, tool_use_id: { type: 'string' } }, required: ['tool_name', 'input'] },
-      roles: ['head', 'coach', 'player'],
       run: async (caller, args) => {
         const tool = str(args['tool_name']);
         const input = (typeof args['input'] === 'object' && args['input'] !== null ? args['input'] : {}) as Record<string, unknown>;
@@ -2030,13 +1311,12 @@ export class Team {
           section: { type: 'string', enum: [...MEMORY_SECTIONS] },
           text: { type: 'string', description: 'the line(s) to add / the new section (replace) / the text the lines to drop contain (remove)' },
           mode: { type: 'string', enum: ['append', 'replace', 'remove'], description: MEMORY_MODES_HELP },
-          project_id: { type: 'string', description: 'team head coach only: which project' }
+          project_id: { type: 'string', description: 'only for a session outside any project: which project' }
         },
         required: ['section', 'text']
       },
-      roles: ['head', 'coach', 'player'],
       run: (caller, args) => {
-        const root = caller.projectId ? this.rootProject(caller.projectId) : this.rootProject(str(args['project_id']));
+        const root = caller.projectId ? this.project(caller.projectId) : this.project(str(args['project_id']));
         if (!root) throw new ToolError(caller.projectId ? 'Your project was not found' : 'Say which project (project_id)');
         const section = str(args['section']) as MemorySection;
         if (!(MEMORY_SECTIONS as readonly string[]).includes(section)) throw new ToolError(`section must be one of ${MEMORY_SECTIONS.join(', ')}`);
@@ -2051,16 +1331,14 @@ export class Team {
     {
       name: 'list_sessions',
       description:
-        'List the sessions you can work with (your teammates, coach, or the teams you manage) with role, project and ' +
+        'List the other sessions of your project with ' +
         'status (starting, working, waiting = idle or needs input, done, error, hibernated).',
       inputSchema: { type: 'object', properties: { project_id: { type: 'string', description: 'Only this project (optional)' } } },
-      roles: ['head', 'coach', 'player'],
       run: (caller, args) => {
         const projects = this.store.listProjects();
         const pid = str(args['project_id']);
-        // a project id covers its parts too (a head coach asking about its project sees the parts' players)
         const list = this.all()
-          .filter((s) => this.inScope(caller, s) && (!pid || s.projectId === pid || this.rootOf(s.projectId) === pid))
+          .filter((s) => this.inScope(caller, s) && (!pid || s.projectId === pid))
           .map((s) => this.describe(s, projects));
         return list.length ? JSON.stringify(list, null, 2) : 'No sessions in scope.';
       }
@@ -2077,12 +1355,11 @@ export class Team {
         },
         required: ['session_id']
       },
-      roles: ['head', 'coach', 'player'],
       run: (caller, args) => {
         const t = this.target(caller, args);
         const source = str(args['source']) || 'auto';
         const max = Math.max(1, Math.min(200, Math.floor(num(args['max_entries'], 10))));
-        const head = `"${t.title}" — ${ROLE_NAME[t.role]}, status ${t.status}${this.sessions.isLive(t.id) ? '' : ' (not running)'}`;
+        const head = `"${t.title}" — status ${t.status}${this.sessions.isLive(t.id) ? '' : ' (not running)'}`;
         if (source !== 'terminal') {
           const entries = this.chat(t);
           if (entries) {
@@ -2112,10 +1389,8 @@ export class Team {
         },
         required: ['session_id', 'message']
       },
-      roles: ['head', 'coach', 'player'],
       run: (caller, args) => {
         const t = this.target(caller, args);
-        this.viaProjectCoach(caller, t);
         return this.send(caller, t, str(args['message']), args['directive'] !== false);
       }
     },
@@ -2123,8 +1398,7 @@ export class Team {
       name: 'report_up',
       description:
         'Report progress or ask a question to whoever gave you your latest order or directive (the manager — the ' +
-        'user — or a session). Without one: a player → its coach (or the head coach, or the manager), a coach → the ' +
-        'head coach (or the manager), the head coach → the manager.',
+        'user — or a session). Without one, it goes to the manager.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -2133,19 +1407,12 @@ export class Team {
         },
         required: ['message']
       },
-      roles: ['head', 'coach', 'player'],
       run: (caller, args) => {
         const message = str(args['message']).trim();
         if (!message) throw new ToolError('message is empty');
         if (args['needs_answer'] === true) this.taskState(caller.id, this.taskOf(caller.id), 'asking', message.split('\n').find((l) => l.trim())?.slice(0, 200));
         const d = this.director.get(caller.id);
-        const byRole = (): StoredSession | undefined =>
-          caller.role === 'player'
-            ? this.coachOf(caller.projectId) ?? this.headOf(this.rootOf(caller.projectId))
-            : caller.role === 'coach'
-              ? this.headOf(this.rootOf(caller.projectId))
-              : undefined;
-        const up = d === 'user' ? undefined : (d && this.sessions.get(d)) || byRole();
+        const up = d === 'user' ? undefined : d ? this.sessions.get(d) : undefined;
         if (!up || up.id === caller.id) {
           this.checkRate(caller);
           // it reported explicitly: no automatic copy of its last reply when the turn ends
@@ -2155,145 +1422,14 @@ export class Team {
           return 'Sent to the manager (the user). Their answer, if any, arrives as an "[Order from …]" message.';
         }
         // still working on a task from them: the report goes along with the "finished" message, not as a turn of its own
-        const riding = this.pending.get(caller.id)?.from === up.id && caller.role === 'player';
-        // a coordinator reporting up explicitly: no automatic copy of its last reply when the turn ends
-        if (caller.role !== 'player' && this.pending.get(caller.id)?.from === up.id) this.pending.delete(caller.id);
+        const riding = this.pending.get(caller.id)?.from === up.id;
         return this.send(caller, up, `(report) ${message}`, false, riding);
       }
     },
-    {
-      name: 'create_session',
-      description:
-        'Coaches and the head coach only. Start a new player (a Claude Code session) in a project folder, optionally ' +
-        'with a first prompt (it reports back when done). A coach can only create players in its own project.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          project_id: { type: 'string', description: 'Required for the head coach (a part of its project); a coach uses its own part' },
-          folder: { type: 'string', description: 'Folder id, name or path in the project (default: first folder)' },
-          title: { type: 'string' },
-          prompt: { type: 'string', description: 'First instruction for the player' }
-        }
-      },
-      roles: ['head', 'coach'],
-      run: (caller, args) => {
-        const pid = caller.role === 'coach' ? caller.projectId : str(args['project_id']);
-        if (caller.role === 'coach' && str(args['project_id']) && str(args['project_id']) !== caller.projectId) {
-          throw new ToolError('A coach can only create players in its own project.');
-        }
-        const project = this.project(pid);
-        if (!project) throw new ToolError('Unknown project_id. Use list_projects.');
-        if (caller.role === 'head' && caller.projectId && this.rootOf(project.id) !== caller.projectId) {
-          throw new ToolError('That project/part is not yours. Use list_projects.');
-        }
-        const want = str(args['folder']);
-        const folder = want
-          ? project.folders.find((f) => f.id === want || f.name === want || path.resolve(f.path) === path.resolve(want))
-          : project.folders[0];
-        if (!folder) throw new ToolError(project.folders.length ? `No folder "${want}" in ${project.name}.` : `${project.name} has no folders yet.`);
-        this.openForWork(project.id, 'a new player was created in it');
-        // All coding goes to Claude: players created by the team are always Claude Code sessions.
-        const prompt = str(args['prompt']).trim();
-        const s = this.sessions.create({
-          projectId: project.id,
-          folderId: folder.id,
-          cwd: folder.path,
-          agent: 'claude',
-          role: 'player',
-          ...(str(args['title']).trim() ? { title: str(args['title']).trim() } : {}),
-          ...(prompt ? { prompt: `[Message from ${this.label(caller.id)}]\n${prompt}` } : {})
-        });
-        const stored = this.sessions.get(s.id);
-        if (prompt && stored) {
-          const task = this.newTask(stored);
-          this.openTask(task, caller.id, stored, prompt);
-          this.record(stored, 'directive', caller, prompt, true, task);
-          this.trackDirective(stored.id, caller.id, task);
-        }
-        return JSON.stringify({ created: this.describe(stored ?? (s as StoredSession), this.store.listProjects()) }, null, 2);
-      }
-    },
-    {
-      name: 'wait_for_sessions',
-      description:
-        'Block until the given sessions (default: the players in your scope) are no longer working, or until the ' +
-        'timeout. Usually not needed: you are told automatically when a session finishes what you sent.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          session_ids: { type: 'array', items: { type: 'string' } },
-          timeout_seconds: { type: 'number', description: `Default 120, max ${MAX_WAIT_S}` }
-        }
-      },
-      roles: ['head', 'coach', 'player'],
-      run: async (caller, args) => {
-        const ids = Array.isArray(args['session_ids']) ? (args['session_ids'] as unknown[]).map(str).filter(Boolean) : [];
-        const targets = ids.length
-          ? ids.map((id) => this.target(caller, { session_id: id }))
-          : this.all().filter((s) => this.inScope(caller, s) && s.role === 'player');
-        if (targets.length === 0) return 'No sessions to wait for.';
-        const timeout = Math.min(MAX_WAIT_S, Math.max(5, num(args['timeout_seconds'], 120))) * 1000;
-        const started = Date.now();
-        const busy = (s: StoredSession): boolean => this.busy(s.id);
-        // Idle must hold for a moment: the status detector flips to waiting on short output pauses.
-        let idleSince = 0;
-        while (Date.now() - started < timeout) {
-          if (targets.some(busy)) idleSince = 0;
-          else if (!idleSince) idleSince = Date.now();
-          else if (Date.now() - idleSince >= 3000) break;
-          await sleep(1000);
-        }
-        const timedOut = targets.some(busy);
-        const states = targets.map((s) => {
-          const cur = this.sessions.get(s.id);
-          return cur ? { session_id: cur.id, title: cur.title, status: cur.status } : { session_id: s.id, status: 'removed' };
-        });
-        return `${timedOut ? 'Timed out; some sessions are still working.' : 'All idle.'}\n${JSON.stringify(states, null, 2)}`;
-      }
-    },
-    {
-      name: 'interrupt_session',
-      description: 'Coaches and the head coach only. Interrupt what a session is doing (Esc for Claude, Ctrl+C otherwise).',
-      inputSchema: { type: 'object', properties: { session_id: { type: 'string' } }, required: ['session_id'] },
-      roles: ['head', 'coach'],
-      run: (caller, args) => {
-        const t = this.target(caller, args);
-        if (!this.sessions.isLive(t.id)) throw new ToolError(`"${t.title}" is not running.`);
-        this.sessions.input(t.id, t.agent === 'claude' ? '\x1b' : '\x03');
-        return `Interrupted "${t.title}".`;
-      }
-    },
-    {
-      name: 'resume_session',
-      description: 'Coaches and the head coach only. Start a hibernated/stopped session again (continues its conversation).',
-      inputSchema: { type: 'object', properties: { session_id: { type: 'string' } }, required: ['session_id'] },
-      roles: ['head', 'coach'],
-      run: async (caller, args) => {
-        const t = this.target(caller, args);
-        if (this.sessions.isLive(t.id)) return `"${t.title}" is already running.`;
-        this.sessions.resume(t.id);
-        const until = Date.now() + 30_000;
-        while (Date.now() < until && this.sessions.get(t.id)?.status !== 'waiting') await sleep(500);
-        return `"${t.title}" is ${this.sessions.get(t.id)?.status ?? 'gone'}.`;
-      }
-    }
   ];
 
-  /** Working, starting, or just directed and not yet picked up. */
-  private busy(id: string): boolean {
-    const cur = this.sessions.get(id);
-    if (!cur) return false;
-    if (cur.status === 'working' || cur.status === 'starting') return true;
-    if (this.outbox.has(id)) return true;
-    const p = this.pending.get(id);
-    return p !== undefined && !p.started && Date.now() - p.at < PICKUP_GRACE_MS && this.sessions.isLive(id);
-  }
-
-  private instructions(s: StoredSession): string {
-    if (s.role === 'player') return PLAYER_INSTRUCTIONS;
-    // a head coach / dedicated coach has the team description in its CLAUDE.md already
-    if (s.role === 'coach') return `AgentO team tools. You are the ${s.folderId ? 'playing coach' : 'coach'} of your project.${s.folderId ? ` ${TEAM_INTRO}` : ''}`;
-    return 'AgentO team tools. You are the head coach (see your CLAUDE.md).';
+  private instructions(_s: StoredSession): string {
+    return PLAYER_INSTRUCTIONS;
   }
 
   /* ---------- MCP over HTTP ---------- */
@@ -2365,10 +1501,8 @@ export class Team {
       case 'ping':
         return rpcResult(id, {});
       case 'tools/list':
-        // only the tools this role may call: every listed tool is sent with each of the session's requests
         return rpcResult(id, {
           tools: this.tools
-            .filter((t) => t.roles.includes(caller.role) && (t.name !== 'create_project' || !caller.projectId))
             .map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }))
         });
       case 'tools/call': {
@@ -2376,9 +1510,6 @@ export class Team {
         if (!tool) return rpcError(id, -32602, `Unknown tool: ${str(params['name'])}`);
         const args = (typeof params['arguments'] === 'object' && params['arguments'] !== null ? params['arguments'] : {}) as Json;
         try {
-          if (!tool.roles.includes(caller.role)) {
-            throw new ToolError(`${tool.name} is not available to a ${ROLE_NAME[caller.role]}. Ask your coach with report_up.`);
-          }
           const text = await tool.run(caller, args);
           return rpcResult(id, { content: [{ type: 'text', text }] });
         } catch (e) {
