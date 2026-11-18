@@ -3,39 +3,33 @@ import { createPortal } from 'react-dom';
 import type { MenuNode } from '@shared/protocol';
 
 /**
- * In-app menu bar (Windows/Linux). Native popup menus always reserve a wide check-mark gutter and ignore the app
- * theme, so the dropdowns are drawn here; a click runs the native item by its index path (roles, checkboxes and
- * accelerators keep working through the real application menu).
+ * The app menu (Windows/Linux): one button in the title row instead of a menu bar — File, Edit, View … open as
+ * submenus of one dropdown. Native popup menus always reserve a wide check-mark gutter and ignore the app theme, so the
+ * dropdowns are drawn here; a click runs the native item by its index path (roles, checkboxes and accelerators keep
+ * working through the real application menu, and so do Alt+letter shortcuts).
  */
 export function MenuBar(): JSX.Element | null {
   const [tree, setTree] = useState<MenuNode[]>([]);
-  const [open, setOpen] = useState<number | null>(null);
+  const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const navRef = useRef<HTMLElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
 
   const refresh = useCallback(() => {
     void window.desktop?.menuTree?.().then(setTree);
   }, []);
   useEffect(refresh, [refresh]);
 
-  const openAt = (i: number, el: HTMLElement): void => {
-    const r = el.getBoundingClientRect();
-    setAnchor({ x: r.left, y: r.bottom + 2 });
-    setOpen(i);
-    refresh(); // current checkbox states
-  };
-
   useEffect(() => {
-    if (open === null) return;
+    if (!open) return;
     const onDown = (e: MouseEvent): void => {
       const t = e.target as Node;
-      if (navRef.current?.contains(t) || document.querySelector('.menu-dropdown')?.contains(t)) return;
-      setOpen(null);
+      if (btnRef.current?.contains(t) || [...document.querySelectorAll('.menu-dropdown')].some((d) => d.contains(t))) return;
+      setOpen(false);
     };
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setOpen(null);
+      if (e.key === 'Escape') setOpen(false);
     };
-    const onBlur = (): void => setOpen(null);
+    const onBlur = (): void => setOpen(false);
     window.addEventListener('mousedown', onDown, true);
     window.addEventListener('keydown', onKey);
     window.addEventListener('blur', onBlur);
@@ -47,32 +41,38 @@ export function MenuBar(): JSX.Element | null {
   }, [open]);
 
   if (tree.length === 0) return null;
-  const menu = open !== null ? tree[open] : undefined;
 
   return (
-    <nav className="menubar" ref={navRef}>
-      {tree.map((m, i) => (
-        <button
-          key={m.label}
-          className={`menubar-item ${open === i ? 'open' : ''}`}
-          onMouseDown={(e) => {
-            e.preventDefault();
-            if (open === i) setOpen(null);
-            else openAt(i, e.currentTarget);
-          }}
-          onMouseEnter={(e) => {
-            if (open !== null && open !== i) openAt(i, e.currentTarget);
-          }}
-        >
-          {m.label}
-        </button>
-      ))}
-      {menu?.items &&
+    <>
+      <button
+        ref={btnRef}
+        className={`app-menu-btn ${open ? 'open' : ''}`}
+        title="Menu"
+        aria-label="Menu"
+        aria-expanded={open}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          if (open) {
+            setOpen(false);
+            return;
+          }
+          const r = e.currentTarget.getBoundingClientRect();
+          setAnchor({ x: r.left, y: r.bottom + 4 });
+          refresh(); // current checkbox states
+          setOpen(true);
+        }}
+      >
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+          <path d="M2.5 4h11M2.5 8h11M2.5 12h11" stroke="currentColor" strokeLinecap="round" />
+        </svg>
+      </button>
+      {open &&
         createPortal(
-          <Dropdown items={menu.items} path={[open as number]} x={anchor.x} y={anchor.y} onDone={() => setOpen(null)} />,
+          // the top-level menus as submenus of one list; Dropdown paths start at the top-level index
+          <Dropdown items={tree.map((m) => ({ ...m, type: 'submenu' as const }))} path={[]} x={anchor.x} y={anchor.y} onDone={() => setOpen(false)} />,
           document.body
         )}
-    </nav>
+    </>
   );
 }
 

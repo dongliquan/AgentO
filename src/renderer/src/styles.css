@@ -181,7 +181,6 @@ code, pre, .mono { font-family: var(--mono); }
 .topbar.mac { padding-left: 80px; }
 .topbar .search-wrap { min-width: 0; }
 .topbar .search { -webkit-app-region: no-drag; }
-.menubar { display: flex; align-items: center; height: 100%; -webkit-app-region: no-drag; }
 .topbar .grow { flex: 1; }
 /* column resize handle (Splitter.tsx) — sits on the border between two columns */
 .splitter { position: relative; flex: none; width: 5px; margin: 0 -2px; z-index: 5; cursor: col-resize; background: transparent; }
@@ -194,8 +193,6 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 /* left column fixed (draggable via the splitter, --panels-left-w), the right one takes the rest */
 .panels-app .sidebar { flex: none; width: var(--panels-left-w, 320px); min-width: 200px; }
 .panels-app .rightpanel { flex: 1 1 0; width: auto; min-width: 260px; }
-.menubar-item { height: 26px; padding: 0 8px; border-radius: 4px; font-size: 12px; color: var(--text); }
-.menubar-item:hover, .menubar-item.open { background: var(--panel2); }
 /* in-app menu dropdowns (MenuBar.tsx): compact rows, a check column only in menus that have checkboxes */
 .menu-dropdown {
   position: fixed; z-index: 1000; min-width: 180px; padding: 4px;
@@ -1760,3 +1757,8 @@ button.tl-all { color: var(--accent); border-color: var(--border); }
 /* the Ground / Focus tools: icons in one quiet group (no background until hovered) */
 .tool-group { display: inline-flex; align-items: center; gap: 2px; padding: 0 4px; }
 .tool-group .icon-btn:disabled { opacity: 0.35; cursor: default; }
+
+/* the app menu button (MenuBar.tsx) and the app name in the title row (M1: no menu bar) */
+.app-menu-btn { flex: none; width: 28px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted); -webkit-app-region: no-drag; }
+.app-menu-btn:hover, .app-menu-btn.open { background: var(--panel2); color: var(--text); }
+.topbar .app-name { flex: none; font-size: 12px; font-weight: 600; color: var(--text); }
