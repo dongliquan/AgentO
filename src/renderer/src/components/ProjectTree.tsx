@@ -181,8 +181,7 @@ export function ProjectTree(): JSX.Element {
               return (
                 <div key={p.id} className="tree-row tree-closed" style={{ paddingLeft: 20 }} onDoubleClick={() => send({ type: 'project.open', id: p.id })} title="Double-click or Open to put it back on the Ground">
                   <span className="caret" />
-                  <span className="label">{p.name}</span>
-                  {n > 0 && <span className="muted" style={{ fontSize: 11 }}>{n}</span>}
+                  <span className="label">{p.name}{n > 0 && <span className="muted tree-count" title={`${n} session(s)`}> ({n})</span>}</span>
                   <button className="btn sm ghost" onClick={() => send({ type: 'project.open', id: p.id })}>Open</button>
                   <button
                     className="icon-btn hover-act"

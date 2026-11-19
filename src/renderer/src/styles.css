@@ -1978,6 +1978,58 @@ button.tl-all { color: var(--accent); border-color: var(--border); }
   .toolbar .segmented .seg-thumb.ready { transition: none; }
 }
 
+/* the view bar: a soft trough with room all round, no outline of its own — the raised pill never touches its edge (the
+   first button, Ground, used to sit right on the trough's border) */
+.app-body.floating > .center > .toolbar .segmented { padding: 3px; gap: 2px; box-shadow: var(--float-1); border-radius: 11px; }
+.app-body.floating > .center > .toolbar .segmented button { padding: 3px 13px; border-radius: 8px; }
+.toolbar .segmented .seg-thumb { top: 3px; bottom: 3px; border-radius: 8px; box-shadow: var(--float-hi), 0 1px 2px rgba(27, 31, 36, 0.12), 0 3px 8px -3px rgba(27, 31, 36, 0.2); }
+
+/* the view bar like the zoom control: a fully round pill, the shown view marked by a tinted fill of its own (no raised white pill) */
+.app-body.floating > .center > .toolbar .segmented { border-radius: 999px; padding: 3px; }
+.app-body.floating > .center > .toolbar .segmented button { border-radius: 999px; padding: 3px 14px; }
+.toolbar .segmented .seg-thumb { border-radius: 999px; background: color-mix(in srgb, var(--accent) 15%, var(--panel)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent); }
+.app-body.floating > .center > .toolbar .segmented button.active { color: var(--accent); font-weight: 600; }
+:root[data-theme="dark"] .toolbar .segmented .seg-thumb { background: color-mix(in srgb, var(--accent) 24%, var(--panel)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent); }
+
+/* each project is a framed card of its own colour in the sidebar: header band, its sessions inside, a hairline and a soft lift */
+.tree-project-block {
+  margin: 8px 8px 0; border-radius: 12px; overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--pc) 38%, transparent);
+  background: color-mix(in srgb, var(--pc) 3%, transparent);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--pc) 12%, transparent), 0 6px 14px -8px color-mix(in srgb, var(--pc) 30%, transparent);
+}
+.tree-project-block > .tree-project { background: color-mix(in srgb, var(--pc) 12%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--pc) 22%, transparent); }
+.tree-project-block:last-of-type { margin-bottom: 4px; }
+:root[data-theme="dark"] .tree-project-block { border-color: color-mix(in srgb, var(--pc) 45%, transparent); background: color-mix(in srgb, var(--pc) 5%, transparent); }
+:root[data-theme="dark"] .tree-project-block > .tree-project { background: color-mix(in srgb, var(--pc) 18%, transparent); }
+
+/* projects in the same language as the view bar: a round trough of the project's colour, its title a pill filled with that colour,
+   the selected session the same pill (no boxes, no hairline frames) */
+.tree-project-block, :root[data-theme="dark"] .tree-project-block {
+  margin: 8px 8px 0; padding: 4px; border: none; border-radius: 22px; overflow: hidden;
+  background: color-mix(in srgb, var(--pc) 9%, transparent);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--pc) 10%, transparent);
+}
+.tree-project-block > .tree-project, :root[data-theme="dark"] .tree-project-block > .tree-project {
+  border: none; border-radius: 999px; margin: 0 0 3px; padding-right: 8px;
+  background: color-mix(in srgb, var(--pc) 22%, var(--panel));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pc) 28%, transparent);
+}
+.tree-project-block .tree-row:not(.tree-project) { border-radius: 999px; margin: 1px 0; padding-right: 8px; }
+.tree-project-block .tree-row:not(.tree-project):hover { background: color-mix(in srgb, var(--pc) 10%, transparent); }
+.tree-project-block .tree-row.selected:not(.tree-project) {
+  background: color-mix(in srgb, var(--pc) 20%, var(--panel));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pc) 30%, transparent);
+}
+:root[data-theme="dark"] .tree-project-block > .tree-project { background: color-mix(in srgb, var(--pc) 32%, var(--panel)); }
+:root[data-theme="dark"] .tree-project-block { background: color-mix(in srgb, var(--pc) 12%, transparent); }
+
+/* the project's title is told apart by its weight and place, not a fill: only the selected session is a pill */
+.tree-project-block > .tree-project, :root[data-theme="dark"] .tree-project-block > .tree-project {
+  background: transparent; box-shadow: none; border-radius: 999px; margin: 0 0 2px; font-weight: 700;
+}
+.tree-project-block > .tree-project:hover { background: color-mix(in srgb, var(--pc) 10%, transparent); }
+
 /* scheduled messages */
 .schedule-dialog { width: min(640px, 92vw); }
 .schedule-list { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 12px; max-height: 240px; overflow: auto; }
@@ -2016,3 +2068,16 @@ button.log-chip:hover { filter: brightness(0.95); }
 .link-msg-head .grow { flex: 1; }
 .link-msg-text { font-size: 12px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
 
+/* the project cards round like the sidebar itself (12 px), the rows inside one step less (8 px) */
+.tree-project-block, :root[data-theme="dark"] .tree-project-block { border-radius: var(--r-panel); }
+.tree-project-block > .tree-project, :root[data-theme="dark"] .tree-project-block > .tree-project { border-radius: 8px; }
+.tree-project-block .tree-row:not(.tree-project) { border-radius: 8px; }
+
+/* the title bar and the status bar are raised like the panels: no hairline, a lift towards the content they frame */
+.topbar, .statusbar { position: relative; z-index: 40; background: var(--panel); border: none; }
+.topbar { box-shadow: var(--float-hi), 0 1px 2px rgba(27, 31, 36, 0.06), 0 8px 18px -10px rgba(27, 31, 36, 0.24); }
+.statusbar { box-shadow: 0 -1px 2px rgba(27, 31, 36, 0.06), 0 -8px 18px -10px rgba(27, 31, 36, 0.24); }
+.topbar .search { border: none; border-radius: 999px; background: var(--panel2); box-shadow: inset 0 0 0 1px var(--line-soft), 0 1px 2px rgba(27, 31, 36, 0.05); transition: box-shadow 0.15s ease; }
+.topbar .search:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent), 0 2px 6px -2px rgba(27, 31, 36, 0.16); }
+:root[data-theme="dark"] .topbar { box-shadow: var(--float-hi), 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 18px -10px rgba(0, 0, 0, 0.7); }
+:root[data-theme="dark"] .statusbar { box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.5), 0 -8px 18px -10px rgba(0, 0, 0, 0.7); }
