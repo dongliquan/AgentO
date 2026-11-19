@@ -23,9 +23,17 @@ export interface Rect {
   h: number;
 }
 
+/** spacing between the columns of projects */
+const GAP_LANE = 260;
+/** the shape the whole Ground is aimed at (width / height): a wide screen */
+const TARGET_ASPECT = 1.7;
+
 /**
- * One block per project, in the sidebar's order, one under another: its sessions in rows of CARDS_PER_ROW (the tree's
- * order, then creation time). Sessions of an unknown project go last. Returns the new rectangle of every session.
+ * One block per project, in the sidebar's order: its sessions in rows of CARDS_PER_ROW (the tree's order, then creation
+ * time), so a small project is one short row and a big one grows downward. The blocks are then dealt into columns
+ * ("lanes", each as wide as one block), every next project into the lane that is lowest so far, and the number of lanes
+ * is the one that makes the whole Ground closest to a wide screen — projects sit side by side as well as one under another.
+ * Sessions of an unknown project go last. Returns the new rectangle of every session.
  */
 export function arrangeSimple(sessions: Session[], projects: Project[]): Map<string, Rect> {
   const out = new Map<string, Rect>();
@@ -37,16 +45,37 @@ export function arrangeSimple(sessions: Session[], projects: Project[]): Map<str
     const key = ids.includes(s.projectId) ? s.projectId : '';
     groups.set(key, [...(groups.get(key) ?? []), s]);
   }
-  let y = 0;
-  for (const key of [...ids, '']) {
-    const members = groups.get(key);
-    if (!members?.length) continue;
-    members.forEach((s, i) => {
-      const col = i % CARDS_PER_ROW;
-      const row = Math.floor(i / CARDS_PER_ROW);
-      out.set(s.id, { x: col * (P.w + GAP_X), y: y + row * (P.h + GAP_ROW), w: P.w, h: P.h });
+  const blocks = [...ids, '']
+    .map((key) => groups.get(key) ?? [])
+    .filter((members) => members.length > 0)
+    .map((members) => ({ members, rows: Math.ceil(members.length / CARDS_PER_ROW) }));
+  const blockH = (rows: number): number => rows * (P.h + GAP_ROW) - GAP_ROW;
+  const laneW = CARDS_PER_ROW * (P.w + GAP_X) - GAP_X;
+
+  /** deal the blocks into `n` lanes: each into the lowest lane (the left one on a tie) */
+  const deal = (n: number): { lane: number; y: number }[] => {
+    const heights = Array<number>(n).fill(0);
+    return blocks.map((b) => {
+      const lane = heights.indexOf(Math.min(...heights));
+      const y = heights[lane]!;
+      heights[lane] = y + blockH(b.rows) + GAP_PROJECT;
+      return { lane, y };
     });
-    y += Math.ceil(members.length / CARDS_PER_ROW) * (P.h + GAP_ROW) + GAP_PROJECT;
-  }
+  };
+  const aspect = (n: number): number => {
+    const used = new Set(deal(n).map((d) => d.lane)).size;
+    const heights = Array<number>(n).fill(0);
+    for (const [i, d] of deal(n).entries()) heights[d.lane] = Math.max(heights[d.lane]!, d.y + blockH(blocks[i]!.rows));
+    return (used * laneW + (used - 1) * GAP_LANE) / Math.max(1, ...heights);
+  };
+  let lanes = 1;
+  for (let n = 2; n <= Math.min(4, blocks.length); n++) if (Math.abs(aspect(n) - TARGET_ASPECT) < Math.abs(aspect(lanes) - TARGET_ASPECT)) lanes = n;
+
+  deal(lanes).forEach((slot, i) => {
+    const x0 = slot.lane * (laneW + GAP_LANE);
+    blocks[i]!.members.forEach((s, k) => {
+      out.set(s.id, { x: x0 + (k % CARDS_PER_ROW) * (P.w + GAP_X), y: slot.y + Math.floor(k / CARDS_PER_ROW) * (P.h + GAP_ROW), w: P.w, h: P.h });
+    });
+  });
   return out;
 }
