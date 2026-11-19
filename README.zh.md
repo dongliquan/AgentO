@@ -41,6 +41,7 @@
 | 代理之间的消息靠你手动转发 | 会话可以向同一项目的其他会话提出请求,并收到回答 |
 | 过长的对话悄悄消耗 token | 显示对话大小;**Fresh start** 带着摘要交接到新对话 |
 | 重启后忘了每个会话停在哪里 | **Pick up where you left off** 列出已停止的会话,以及各自最后的请求和停下的位置 |
+| 电脑休眠后一切都会停下 | 会话工作期间 AgentO 会阻止电脑休眠(锁屏没有关系) |
 
 会话通过各工具的 **CLI 和你自己的订阅登录**来驱动。AgentO 从不索要 API 密钥。
 
@@ -54,11 +55,11 @@ flowchart LR
   D --> H3["Holder"] --> A3["shell"]
 ```
 
-每个会话都在自己的小型 **holder** 进程中,因此重启守护进程也不会让代理停下。
+每个会话都在自己的小型 **holder** 进程中,因此重启守护进程也不会让代理停下。holder 运行在数据文件夹里它自己的运行时副本上,所以替换应用不会让会话停止,旧的构建文件夹也不会堆积。
 
 ## 互相请求的会话
 
-每个 Claude Code 和 Codex 会话都会通过 MCP 获得几个工具。没有层级,没有管理者:会话直接向另一个会话提出请求。
+每个 Claude Code、Codex 和 Gemini 会话都会通过 MCP 获得几个工具。没有层级,没有管理者:会话直接向另一个会话提出请求。
 
 ```mermaid
 flowchart LR
@@ -74,11 +75,13 @@ flowchart LR
 
 | 方面 | 你得到什么 |
 |---|---|
-| **Ground** | 会话卡片画布、项目区域、小地图、专注模式 |
+| **Ground** | 会话卡片画布(两侧面板浮在其上,点标题即可折叠)、项目区域、小地图、专注模式。Auto Arrange 按会话数把项目排成多列 |
 | **视图** | Ground · Split · Tabs · Today(现在需要你处理的事) |
 | **接着做** | 已停止的会话及各自最后的请求和停下的位置;重启后 **Resume all** |
-| **Chat** | 在卡片上阅读 Claude/Codex 对话:工具调用、其他会话的消息、图片、文件链接、提问与权限卡片 |
-| **右侧面板** | Session · Files · Inbox · Web(Gemini、ChatGPT) |
+| **Chat** | 在卡片上阅读 Claude/Codex/Gemini 对话:工具调用、其他会话的消息、图片、文件链接、提问与权限卡片 |
+| **右侧面板** | Session · Files · Inbox · Logs · Web(Gemini、ChatGPT) |
+| **Logs** | 会话之间互相请求了什么、结果如何(`#T` 编号、来回的消息);在 Ground 上是卡片之间的连线和箭头 |
+| **定时消息** | 每 N 分钟、每天或只一次向会话输入一条消息,即使没有打开窗口也会发送(卡片菜单 › Scheduled messages…) |
 | **项目记忆** | 每个项目一个文件(决定、规则、地图),在 Claude 会话启动时注入 |
 | **Autopilot** | 你不在时让一个会话继续推进:先写下“完成”的标准,处理未完成的事项,然后自行停止 |
 | **Token 管理** | 对话大小标记、自动 Fresh start、模型选择、用量报告 |
@@ -92,11 +95,11 @@ flowchart LR
 |---|:-:|:-:|:-:|:-:|
 | Claude Code | ✅ | ✅ | ✅ | ✅ |
 | Codex | ✅ | ✅ | ✅ | — |
-| Gemini CLI | ✅ | — | — | — |
+| Gemini CLI | ✅ | ✅ | ✅ | — |
 | Ollama | ✅ | — | — | — |
 | Shell | ✅ | — | — | — |
 
-Gemini CLI 已停止支持个人套餐,因此这里仅提供终端。
+Gemini CLI 已停止支持个人套餐,可使用 Code Assist 账号或你自己提供的 API 密钥(密钥由 CLI 保管,AgentO 从不索要)。可为每个会话选择模型(`pro`、`flash`、`flash-lite`);向其他会话提出请求的工具仅在 CLI 已信任的文件夹中启用。
 
 ## 快速开始
 
@@ -134,6 +137,7 @@ npm run dev        # starts the app
 | 数据库、日志 | `asm.db`, `logs/` |
 | 项目记忆、会话工具配置 | `team/` |
 | 粘贴的图片 | `attachments/` |
+| holder 使用的运行时副本 | `runtime/` |
 
 守护进程只监听 `127.0.0.1`,每个连接都需要保存在数据文件夹中的随机令牌。
 
@@ -145,7 +149,7 @@ npm run dev        # starts the app
 | Ctrl+P · Ctrl+Shift+P | 快速打开 · 命令面板 |
 | Ctrl+1 … 4 | Ground · Split · Tabs · Today |
 | Ctrl+F | 查找 |
-| Ctrl+B | 切换侧边栏 |
+| Ctrl+B · Ctrl+Alt+B | 折叠 / 展开左侧边栏 · 右侧面板 |
 | Ctrl+Shift+B | 面板独立窗口 |
 | Ctrl+Shift+W | 跳转到等待输入的会话 |
 | F2 · F11 | 重命名 · 专注视图 |
@@ -159,6 +163,8 @@ npm run dev        # starts the app
 | `ASM_HIBERNATE_MIN` | 空闲会话休眠前的分钟数(默认 30) |
 | `AGENTO_PLAYER_MODEL` | 未选择模型时 Claude 的默认模型(默认 Opus 5.5) |
 | `AGENTO_AUTO_FRESH=0` | 关闭自动 Fresh start |
+| `AGENTO_KEEP_AWAKE=0` | 会话工作期间不阻止电脑休眠 |
+| `AGENTO_HOLDER_RUNTIME=0` | 让 holder 从构建文件夹而不是数据文件夹运行 |
 
 ## 项目结构
 
@@ -177,7 +183,7 @@ npm run dev        # starts the app
 - 构建版本尚未代码签名:Windows SmartScreen 会警告,macOS 需手动打开。
 - 用量数据来自本地对话日志;看不到你订阅的剩余额度。
 - 尚无自动更新,也没有“A 完成后运行 B”的串联。
-- 会话互相请求主要用 Claude Code 试过,Codex 测试较少。
+- 会话互相请求主要用 Claude Code 试过,Codex 和 Gemini 测试较少。
 
 ## 安全
 

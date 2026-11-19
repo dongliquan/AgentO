@@ -41,6 +41,7 @@
 | 에이전트 사이의 메시지를 손으로 전달 | 세션이 같은 프로젝트의 다른 세션에게 부탁하고 답을 돌려받음 |
 | 긴 대화가 조용히 토큰을 태움 | 대화 크기를 보여 주고, **Fresh start** 가 요약과 함께 새 대화로 넘김 |
 | 재시작하면 세션이 어디까지 했는지 잊어버림 | **Pick up where you left off** 가 멈춘 세션의 마지막 요청과 어디서 끝났는지를 보여 줌 |
+| 컴퓨터가 절전에 들어가면 모든 것이 멈춤 | 세션이 일하는 동안 AgentO 가 절전을 막음(화면 잠금은 괜찮음) |
 
 세션은 각 도구의 **CLI 와 본인 구독 로그인**으로 구동됩니다. AgentO 는 API 키를 요구하지 않습니다.
 
@@ -54,11 +55,11 @@ flowchart LR
   D --> H3["Holder"] --> A3["shell"]
 ```
 
-세션마다 작은 **홀더** 프로세스가 따로 있어서, 데몬을 재시작해도 에이전트는 멈추지 않습니다.
+세션마다 작은 **홀더** 프로세스가 따로 있어서, 데몬을 재시작해도 에이전트는 멈추지 않습니다. 홀더는 데이터 폴더에 있는 자기 런타임 복사본에서 실행되므로, 앱을 교체해도 세션이 멈추지 않고 이전 빌드 폴더가 쌓이지 않습니다.
 
 ## 서로 부탁하는 세션
 
-Claude Code 와 Codex 세션은 MCP 로 도구 몇 개를 받습니다. 위계도 관리자도 없이, 세션이 다른 세션에게 그냥 부탁합니다.
+Claude Code, Codex, Gemini 세션은 MCP 로 도구 몇 개를 받습니다. 위계도 관리자도 없이, 세션이 다른 세션에게 그냥 부탁합니다.
 
 ```mermaid
 flowchart LR
@@ -74,11 +75,13 @@ flowchart LR
 
 | 영역 | 제공하는 것 |
 |---|---|
-| **Ground** | 세션 카드 캔버스, 프로젝트 영역, 미니맵, 포커스 모드 |
+| **Ground** | 세션 카드 캔버스(양쪽 패널은 그 위에 떠 있고 제목을 눌러 접음), 프로젝트 영역, 미니맵, 포커스 모드. Auto Arrange 는 프로젝트를 세션 수에 따라 여러 열로 배치 |
 | **보기** | Ground · Split · Tabs · Today(지금 내 판단이 필요한 것) |
 | **이어서 하기** | 멈춘 세션의 마지막 요청과 끝난 지점, 재시작 뒤 **Resume all** |
-| **Chat** | 카드에서 Claude/Codex 대화 읽기: 도구 호출, 다른 세션의 메시지, 이미지, 파일 링크, 질문·권한 카드 |
-| **오른쪽 패널** | Session · Files · Inbox · Web(Gemini, ChatGPT) |
+| **Chat** | 카드에서 Claude/Codex/Gemini 대화 읽기: 도구 호출, 다른 세션의 메시지, 이미지, 파일 링크, 질문·권한 카드 |
+| **오른쪽 패널** | Session · Files · Inbox · Logs · Web(Gemini, ChatGPT) |
+| **Logs** | 세션끼리 무엇을 부탁하고 어떻게 끝났는지(`#T` 번호, 오간 메시지). Ground 에서는 카드 사이의 선과 화살표로 보임 |
+| **예약 메시지** | 세션에 N분마다·매일·한 번 메시지를 자동으로 입력. 창이 닫혀 있어도 데몬이 보냄(카드 메뉴 › Scheduled messages…) |
 | **프로젝트 메모리** | 프로젝트마다 파일 하나(결정, 규칙, 지도)를 Claude 세션 시작 때 주입 |
 | **Autopilot** | 자리를 비운 동안 세션 하나가 계속 진행: "끝났다"의 기준을 적고, 남은 일을 처리하고, 스스로 멈춤 |
 | **토큰 관리** | 대화 크기 칩, 자동 Fresh start, 모델 선택, 사용량 리포트 |
@@ -92,11 +95,11 @@ flowchart LR
 |---|:-:|:-:|:-:|:-:|
 | Claude Code | ✅ | ✅ | ✅ | ✅ |
 | Codex | ✅ | ✅ | ✅ | — |
-| Gemini CLI | ✅ | — | — | — |
+| Gemini CLI | ✅ | ✅ | ✅ | — |
 | Ollama | ✅ | — | — | — |
 | Shell | ✅ | — | — | — |
 
-Gemini CLI 가 개인 요금제 지원을 종료해서 여기서는 터미널만 지원합니다.
+Gemini CLI 는 개인 요금제 지원이 끝나서 Code Assist 계정이나 직접 준비한 API 키로 씁니다(키는 CLI 가 보관하고 AgentO 는 요구하지 않음). 세션마다 모델(`pro`, `flash`, `flash-lite`)을 고를 수 있고, 다른 세션에게 부탁하는 도구는 CLI 가 신뢰한 폴더에서만 켜집니다.
 
 ## 빠른 시작
 
@@ -134,6 +137,7 @@ npm run dev        # starts the app
 | 데이터베이스, 로그 | `asm.db`, `logs/` |
 | 프로젝트 메모리, 세션 도구 설정 | `team/` |
 | 붙여 넣은 이미지 | `attachments/` |
+| 홀더가 실행되는 런타임 복사본 | `runtime/` |
 
 데몬은 `127.0.0.1` 에서만 받으며, 모든 연결에는 데이터 폴더에 저장된 무작위 토큰이 필요합니다.
 
@@ -145,7 +149,7 @@ npm run dev        # starts the app
 | Ctrl+P · Ctrl+Shift+P | 빠른 열기 · 명령 팔레트 |
 | Ctrl+1 … 4 | Ground · Split · Tabs · Today |
 | Ctrl+F | 찾기 |
-| Ctrl+B | 사이드바 켜기/끄기 |
+| Ctrl+B · Ctrl+Alt+B | 왼쪽 사이드바 · 오른쪽 패널 접기/펴기 |
 | Ctrl+Shift+B | 패널을 별도 창으로 |
 | Ctrl+Shift+W | 입력을 기다리는 세션으로 이동 |
 | F2 · F11 | 이름 바꾸기 · 포커스 보기 |
@@ -159,6 +163,8 @@ npm run dev        # starts the app
 | `ASM_HIBERNATE_MIN` | 쉬는 세션이 잠들기까지의 분(기본 30) |
 | `AGENTO_PLAYER_MODEL` | 고른 모델이 없을 때 Claude 기본 모델(기본 Opus 5.5) |
 | `AGENTO_AUTO_FRESH=0` | 자동 Fresh start 끄기 |
+| `AGENTO_KEEP_AWAKE=0` | 세션이 일하는 동안 절전을 막는 기능 끄기 |
+| `AGENTO_HOLDER_RUNTIME=0` | 홀더를 데이터 폴더가 아니라 빌드 폴더에서 실행 |
 
 ## 프로젝트 구조
 
@@ -177,7 +183,7 @@ npm run dev        # starts the app
 - 빌드에 코드 서명이 아직 없습니다: Windows SmartScreen 이 경고하고 macOS 는 수동으로 열어야 합니다.
 - 사용량은 로컬 대화 로그에서 계산합니다. 구독의 남은 한도는 보이지 않습니다.
 - 자동 업데이트와 "A 가 끝나면 B 실행" 연결은 아직 없습니다.
-- 세션끼리 부탁하는 기능은 주로 Claude Code 로 시험했고 Codex 는 덜 시험했습니다.
+- 세션끼리 부탁하는 기능은 주로 Claude Code 로 시험했고 Codex 와 Gemini 는 덜 시험했습니다.
 
 ## 보안
 

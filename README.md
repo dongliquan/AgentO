@@ -41,6 +41,7 @@ To build from source instead, see [Quick start](#quick-start).
 | You relay messages between agents by hand | A session can ask another session of its project for something and gets the answer back |
 | Long chats quietly burn tokens | Chat size is shown; **Fresh start** hands off to a new chat with a summary |
 | After a restart you forget where each session stopped | **Pick up where you left off** lists stopped sessions with what each was last asked and where it ended |
+| Your computer goes to sleep and everything stops | AgentO keeps the computer awake while sessions work (a locked screen is fine) |
 
 Sessions are driven through each tool's **CLI with your own subscription login**. AgentO never asks for an API key.
 
@@ -54,11 +55,11 @@ flowchart LR
   D --> H3["Holder"] --> A3["shell"]
 ```
 
-Each session lives in its own small **holder** process, so even restarting the daemon does not stop your agents.
+Each session lives in its own small **holder** process, so even restarting the daemon does not stop your agents. A holder runs from its own copy of the runtime in the data folder, so replacing the app never stops sessions and old build folders do not pile up.
 
 ## Sessions that ask each other
 
-Every Claude Code and Codex session gets a few tools through MCP. No hierarchy, no manager: a session just asks another one.
+Every Claude Code, Codex and Gemini session gets a few tools through MCP. No hierarchy, no manager: a session just asks another one.
 
 ```mermaid
 flowchart LR
@@ -74,11 +75,13 @@ flowchart LR
 
 | Area | What you get |
 |---|---|
-| **Ground** | Canvas of session cards, project areas, minimap, focus mode |
+| **Ground** | Canvas of session cards (the side panels float over it and fold to their title), project areas, minimap, focus mode. Auto Arrange deals projects into columns by session count |
 | **Views** | Ground · Split · Tabs · Today (what needs you now) |
 | **Pick up** | Stopped sessions with what each was last asked and where it ended; **Resume all** after a restart |
-| **Chat** | Read Claude/Codex chats on the card: tool calls, messages from other sessions, images, file links, question and permission cards |
-| **Right panel** | Session · Files · Inbox · Web (Gemini, ChatGPT) |
+| **Chat** | Read Claude/Codex/Gemini chats on the card: tool calls, messages from other sessions, images, file links, question and permission cards |
+| **Right panel** | Session · Files · Inbox · Logs · Web (Gemini, ChatGPT) |
+| **Logs** | What the sessions asked of each other and how it ended (`#T` number, the messages that went back and forth); on the Ground a line and an arrow between their cards |
+| **Scheduled messages** | Type a message into a session every N minutes, daily or once, even with no window open (card menu › Scheduled messages…) |
 | **Project memory** | One file per project (decisions, rules, map) injected into Claude sessions at start |
 | **Autopilot** | Let one session keep going while you are away: it writes down what "finished" means, works through what is open, stops by itself |
 | **Token control** | Chat-size chips, automatic Fresh start, model picker, usage report |
@@ -92,11 +95,11 @@ flowchart LR
 |---|:-:|:-:|:-:|:-:|
 | Claude Code | ✅ | ✅ | ✅ | ✅ |
 | Codex | ✅ | ✅ | ✅ | — |
-| Gemini CLI | ✅ | — | — | — |
+| Gemini CLI | ✅ | ✅ | ✅ | — |
 | Ollama | ✅ | — | — | — |
 | Shell | ✅ | — | — | — |
 
-Gemini CLI ended personal-plan support, so it is terminal-only here.
+Gemini CLI ended personal-plan support: it works with a Code Assist account or an API key you provide (the CLI keeps the key, AgentO never asks for one). Pick a model per session (`pro`, `flash`, `flash-lite`); the tools to ask other sessions are on only in folders the CLI trusts.
 
 ## Quick start
 
@@ -134,6 +137,7 @@ Pushing a tag like `v1.1.0` builds Windows and macOS packages via GitHub Actions
 | Database, logs | `asm.db`, `logs/` |
 | Project memory, session tool configs | `team/` |
 | Pasted images | `attachments/` |
+| Holders' own runtime copy | `runtime/` |
 
 The daemon listens on `127.0.0.1` only, and every connection needs a random token stored in the data folder.
 
@@ -145,7 +149,7 @@ The daemon listens on `127.0.0.1` only, and every connection needs a random toke
 | Ctrl+P · Ctrl+Shift+P | Quick open · Command palette |
 | Ctrl+1 … 4 | Ground · Split · Tabs · Today |
 | Ctrl+F | Find |
-| Ctrl+B | Toggle sidebar |
+| Ctrl+B · Ctrl+Alt+B | Fold / unfold the left sidebar · the right panel |
 | Ctrl+Shift+B | Panels in a separate window |
 | Ctrl+Shift+W | Jump to a session waiting for input |
 | F2 · F11 | Rename · Focus view |
@@ -159,6 +163,8 @@ The daemon listens on `127.0.0.1` only, and every connection needs a random toke
 | `ASM_HIBERNATE_MIN` | Minutes before an idle session sleeps (default 30) |
 | `AGENTO_PLAYER_MODEL` | Default Claude model when none is picked (default Opus 5.5) |
 | `AGENTO_AUTO_FRESH=0` | Turn off automatic Fresh start |
+| `AGENTO_KEEP_AWAKE=0` | Do not keep the computer awake while sessions work |
+| `AGENTO_HOLDER_RUNTIME=0` | Run holders from the build folder instead of the data folder |
 
 ## Project layout
 
@@ -177,7 +183,7 @@ The daemon listens on `127.0.0.1` only, and every connection needs a random toke
 - Builds are not code-signed yet: Windows SmartScreen will warn, and macOS needs a manual open.
 - Usage numbers come from local chat logs; your subscription's remaining quota is not visible.
 - No auto-update and no "run B when A finishes" chains yet.
-- Sessions asking each other were tried mainly with Claude Code; Codex is less tested.
+- Sessions asking each other were tried mainly with Claude Code; Codex and Gemini are less tested.
 
 ## Security
 
