@@ -29,6 +29,7 @@ function countdown(to: number | undefined, now: number): string | null {
 
 export function StatusBar(): JSX.Element {
   const connected = useStore((s) => s.connected);
+  const daemonVersion = useStore((s) => s.daemonVersion);
   const sessions = useStore((s) => s.sessions);
   const projects = useStore((s) => s.projects);
   const selectedId = useStore((s) => s.selectedId);
@@ -56,6 +57,11 @@ export function StatusBar(): JSX.Element {
         <span className={`dot ${connected ? 'on' : 'off'}`} />
         {connected ? 'Connected' : 'Disconnected'}
       </span>
+      {daemonVersion && (
+        <span className="seg" title={`AgentO ${daemonVersion} — the version of the running daemon`} style={{ fontWeight: 600, color: daemonVersion.startsWith('1.') ? 'var(--muted)' : 'var(--accent)' }}>
+          v{daemonVersion}
+        </span>
+      )}
       <span className="seg">{project?.name ?? '-'}</span>
       <span className="seg" title="Working / Waiting for input / Done / Hibernated">
         <span style={{ color: 'var(--ok)' }}>▶ {count('working') + count('starting')}</span>
