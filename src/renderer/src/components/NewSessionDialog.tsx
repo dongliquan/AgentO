@@ -1,4 +1,4 @@
-import { CLAUDE_MODELS } from './ModelChip';
+import { CLAUDE_MODELS, GEMINI_MODELS } from './ModelChip';
 import { useEffect, useMemo, useState } from 'react';
 import type { AgentKind } from '@shared/protocol';
 import { useStore } from '@/store';
@@ -67,10 +67,10 @@ export function NewSessionDialog(): JSX.Element {
       projectId,
       folderId,
       agent,
-      title: title.trim() || `${AGENT_LABELS[agent]} · ${folder?.name ?? ''}`.trim(),
+      title: title.trim() || `${AGENT_LABELS[agent]} · ${project?.name ?? folder?.name ?? ''}`.trim(),
       cols: 100,
       rows: 30,
-      ...(agent === 'claude' ? { mode: headless ? 'headless' : 'tui', ...(model ? { model } : {}) } : {})
+      ...(agent === 'claude' ? { mode: headless ? 'headless' : 'tui', ...(model ? { model } : {}) } : agent === 'gemini' && model ? { model } : {})
     });
     close();
   };
@@ -109,7 +109,7 @@ export function NewSessionDialog(): JSX.Element {
           <div className="radios">
             {agentList.map((a) => (
               <label key={a.kind} className={`radio ${agent === a.kind ? 'active' : ''} ${a.available === false ? 'unavailable' : ''}`} title={a.available === false ? `${a.command} not found` : a.command}>
-                <input type="radio" name="agent" style={{ display: 'none' }} checked={agent === a.kind} onChange={() => setAgent(a.kind)} />
+                <input type="radio" name="agent" style={{ display: 'none' }} checked={agent === a.kind} onChange={() => { setAgent(a.kind); setModel(''); }} />
                 <AgentIcon kind={a.kind} color={a.color} />
                 {a.label || AGENT_LABELS[a.kind]}
                 {a.available === false && <span className="muted" style={{ fontSize: 10 }}>Not installed</span>}
@@ -117,6 +117,15 @@ export function NewSessionDialog(): JSX.Element {
             ))}
           </div>
         </div>
+        {agent === 'gemini' && (
+          <div className="field">
+            <label>Model</label>
+            <select value={model} onChange={(e) => setModel(e.target.value)}>
+              <option value="">Default — the CLI chooses</option>
+              {GEMINI_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label} — {m.note}</option>)}
+            </select>
+          </div>
+        )}
         {agent === 'claude' && (
           <div className="field">
             <label>Model</label>
@@ -137,7 +146,7 @@ export function NewSessionDialog(): JSX.Element {
         )}
         <div className="field">
           <label>Title (optional)</label>
-          <input autoFocus value={title} placeholder={`${AGENT_LABELS[agent]} · ${folder?.name ?? ''}`} onChange={(e) => setTitle(e.target.value)} />
+          <input autoFocus value={title} placeholder={`${AGENT_LABELS[agent]} · ${project?.name ?? folder?.name ?? ''}`} onChange={(e) => setTitle(e.target.value)} />
         </div>
         <div className="actions">
           <button className="btn" onClick={close}>Cancel</button>

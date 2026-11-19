@@ -152,7 +152,7 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
   const timeline = useStore((st) => st.timeline);
   const changed = useStore((st) => st.changed.get(s.cwd));
   // Claude, and Codex once its conversation is found, show as a chat; other CLIs as their terminal screen
-  const hasChat = s.agent === 'claude' || (s.agent === 'codex' && !!s.resumeId);
+  const hasChat = s.agent === 'claude' || ((s.agent === 'codex' || s.agent === 'gemini') && !!s.resumeId);
   const buffer = useBuffer(s.id, !hasChat) ?? '';
   const project = projects.find((p) => p.id === s.projectId);
   const folder = project?.folders.find((f) => f.id === s.folderId);

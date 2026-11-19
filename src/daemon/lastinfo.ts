@@ -3,6 +3,7 @@ import type { ChatEntry, SessionLast } from '@shared/protocol';
 import type { StoredSession } from './store';
 import { TranscriptParser, findTranscript, readTranscriptLines } from './transcript';
 import { findCodexRollout, readCodex } from './codex';
+import { findGeminiChat, readGemini } from './gemini';
 
 /**
  * Where a session left off: the last thing it was asked and the end of its last answer, read from the conversation
@@ -35,6 +36,10 @@ function entriesOf(s: StoredSession): { file: string; entries: ChatEntry[] } | u
     const file = findCodexRollout(s.resumeId);
     return file ? { file, entries: readCodex(file).entries } : undefined;
   }
+  if (s.agent === 'gemini' && s.resumeId) {
+    const file = findGeminiChat(s.cwd, s.resumeId);
+    return file ? { file, entries: readGemini(file).entries } : undefined;
+  }
   if (s.agent !== 'claude' || !s.resumeId) return undefined;
   const file = findTranscript(s.cwd, s.resumeId);
   if (!file) return undefined;
@@ -53,7 +58,7 @@ export function lastInfo(s: StoredSession): SessionLast | undefined {
   if (!s.resumeId) return undefined;
   let sig = '';
   try {
-    const file = s.agent === 'codex' ? findCodexRollout(s.resumeId) : findTranscript(s.cwd, s.resumeId);
+    const file = s.agent === 'codex' ? findCodexRollout(s.resumeId) : s.agent === 'gemini' ? findGeminiChat(s.cwd, s.resumeId) : findTranscript(s.cwd, s.resumeId);
     if (!file) return undefined;
     const st = fs.statSync(file);
     sig = `${file}|${st.size}|${st.mtimeMs}`;

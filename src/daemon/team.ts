@@ -22,6 +22,7 @@ import { log } from './log';
 import { plainTerminalLines } from '@shared/plaintext';
 import { LIMIT_RE, PROMPT_RE, limitResetText } from '@shared/prompts';
 import { findCodexRollout, readCodex } from './codex';
+import { findGeminiChat, readGemini } from './gemini';
 import { Ledger } from './ledger';
 import { MEMORY_MODES_HELP, MEMORY_SECTIONS, MEMORY_TOOL_DESCRIPTION, ensureMemory, memorySystemPrompt, updateMemory, type MemoryMode, type MemorySection } from './memory';
 import { AUTO_MIN_GAP_MS, AUTO_FRESH, AUTO_IDLE_MS, AUTO_MIN_CONTEXT, HANDOFF_CONTINUE, HANDOFF_REQUEST, conversationStart, handoffDir, handoffPath, AUTO_OVERSIZE_FACTOR, AUTO_OVERSIZE_IDLE_MS, AUTO_MANAGER_QUIET_MS, HANDOFF_MARK } from './freshstart';
@@ -743,7 +744,43 @@ export class Team {
    */
   launchEnv(s: StoredSession): Record<string, string> {
     if (s.agent === 'codex') return { [TOKEN_ENV]: this.conn.token };
+    // Gemini's settings name these variables (ensureGeminiServer): the address and token are per session / per daemon
+    if (s.agent === 'gemini') return { AGENTO_MCP_URL: this.mcpUrl(s), AGENTO_TOKEN: this.conn.token };
     return {};
+  }
+
+  /**
+   * Gemini CLI reads its MCP servers from ~/.gemini/settings.json (user level) or the working folder's .gemini folder;
+   * AgentO does not write into the user's project folders, and a system settings file in a folder the user owns is
+   * refused by the CLI. So the user-level file gets one `agento` entry whose address and token are placeholders
+   * ($AGENTO_MCP_URL, $AGENTO_TOKEN) the CLI fills from the environment of each session AgentO starts — outside AgentO the
+   * entry simply does not connect. The CLI turns MCP servers off in a folder the user has not trusted. The file is
+   * backed up once (settings.json.agento-bak); other settings are kept as they are.
+   */
+  private ensureGeminiServer(): void {
+    try {
+      const file = path.join(os.homedir(), '.gemini', 'settings.json');
+      let settings: Json = {};
+      let raw = '';
+      try {
+        raw = fs.readFileSync(file, 'utf8');
+        settings = JSON.parse(raw) as Json;
+      } catch (e) {
+        // an existing file that cannot be read as JSON is left alone
+        if (raw) return;
+      }
+      const servers = (typeof settings['mcpServers'] === 'object' && settings['mcpServers'] !== null ? settings['mcpServers'] : {}) as Json;
+      const want = { httpUrl: '${AGENTO_MCP_URL}', headers: { Authorization: 'Bearer ${AGENTO_TOKEN}' }, trust: true, timeout: TOOL_TIMEOUT_S * 1000 };
+      if (JSON.stringify(servers[MCP_SERVER_NAME]) === JSON.stringify(want)) return;
+      if (raw && !fs.existsSync(`${file}.agento-bak`)) fs.writeFileSync(`${file}.agento-bak`, raw);
+      servers[MCP_SERVER_NAME] = want;
+      settings['mcpServers'] = servers;
+      ensureDir(path.dirname(file));
+      fs.writeFileSync(file, JSON.stringify(settings, null, 2));
+      log.info('team: Gemini settings now name the AgentO tools server', file);
+    } catch (e) {
+      log.warn('team: could not set up the AgentO tools for Gemini', e);
+    }
   }
 
   /**
@@ -771,26 +808,9 @@ export class Team {
       ];
     }
     if (s.agent === 'gemini') {
-      // the settings file lives in the working folder: only in a folder AgentO made, never in the user's project
-      if (s.folderId) return [];
-      const file = path.join(ensureDir(path.join(s.cwd, '.gemini')), 'settings.json');
-      let settings: Json = {};
-      try {
-        settings = JSON.parse(fs.readFileSync(file, 'utf8')) as Json;
-      } catch {
-        /* new file */
-      }
-      const servers = (typeof settings['mcpServers'] === 'object' && settings['mcpServers'] !== null ? settings['mcpServers'] : {}) as Json;
-      servers[MCP_SERVER_NAME] = {
-        httpUrl: this.mcpUrl(s),
-        headers: { Authorization: `Bearer ${this.conn.token}` },
-        trust: true,
-        timeout: TOOL_TIMEOUT_S * 1000
-      };
-      settings['mcpServers'] = servers;
-      fs.writeFileSync(file, JSON.stringify(settings, null, 2));
+      this.ensureGeminiServer();
       const folders = this.projectFolders(s);
-      return folders.length ? ['--include-directories', folders.join(',')] : [];
+      return [...(s.modelPref ? ['--model', s.modelPref] : []), ...(folders.length ? ['--include-directories', folders.join(',')] : [])];
     }
     if (s.agent !== 'claude') return [];
     const file = path.join(ensureDir(path.join(this.teamDir(), 'mcp')), `${s.id}.json`);
@@ -894,7 +914,7 @@ export class Team {
   /** The usage-limit notice on the screen: when it resets (Claude Code waits for that, then goes on by itself). */
   private limited(t: StoredSession): string | undefined {
     const screen = plainTerminal(this.sessions.outputSinceInput(t.id)).slice(-1500);
-    return LIMIT_RE.test(screen) ? (limitResetText(screen) ?? 'later') : undefined;
+    return t.agent === 'claude' && LIMIT_RE.test(screen) ? (limitResetText(screen) ?? 'later') : undefined;
   }
 
   private needsAttention(t: StoredSession): boolean {
@@ -1252,6 +1272,10 @@ export class Team {
       const file = findCodexRollout(s.resumeId);
       return file ? readCodex(file).entries : undefined;
     }
+    if (s.agent === 'gemini' && s.resumeId) {
+      const file = findGeminiChat(s.cwd, s.resumeId);
+      return file ? readGemini(file).entries : undefined;
+    }
     if (s.agent !== 'claude' || !s.resumeId) return undefined;
     const file = findTranscript(s.cwd, s.resumeId);
     if (!file) return undefined;
@@ -1525,14 +1549,26 @@ export class Team {
       case 'tools/list':
         return rpcResult(id, {
           tools: this.tools
-            .map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }))
+            // the tool's own name leads its description: some CLIs show a prefixed name (Gemini: mcp_agento_list_sessions), and
+            // the model then still matches "the list_sessions tool" a user or another session names
+            .map((t) => ({ name: t.name, description: `AgentO tool "${t.name}". ${t.description}`, inputSchema: t.inputSchema }))
         });
       case 'tools/call': {
         const tool = this.tools.find((t) => t.name === str(params['name']));
         if (!tool) return rpcError(id, -32602, `Unknown tool: ${str(params['name'])}`);
         const args = (typeof params['arguments'] === 'object' && params['arguments'] !== null ? params['arguments'] : {}) as Json;
         try {
-          const text = await tool.run(caller, args);
+          let text = await tool.run(caller, args);
+          // a result that is a JSON list is wrapped in an object: Gemini's MCP client takes JSON text for the result's
+          // structured content, which must be an object ("expected record, received array")
+          if (text.trimStart().startsWith('[')) {
+            try {
+              const list = JSON.parse(text) as unknown;
+              if (Array.isArray(list)) text = JSON.stringify({ items: list }, null, 2);
+            } catch {
+              /* plain text that starts with a bracket */
+            }
+          }
           return rpcResult(id, { content: [{ type: 'text', text }] });
         } catch (e) {
           const message = e instanceof Error ? e.message : String(e);

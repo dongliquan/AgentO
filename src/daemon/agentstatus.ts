@@ -35,7 +35,18 @@ function signedIn(kind: AgentKind): boolean | null {
     return process.platform === 'darwin' ? null : false; // macOS keeps it in the keychain
   }
   if (kind === 'codex') return exists(process.env['CODEX_HOME'] || path.join(home, '.codex'), 'auth.json');
-  if (kind === 'gemini') return exists(home, '.gemini', 'oauth_creds.json') || !!process.env['GEMINI_API_KEY'];
+  if (kind === 'gemini') {
+    if (exists(home, '.gemini', 'oauth_creds.json') || process.env['GEMINI_API_KEY'] || process.env['GOOGLE_API_KEY']) return true;
+    // an API key typed into the CLI (/auth) is kept by the CLI itself (not in a file or the environment here): the
+    // settings only say that this method is chosen — whether the key is valid cannot be told from here
+    try {
+      const settings = JSON.parse(fs.readFileSync(path.join(home, '.gemini', 'settings.json'), 'utf8')) as { security?: { auth?: { selectedType?: string } } };
+      if (settings.security?.auth?.selectedType === 'gemini-api-key') return null;
+    } catch {
+      /* no settings: not set up */
+    }
+    return false;
+  }
   return null;
 }
 

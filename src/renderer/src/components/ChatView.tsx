@@ -835,7 +835,7 @@ function readSetupDialog(screen: string[]): { question: string; context: string[
 
 function readNumberedChoice(screen: string[]): { question: string; context: string[]; options: ChoiceOption[] } | null {
   const lines = screen.map((l) => l.replace(/\s+$/, '')).filter((l) => l.trim()).slice(-30);
-  const opt = /^[\s│┃|]*([❯>›])?\s*(\d)[.)]\s+(.+?)[\s│┃|]*$/;
+  const opt = /^[\s│┃|]*([❯>›●◉])?\s*(\d)[.)]\s+(.+?)[\s│┃|]*$/;
   // the last run of numbered lines (1, 2, 3 …)
   let end = -1;
   for (let i = lines.length - 1; i >= 0; i--) if (opt.test(lines[i]!)) {

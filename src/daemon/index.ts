@@ -19,6 +19,7 @@ import { log } from './log';
 import { Store } from './store';
 import { SessionManager } from './sessions';
 import { CodexParser, findCodexRollout } from './codex';
+import { GeminiParser, findGeminiChat } from './gemini';
 import { CARD_PORTRAIT } from '@shared/layout';
 import { detectAgents } from './agents';
 import { collectUsage } from './usage';
@@ -226,16 +227,17 @@ async function main(): Promise<void> {
   const chats = new Map<string, { claudeId: string; tail: TranscriptTail }>();
   const chatFor = (id: string): TranscriptTail | undefined => {
     const s = sessions.get(id);
-    if (!s || (s.agent !== 'claude' && s.agent !== 'codex') || !s.resumeId) return undefined;
+    if (!s || (s.agent !== 'claude' && s.agent !== 'codex' && s.agent !== 'gemini') || !s.resumeId) return undefined;
     const cur = chats.get(id);
     if (cur && cur.claudeId === s.resumeId) return cur.tail;
     cur?.tail.dispose();
     const claudeId = s.resumeId;
     const codex = s.agent === 'codex';
+    const gemini = s.agent === 'gemini';
     const tail = new TranscriptTail(
-      () => (codex ? findCodexRollout(claudeId) : findTranscript(s.cwd, claudeId)),
+      () => (codex ? findCodexRollout(claudeId) : gemini ? findGeminiChat(s.cwd, claudeId) : findTranscript(s.cwd, claudeId)),
       (entries) => broadcast({ type: 'chat.upsert', id, entries }),
-      codex ? new CodexParser() : undefined
+      codex ? new CodexParser() : gemini ? new GeminiParser() : undefined
     );
     chats.set(id, { claudeId, tail });
     return tail;

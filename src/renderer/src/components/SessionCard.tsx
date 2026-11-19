@@ -39,8 +39,8 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
   const [draft, setDraft] = useState(s.title);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   // Claude sessions open in the formatted chat view; the raw TUI stays one click away.
-  // Claude, and Codex once its conversation is found, read as a chat; other CLIs are terminals
-  const hasChat = s.agent === 'claude' || (s.agent === 'codex' && !!s.resumeId);
+  // Claude, and Codex / Gemini once their conversation is found, read as a chat; other CLIs are terminals
+  const hasChat = s.agent === 'claude' || ((s.agent === 'codex' || s.agent === 'gemini') && !!s.resumeId);
   const [view, setView] = useState<'chat' | 'terminal'>(hasChat ? 'chat' : 'terminal');
   const viewRef = useRef(view);
   viewRef.current = view;

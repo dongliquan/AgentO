@@ -17,6 +17,7 @@ import { plainTerminalLines } from '@shared/plaintext';
 import { LIMIT_RE, PROMPT_RE, limitResetText } from '@shared/prompts';
 import { transcriptInfo } from './freshstart';
 import { discoverCodexId, findCodexRollout, readCodex } from './codex';
+import { discoverGeminiId, findGeminiChat, geminiResumeIndex, readGemini } from './gemini';
 import { log } from './log';
 
 const RING_BUFFER_BYTES = 200 * 1024;
@@ -195,7 +196,9 @@ export class SessionManager extends EventEmitter {
     // saves (card moves, reorders) repeat this: render the screen again only when it printed something new
     if (live.asked && live.asked.text === live.sinceInput) return live.asked;
     const screen = plainTerminalLines(live.sinceInput.slice(-20_000)).join('\n').slice(-1500);
-    const limit = LIMIT_RE.test(screen) ? (limitResetText(screen) ?? 'later') : undefined;
+    // Claude Code's "Usage limit reached" is a wait that ends by itself; another CLI's (Gemini: "Usage limit reached for
+    // <model> … 1. Keep trying 2. Stop") is a question it waits on, shown as a choice
+    const limit = s.agent === 'claude' && LIMIT_RE.test(screen) ? (limitResetText(screen) ?? 'later') : undefined;
     live.asked = { text: live.sinceInput, value: PROMPT_RE.test(screen), ...(limit ? { limit } : {}) };
     return live.asked;
   }
@@ -248,6 +251,13 @@ export class SessionManager extends EventEmitter {
         const m = codexModel(file);
         if (m) s.model = m;
       }
+    } else if (s.agent === 'gemini' && s.resumeId) {
+      const file = findGeminiChat(s.cwd, s.resumeId);
+      if (file) {
+        const r = readGemini(file, 512 * 1024);
+        s.context = r.context;
+        if (r.model) s.model = r.model;
+      }
     }
   }
 
@@ -274,6 +284,7 @@ export class SessionManager extends EventEmitter {
     if (status === 'waiting' || status === 'hibernated') {
       // Codex prints no session id: find its rollout once it has written one, then it can hibernate / resume like Claude
       if (s.agent === 'codex' && !s.resumeId) this.discoverCodex(s);
+      if (s.agent === 'gemini' && !s.resumeId) this.discoverGemini(s);
       this.readConversation(s);
     }
     if (status === 'waiting') this.waitingSince.set(s.id, Date.now());
@@ -298,6 +309,13 @@ export class SessionManager extends EventEmitter {
     const live = this.live.get(s.id);
     live?.logStream?.write(data);
     if (live) live.sinceInput = (live.sinceInput + data).slice(-SINCE_INPUT_CAP);
+    // a Gemini session that AgentO did not start with an id of its own: its chat file appears as soon as the first
+    // message is typed, so it reads as a chat without waiting for its first rest
+    if (live && s.agent === 'gemini' && !s.resumeId && Date.now() - (this.geminiProbe.get(s.id) ?? 0) > 5_000) {
+      this.geminiProbe.set(s.id, Date.now());
+      this.discoverGemini(s);
+      if (s.resumeId) this.save(s);
+    }
     this.emit('data', s.id, data);
   }
 
@@ -342,7 +360,18 @@ export class SessionManager extends EventEmitter {
         args = [...args, '--session-id', s.resumeId];
       }
     }
-    if (mode === 'resume' && s.resumeId && def.resumeArgs && !s.command) {
+    if (s.agent === 'gemini' && !s.command) {
+      // like Claude: the session id is chosen here, so the chat file is known from the start; a resume goes by the
+      // number the CLI gives the conversation in its folder (a conversation without a file yet starts again)
+      const index = mode === 'resume' && s.resumeId ? geminiResumeIndex(s.cwd, s.resumeId) : undefined;
+      if (index !== undefined) args = ['--resume', String(index)];
+      else {
+        if (s.resumeId && findGeminiChat(s.cwd, s.resumeId)) s.prevResumeIds = [...(s.prevResumeIds ?? []).filter((x) => x !== s.resumeId), s.resumeId].slice(-10);
+        s.resumeId = randomUUID();
+        args = ['--session-id', s.resumeId];
+      }
+    }
+    if (mode === 'resume' && s.resumeId && def.resumeArgs && !s.command && s.agent !== 'gemini') {
       args = def.resumeArgs.map((a) => a.replace('{id}', s.resumeId as string));
     }
     if (!s.command) {
@@ -702,7 +731,7 @@ export class SessionManager extends EventEmitter {
       folderId: opts.folderId,
       cwd: opts.cwd,
       agent: opts.agent,
-      title: opts.title?.trim() || `${def.label} · ${path.basename(opts.cwd) || opts.cwd}`,
+      title: opts.title?.trim() || `${def.label} · ${this.store.listProjects().find((p) => p.id === opts.projectId)?.name || path.basename(opts.cwd) || opts.cwd}`,
       color: def.color,
       status: 'starting',
       createdAt: now,
@@ -990,6 +1019,19 @@ export class SessionManager extends EventEmitter {
     setTimeout(wait, 200);
   }
 
+  /** A running Gemini session started before its id was chosen by AgentO: the chat file it began in its folder. */
+  private geminiProbe = new Map<string, number>();
+  private discoverGemini(s: StoredSession): void {
+    const live = this.live.get(s.id);
+    if (!live) return;
+    const taken = new Set([...this.sessions.values()].filter((o) => o.agent === 'gemini' && o.resumeId).map((o) => o.resumeId as string));
+    const id = discoverGeminiId(s.cwd, live.startedAt, taken);
+    if (id) {
+      s.resumeId = id;
+      log.info('gemini session id found', s.id, id);
+    }
+  }
+
   /** A running Codex session's id, from the rollout it started in its folder (ids other sessions use are skipped). */
   private discoverCodex(s: StoredSession): void {
     const live = this.live.get(s.id);
@@ -1038,6 +1080,7 @@ export class SessionManager extends EventEmitter {
       if (found) s.resumeId = found;
     }
     if (!s.resumeId && s.agent === 'codex') this.discoverCodex(s);
+    if (!s.resumeId && s.agent === 'gemini') this.discoverGemini(s);
     if (!s.resumeId) {
       throw new Error('Cannot hibernate: resume ID is not known yet');
     }
@@ -1089,6 +1132,8 @@ export class SessionManager extends EventEmitter {
       // a session that waits for the manager (a prompt or a permission on screen) is not put to sleep: the answer would be lost
       if (s.attention || s.permission !== undefined) continue;
       if (this.isAttached(id) || this.keepAwake(id)) continue;
+      // Gemini deletes a conversation that has no answer yet when it exits, so it could not be resumed: it stays running
+      if (s.agent === 'gemini') continue;
       try {
         this.hibernate(id);
         log.info('auto-hibernated', id);
