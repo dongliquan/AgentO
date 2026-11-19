@@ -1785,3 +1785,195 @@ button.tl-all { color: var(--accent); border-color: var(--border); }
 .segmented { border-radius: calc(var(--r-ctl) + 1px); border-color: var(--line-soft); }
 .segmented button + button { border-left-color: var(--line-soft); }
 .menu-dropdown { border-radius: var(--r-card); border-color: var(--line-soft); }
+
+/* 2.0 UI 7/7 — the right panel and the Ground cards follow the left sidebar: one family (rounded from the outside in,
+   soft lines, shadows instead of borders, quiet headers, a pill for the active tab) */
+.app-body > .rightpanel {
+  margin: 8px 8px 8px 0; border: none; border-radius: var(--r-panel); overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 6px 20px -8px var(--shadow-panel);
+}
+.rp-tabs { height: 40px; align-items: center; gap: 2px; padding: 0 6px; border-bottom-color: var(--line-soft); }
+.rp-tabs button { flex: 0 1 auto; height: 28px; padding: 0 10px; border-radius: var(--r-ctl); }
+.rp-tabs button:hover:not(.active) { background: var(--panel2); color: var(--text); }
+.rp-tabs button.active { background: color-mix(in srgb, var(--accent) 12%, var(--panel)); color: var(--accent); box-shadow: none; font-weight: 600; }
+.rp-tabs .rp-dock { width: 26px; padding: 0; margin-left: auto; }
+.rp-more, .chat-composer { border-top-color: var(--line-soft); }
+.chat-composer textarea { border-color: var(--line-soft); border-radius: var(--r-ctl); background: var(--panel2); }
+.chat-composer textarea:focus { border-color: var(--accent); background: var(--panel); }
+/* Ground cards: a quiet header on the card's own surface, a hairline instead of a bar, a soft selected ring */
+.card-header, .board-canvas > .card .card-header { background: var(--panel); border-bottom-color: var(--line-soft); }
+.card-footer { border-top-color: var(--line-soft); background: var(--panel); }
+.board-canvas > .card { box-shadow: 0 1px 2px rgba(27, 31, 36, 0.08), 0 8px 24px -10px rgba(27, 31, 36, 0.22); }
+.board-canvas > .card:hover { box-shadow: 0 2px 4px rgba(27, 31, 36, 0.10), 0 12px 30px -10px rgba(27, 31, 36, 0.28); }
+.board-canvas > .card.selected { box-shadow: 0 0 0 1.5px var(--accent), 0 14px 36px -10px rgba(27, 31, 36, 0.34); transform: translateY(-2px); }
+:root[data-theme="dark"] .board-canvas > .card { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 24px -10px rgba(0, 0, 0, 0.7); }
+:root[data-theme="dark"] .board-canvas > .card.selected { box-shadow: 0 0 0 1.5px var(--accent), 0 14px 36px -10px rgba(0, 0, 0, 0.8); }
+
+/* 2.0 UI 8/8 — the Ground itself: a calm plate, soft project areas with a pill name, floating minimap and zoom */
+.board { background-image: radial-gradient(circle, color-mix(in srgb, var(--grid-dot) 60%, transparent) 1px, transparent 1.2px); }
+.ground-group { border: none; border-radius: 20px; background: color-mix(in srgb, var(--muted) 5%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--muted) 16%, transparent); }
+.ground-group.project {
+  border: none; border-radius: 22px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pc, var(--accent)) 22%, transparent);
+  background: color-mix(in srgb, var(--pc, var(--accent)) 5%, transparent);
+}
+.ground-group.project > .ground-group-label { border: none; border-radius: 999px; padding: 3px 12px; top: -13px; background: var(--panel); box-shadow: 0 1px 2px rgba(27, 31, 36, 0.10), 0 4px 12px -4px rgba(27, 31, 36, 0.22); }
+.ground-group:not(.project) > .ground-group-label { border-radius: 999px; padding: 2px 9px; }
+.ground-group.collapsed, .ground-group.collapsed.project { border: none; box-shadow: var(--shadow-sm); }
+.gl-base { stroke: color-mix(in srgb, var(--muted) 38%, transparent); }
+.minimap { border: none; border-radius: var(--r-panel); backdrop-filter: blur(6px); box-shadow: 0 1px 2px rgba(27, 31, 36, 0.08), 0 8px 24px -10px rgba(27, 31, 36, 0.30); }
+.minimap .mm-project { border-radius: 4px; }
+.minimap .mm-view { border-radius: 3px; }
+.zoom-ctl { border: none; border-radius: 999px; padding: 0 4px; box-shadow: 0 1px 2px rgba(27, 31, 36, 0.08), 0 6px 18px -8px rgba(27, 31, 36, 0.30); }
+.zoom-ctl button { border-radius: 999px; }
+:root[data-theme="dark"] .ground-group.project > .ground-group-label, :root[data-theme="dark"] .minimap, :root[data-theme="dark"] .zoom-ctl { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 24px -10px rgba(0, 0, 0, 0.7); }
+
+/* 2.0 UI 9/9 — the Ground bar: no bar, no line — the controls float on the canvas colour in soft groups */
+.toolbar { background: var(--bg); border-bottom: none; gap: 8px; padding: 0 10px; }
+.toolbar .segmented { background: color-mix(in srgb, var(--muted) 11%, transparent); border: none; border-radius: 9px; padding: 2px; gap: 1px; overflow: visible; }
+.toolbar .segmented button { padding: 3px 11px; border: none; border-radius: 7px; color: var(--muted); }
+.toolbar .segmented button + button { border-left: none; }
+.toolbar .segmented button:hover:not(.active) { color: var(--text); }
+.toolbar .segmented button.active { background: var(--panel); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(27, 31, 36, 0.12), 0 2px 6px -2px rgba(27, 31, 36, 0.14); }
+.toolbar .tool-group { background: color-mix(in srgb, var(--muted) 11%, transparent); border-radius: 9px; padding: 2px; gap: 1px; }
+.toolbar .tool-group .icon-btn { width: 28px; height: 24px; border-radius: 7px; }
+.toolbar .tool-group .icon-btn:hover:not(:disabled), .toolbar .layout-toggle:hover { background: var(--panel); box-shadow: 0 1px 2px rgba(27, 31, 36, 0.10); }
+.toolbar .layout-toggle { width: 28px; height: 28px; border-radius: 8px; }
+.toolbar .layout-toggle.on { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.toolbar .btn.primary { border-radius: 9px; height: 28px; padding: 0 12px; font-weight: 600; border: none; box-shadow: 0 1px 2px rgba(9, 105, 218, 0.30), 0 4px 10px -4px rgba(9, 105, 218, 0.45); }
+.toolbar .breadcrumb { font-size: 12.5px; padding: 0 4px; }
+.toolbar-sep { background: var(--line-soft); }
+:root[data-theme="dark"] .toolbar .segmented button.active, :root[data-theme="dark"] .toolbar .tool-group .icon-btn:hover:not(:disabled) { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); }
+:root[data-theme="dark"] .toolbar .btn.primary { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 4px 10px -4px color-mix(in srgb, var(--accent) 55%, transparent); }
+
+/* 2.0 UI 10/10 — Split and Tabs follow the Ground bar: soft pills instead of bars and underlines, cards as on the Ground */
+.split { gap: 14px; padding: 4px 14px 14px; }
+.split .cell { border-top: none; border-radius: var(--r-card); }
+.split .cell-tag {
+  align-self: flex-start; margin: 0 0 6px 2px; padding: 1px 10px; border-radius: 999px; line-height: 17px;
+  background: color-mix(in srgb, var(--pc) 13%, var(--panel)); color: var(--pc);
+}
+.split .cell > .card { border-radius: var(--r-card); box-shadow: 0 1px 2px rgba(27, 31, 36, 0.08), 0 8px 24px -10px rgba(27, 31, 36, 0.22); }
+.split .cell.selected > .card { box-shadow: 0 0 0 1.5px var(--accent), 0 12px 30px -10px rgba(27, 31, 36, 0.3); }
+.tabview { background: var(--bg); }
+.tab-projects { height: 38px; gap: 6px; padding: 4px 12px 0; background: transparent; border-bottom: none; align-items: center; }
+.tab-project { height: 28px; border-radius: 999px; padding: 0 12px; }
+.tab-project:hover:not(.active) { background: color-mix(in srgb, var(--muted) 10%, transparent); }
+.tab-project.active { box-shadow: none; background: color-mix(in srgb, var(--pc) 14%, var(--panel)); color: var(--pc); }
+.tabstrip { height: 36px; gap: 2px; padding: 4px 12px; align-items: center; background: transparent; border-bottom: none; box-shadow: none; }
+.tab { height: 28px; border: none; border-radius: 8px; padding: 0 12px; }
+.tab:hover:not(.active) { background: color-mix(in srgb, var(--muted) 10%, transparent); }
+.tab.active { background: var(--panel); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(27, 31, 36, 0.12), 0 2px 6px -2px rgba(27, 31, 36, 0.14); }
+.tab-main { margin: 0 12px 12px; border-radius: var(--r-card); overflow: hidden; box-shadow: 0 1px 2px rgba(27, 31, 36, 0.08), 0 8px 24px -10px rgba(27, 31, 36, 0.22); }
+.tab-main > .card.fill { border-radius: var(--r-card); }
+:root[data-theme="dark"] .split .cell > .card, :root[data-theme="dark"] .tab-main { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 24px -10px rgba(0, 0, 0, 0.7); }
+:root[data-theme="dark"] .tab.active { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); }
+
+/* 2.0 UI 11/11 — the side panels lie completely over the Ground; a folded panel is just its title */
+.app-body.floating { position: relative; }
+.app-body.floating > .center { position: absolute; inset: 0; display: flex; flex-direction: column; min-width: 0; }
+.app-body.floating > .center.padded { padding: 0 var(--inset-r, 0px) 0 var(--inset-l, 0px); }
+.app-body.floating > .center > .toolbar { position: absolute; top: 0; left: var(--tb-l, 0px); right: var(--tb-r, 0px); height: 44px; z-index: 25; background: transparent; }
+.app-body.floating > .center.padded > :not(.toolbar) { margin-top: 44px; }
+.app-body.floating > .center.padded.focus > :not(.toolbar) { margin-top: 0; }
+.app-body.with-panels > .sidebar { position: absolute; left: 8px; top: 8px; bottom: 8px; margin: 0; z-index: 30; }
+.app-body.with-panels > .rightpanel { position: absolute; right: 8px; top: 8px; bottom: 8px; margin: 0; z-index: 30; }
+.app-body.with-panels > .rightpanel.second { right: calc(16px + max(300px, calc(var(--right-share, 35) * 1vw))); }
+.app-body.with-panels > .splitter { position: absolute; top: 8px; bottom: 8px; width: 7px; margin: 0; z-index: 31; }
+.app-body.with-panels > .splitter[data-var="--side-share"] { left: calc(8px + max(200px, calc(var(--side-share, 15) * 1vw)) - 3px); }
+.app-body.with-panels > .splitter[data-var="--right-share"] { right: calc(8px + max(300px, calc(var(--right-share, 35) * 1vw)) - 3px); }
+.app-body.with-panels > .splitter[data-var="--second-share"] { right: calc(16px + max(300px, calc(var(--right-share, 35) * 1vw)) + max(300px, calc(var(--second-share, 18) * 1vw)) - 3px); }
+.panel-chip {
+  position: absolute; top: 8px; z-index: 30; height: 32px; display: inline-flex; align-items: center; gap: 7px; padding: 0 16px 0 12px;
+  border-radius: 999px; background: var(--panel); color: var(--muted); font-size: 11.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 6px 18px -8px var(--shadow-panel);
+}
+.panel-chip:hover { color: var(--text); }
+.panel-chip .caret { font-size: 10px; }
+.panel-chip.left { left: 8px; }
+.panel-chip.right { right: 8px; }
+.panel-title { display: inline-flex; align-items: center; gap: 6px; font: inherit; letter-spacing: inherit; color: inherit; font-weight: inherit; cursor: pointer; }
+.panel-title:hover { color: var(--text); }
+.panel-title .caret { font-size: 10px; width: 10px; }
+.board .minimap, .app-body.floating .minimap { right: calc(var(--inset-r, 0px) + 12px); top: 56px; }
+.app-body.floating .zoom-ctl { right: calc(var(--inset-r, 0px) + 12px); }
+.app-body.floating .deleg-strip { right: calc(var(--inset-r, 0px) + 12px); }
+/* over the Ground the toolbar groups need a body of their own: frosted, so the board behind never shows through the words */
+.app-body.floating > .center > .toolbar .segmented, .app-body.floating > .center > .toolbar .tool-group { background: color-mix(in srgb, var(--panel) 82%, var(--muted) 6%); backdrop-filter: blur(10px); box-shadow: 0 1px 2px rgba(27, 31, 36, 0.08); }
+.app-body.floating > .center > .toolbar .breadcrumb { background: color-mix(in srgb, var(--panel) 78%, transparent); backdrop-filter: blur(10px); border-radius: 8px; padding: 3px 10px; }
+.app-body.floating > .center > .toolbar .layout-toggle { background: color-mix(in srgb, var(--panel) 82%, transparent); backdrop-filter: blur(10px); }
+.app-body.floating > .center > .toolbar .segmented button.active { background: var(--panel); }
+/* Focus: the card has the side panels' own top and bottom edges (8 px) and their corner radius */
+.app-body.floating > .center.padded.focus { padding: 8px max(8px, var(--inset-r, 0px)) 8px max(8px, var(--inset-l, 0px)); }
+.app-body.floating > .center.padded.focus > .tab-main.focus-view { margin: 0; flex: 1; min-height: 0; border-radius: var(--r-panel); }
+.focus-view .focus-bar { border-bottom-color: var(--line-soft); }
+/* the shown tab of the right panel is its title: a caret says that clicking it folds the panel */
+.rp-tabs button.active .fold-caret { margin-left: 5px; font-size: 9px; opacity: 0.7; }
+.rightpanel.second .fold-caret { display: none; }
+.sidebar-header .panel-title, .rp-tabs button.active { cursor: pointer; }
+.sidebar-header .panel-title:hover, .rp-tabs button.active:hover { filter: brightness(0.95); }
+/* Focus with a folded panel: the card keeps clear of that panel's title (the open panel's edge or the title's) */
+.app-body.floating > .center.padded.focus { padding: 8px var(--tb-r, 8px) 8px var(--tb-l, 8px); }
+
+/* 2.0 UI 12 — more depth: everything that floats over the Ground shares one lift (a hairline, a contact shadow, a soft
+   wide shadow, a top highlight); the small controls rise a little under the pointer; chrome that sits over the Ground is
+   frosted (the big right panel stays solid: it holds the terminal) */
+:root {
+  --float-edge: 0 0 0 1px rgba(27, 31, 36, 0.06);
+  --float-hi: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --float-1: 0 1px 2px rgba(27, 31, 36, 0.08), 0 4px 10px -2px rgba(27, 31, 36, 0.10);
+  --float-2: 0 2px 4px rgba(27, 31, 36, 0.08), 0 14px 30px -8px rgba(27, 31, 36, 0.24), 0 32px 60px -24px rgba(27, 31, 36, 0.22);
+  --glass: color-mix(in srgb, var(--panel) 80%, transparent);
+}
+:root[data-theme="dark"] {
+  --float-edge: 0 0 0 1px rgba(255, 255, 255, 0.07);
+  --float-hi: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --float-1: 0 1px 2px rgba(0, 0, 0, 0.5), 0 4px 12px -2px rgba(0, 0, 0, 0.45);
+  --float-2: 0 2px 4px rgba(0, 0, 0, 0.5), 0 16px 34px -8px rgba(0, 0, 0, 0.7), 0 36px 64px -24px rgba(0, 0, 0, 0.6);
+  --glass: color-mix(in srgb, var(--panel) 78%, transparent);
+}
+/* the panels */
+.app-body.with-panels > .sidebar { background: var(--glass); backdrop-filter: blur(18px) saturate(1.3); box-shadow: var(--float-edge), var(--float-hi), var(--float-2); }
+.app-body.with-panels > .rightpanel { box-shadow: var(--float-edge), var(--float-hi), var(--float-2); }
+.app-body.with-panels > .sidebar .tree-row.selected, .app-body.with-panels > .sidebar .tree-row:hover { backdrop-filter: none; }
+.panel-chip { background: var(--glass); backdrop-filter: blur(14px) saturate(1.3); box-shadow: var(--float-edge), var(--float-hi), var(--float-1); transition: box-shadow 0.15s ease, transform 0.15s ease; }
+.panel-chip:hover { transform: translateY(-1px); box-shadow: var(--float-edge), var(--float-hi), var(--float-2); }
+/* the Ground bar: every control is its own raised piece */
+.app-body.floating > .center > .toolbar .segmented, .app-body.floating > .center > .toolbar .tool-group { background: var(--glass); backdrop-filter: blur(14px) saturate(1.3); box-shadow: var(--float-edge), var(--float-hi), var(--float-1); }
+.app-body.floating > .center > .toolbar .segmented button.active { box-shadow: var(--float-hi), 0 1px 2px rgba(27, 31, 36, 0.14), 0 4px 8px -2px rgba(27, 31, 36, 0.18); }
+.app-body.floating > .center > .toolbar .layout-toggle, .app-body.floating > .center > .toolbar .theme-toggle { background: var(--glass); backdrop-filter: blur(14px) saturate(1.3); box-shadow: var(--float-edge), var(--float-hi), var(--float-1); transition: box-shadow 0.15s ease, transform 0.15s ease; }
+.app-body.floating > .center > .toolbar .layout-toggle:hover, .app-body.floating > .center > .toolbar .theme-toggle:hover { transform: translateY(-1px); box-shadow: var(--float-edge), var(--float-hi), var(--float-2); }
+.app-body.floating > .center > .toolbar .tool-group .icon-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: var(--float-hi), var(--float-1); }
+.app-body.floating > .center > .toolbar .breadcrumb { background: var(--glass); backdrop-filter: blur(14px) saturate(1.3); box-shadow: var(--float-edge), var(--float-hi), var(--float-1); }
+.app-body.floating > .center > .toolbar .btn.primary { transition: box-shadow 0.15s ease, transform 0.15s ease; box-shadow: 0 1px 2px rgba(9, 105, 218, 0.35), 0 8px 16px -4px rgba(9, 105, 218, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.25); }
+.app-body.floating > .center > .toolbar .btn.primary:hover:not(:disabled) { transform: translateY(-1px); filter: none; box-shadow: 0 2px 4px rgba(9, 105, 218, 0.4), 0 12px 22px -4px rgba(9, 105, 218, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.3); }
+/* what floats inside the Ground */
+.minimap { background: var(--glass); backdrop-filter: blur(14px) saturate(1.3); box-shadow: var(--float-edge), var(--float-hi), var(--float-2); }
+.zoom-ctl { background: var(--glass); backdrop-filter: blur(14px) saturate(1.3); box-shadow: var(--float-edge), var(--float-hi), var(--float-1); }
+.app-body.floating .focus-view, .app-body.floating .tab-main { box-shadow: var(--float-edge), var(--float-hi), var(--float-2); }
+/* the Ground itself sits lower: a slightly deeper plate so the floating pieces stand off it */
+.app-body.floating > .center.ground .board { background-color: color-mix(in srgb, var(--bg) 88%, var(--muted) 5%); }
+:root[data-theme="dark"] .app-body.floating > .center.ground .board { background-color: color-mix(in srgb, var(--bg) 82%, #000 18%); }
+
+/* 2.0 UI 13 — switching views moves: the raised pill of the view bar slides to the new button, the new view slides in
+   from that side and fades up */
+.toolbar .segmented { position: relative; }
+.toolbar .segmented .seg-thumb {
+  position: absolute; left: 0; top: 2px; bottom: 2px; border-radius: 7px; z-index: 0; pointer-events: none;
+  background: var(--panel); box-shadow: var(--float-hi), 0 1px 2px rgba(27, 31, 36, 0.14), 0 4px 8px -2px rgba(27, 31, 36, 0.18);
+}
+.toolbar .segmented .seg-thumb.ready { transition: transform 0.32s cubic-bezier(0.3, 0.9, 0.25, 1), width 0.32s cubic-bezier(0.3, 0.9, 0.25, 1); }
+.toolbar .segmented button { position: relative; z-index: 1; }
+.app-body.floating > .center > .toolbar .segmented button.active { background: transparent; box-shadow: none; }
+.view-anim { flex: 1; min-height: 0; min-width: 0; position: relative; display: flex; flex-direction: column; animation: view-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.app-body.floating > .center.padded > .view-anim { margin-top: 44px; }
+.app-body.floating > .center.padded.focus > .view-anim { margin-top: 0; }
+.app-body.floating > .center.padded > .view-anim > * { margin-top: 0; }
+@keyframes view-in {
+  from { opacity: 0; transform: translateX(calc(var(--view-dir, 1) * 28px)) scale(0.992); }
+  to { opacity: 1; transform: none; }
+}
+:root[data-theme="dark"] .toolbar .segmented .seg-thumb { box-shadow: var(--float-hi), 0 1px 2px rgba(0, 0, 0, 0.5); }
+@media (prefers-reduced-motion: reduce) {
+  .view-anim { animation: none; }
+  .toolbar .segmented .seg-thumb.ready { transition: none; }
+}

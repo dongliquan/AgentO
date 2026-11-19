@@ -395,7 +395,8 @@ export const useStore = create<AppState>((set, get) => ({
     set({ sessions });
   },
 
-  setFocusMode: (v) => set({ focusMode: v }),
+  // Focus opens both side panels (the session list and the conversation beside the card stay in reach); leaving it keeps them as they are
+  setFocusMode: (v) => set(v ? { focusMode: true, sidebarOpen: writeFlag('asm.sidebarOpen', true), rightOpen: writeFlag('asm.rightOpen', true) } : { focusMode: false }),
   toggleSidebar: () => set({ sidebarOpen: writeFlag('asm.sidebarOpen', !get().sidebarOpen) }),
   toggleMinimap: () => set({ minimapOpen: writeFlag('asm.minimapOpen', !get().minimapOpen) }),
   toggleRight: () => set({ rightOpen: writeFlag('asm.rightOpen', !get().rightOpen) }),

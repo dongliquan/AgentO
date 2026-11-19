@@ -76,7 +76,7 @@ export function ShareSplitter({ cssVar, dir, fallback, min, max }: { cssVar: str
       /* storage unavailable */
     }
   };
-  return <div className="splitter" onPointerDown={onDown} onDoubleClick={reset} title={`Drag to resize · double-click for ${fallback}% of the window`} />;
+  return <div className="splitter" data-var={cssVar} onPointerDown={onDown} onDoubleClick={reset} title={`Drag to resize · double-click for ${fallback}% of the window`} />;
 }
 
 function currentWidth(cssVar: string, fallback: number): number {

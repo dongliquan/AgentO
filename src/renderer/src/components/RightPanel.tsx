@@ -88,9 +88,10 @@ export function RightPanel(): JSX.Element {
     <div className="rightpanel">
       <div className="rp-tabs">
         {here.map((t) => (
-          <button key={t} className={tab === t ? 'active' : ''} onClick={() => setRightTab(t)} disabled={t === 'detail' && !session} title={TAB_TITLE[t]}>
+          <button key={t} className={tab === t ? 'active' : ''} onClick={() => (tab === t ? useStore.getState().toggleRight() : setRightTab(t))} disabled={t === 'detail' && !session} title={tab === t ? `${TAB_TITLE[t]} — click to fold the panel to its title` : TAB_TITLE[t]}>
             {TAB_LABEL[t]}
             {(counts[t] ?? 0) > 0 && <span className="badge inline">{counts[t]}</span>}
+            {tab === t && <span className="fold-caret">▾</span>}
           </button>
         ))}
         {here.length > 1 && (

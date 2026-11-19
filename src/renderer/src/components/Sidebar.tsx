@@ -37,7 +37,7 @@ export function Sidebar(): JSX.Element {
         </button>
       </div>
       <div className="sidebar-header">
-        <span>PROJECTS</span>
+        <button className="panel-title" onClick={() => useStore.getState().toggleSidebar()} title="Fold the panel to its title"><span className="caret">▾</span>PROJECTS</button>
         <span className="grow" />
         <button
           className="icon-btn"

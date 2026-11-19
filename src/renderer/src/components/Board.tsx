@@ -65,11 +65,27 @@ let flight: { anim: Animation; bg: Animation; el: HTMLElement; canvas: HTMLEleme
  */
 let lastFit: { id: string; constrained: boolean } | null = null;
 /** the view that shows a whole card: its zoom (the current one when it fits, zoomed out when not) and pan */
+/**
+ * The part of the Ground the floating panels leave free: the side panels and the toolbar lie over it, so a card is
+ * fitted and centred in what is left (the panels publish their widths as --inset-l / --inset-r, the toolbar --inset-t).
+ */
+function freeArea(el: HTMLElement): { x: number; y: number; w: number; h: number } {
+  const cs = getComputedStyle(document.documentElement);
+  const num = (v: string): number => parseFloat(cs.getPropertyValue(v)) || 0;
+  const l = num('--inset-l');
+  const r = num('--inset-r');
+  const t = num('--inset-t');
+  return { x: l, y: t, w: Math.max(100, el.clientWidth - l - r), h: Math.max(100, el.clientHeight - t) };
+}
 function fitView(el: HTMLElement, s: { x: number; y: number; w: number; h: number }, zoom: number): { z: number; x: number; y: number; constrained: boolean } {
   const margin = 40;
-  const fit = Math.min((el.clientWidth - margin) / s.w, (el.clientHeight - margin) / s.h);
-  const z = Math.max(ZOOM_MIN, Math.min(zoom, fit));
-  return { z, x: el.clientWidth / 2 - (s.x + s.w / 2) * z, y: el.clientHeight / 2 - (s.y + s.h / 2) * z, constrained: fit < zoom };
+  const a = freeArea(el);
+  // 100% is the default: a card is never shrunk to fit — a card taller than the room shows from its top (its own
+  // content scrolls), one that fits is centred
+  const z = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom));
+  const x = a.x + a.w / 2 - (s.x + s.w / 2) * z;
+  const y = s.h * z + margin <= a.h ? a.y + a.h / 2 - (s.y + s.h / 2) * z : a.y + margin / 2 - s.y * z;
+  return { z, x, y, constrained: false };
 }
 function stopFlight(): void {
   if (!flight) return;
@@ -88,12 +104,13 @@ function flyTo(el: HTMLElement, z1: number, x1: number, y1: number): void {
   const z0 = st.zoom;
   const x0 = st.panX;
   const y0 = st.panY;
-  const W = el.clientWidth;
-  const H = el.clientHeight;
-  const c0x = (W / 2 - x0) / z0;
-  const c0y = (H / 2 - y0) / z0;
-  const c1x = (W / 2 - x1) / z1;
-  const c1y = (H / 2 - y1) / z1;
+  const free = freeArea(el);
+  const MX = free.x + free.w / 2;
+  const MY = free.y + free.h / 2;
+  const c0x = (MX - x0) / z0;
+  const c0y = (MY - y0) / z0;
+  const c1x = (MX - x1) / z1;
+  const c1y = (MY - y1) / z1;
   const dist = Math.hypot((c1x - c0x) * Math.max(z0, z1), (c1y - c0y) * Math.max(z0, z1));
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   // longer for a longer way and a bigger zoom change, within 0.3–0.9 s
@@ -112,8 +129,8 @@ function flyTo(el: HTMLElement, z1: number, x1: number, y1: number): void {
     const z = z0 * Math.pow(z1 / z0, e);
     const cx = c0x + (c1x - c0x) * e;
     const cy = c0y + (c1y - c0y) * e;
-    const x = W / 2 - cx * z;
-    const y = H / 2 - cy * z;
+    const x = MX - cx * z;
+    const y = MY - cy * z;
     frames.push({ transform: `translate(${x}px, ${y}px) scale(${z})` });
     bgFrames.push({ backgroundPosition: `${x}px ${y}px`, backgroundSize: `${GRID * z}px ${GRID * z}px` });
   }
@@ -216,8 +233,8 @@ export function Board(): JSX.Element {
     const s = useStore.getState().sessions.get(panRequest.sessionId);
     if (!el || !s) return;
     const st = useStore.getState();
-    // the whole card in the visible Ground (a margin around it): the current zoom when it fits, zoomed out when not
-    const v = fitView(el, s, st.zoom < 0.6 ? 1 : st.zoom);
+    // the card in the visible Ground at 100% (a zoom deliberately set above 100% stays)
+    const v = fitView(el, s, Math.max(1, st.zoom));
     lastFit = { id: s.id, constrained: v.constrained };
     flyTo(el, v.z, v.x, v.y);
   }, [panRequest]);
@@ -239,8 +256,8 @@ export function Board(): JSX.Element {
         if (!fit || st.selectedId !== fit.id) return;
         const s = st.sessions.get(fit.id);
         if (!s || now.w === 0 || now.h === 0) return;
-        // shrunk to fit before: as big as the room allows now (up to 100%); otherwise the same zoom, centred again
-        const v = fitView(el, s, fit.constrained ? 1 : st.zoom);
+        // centred again at the same zoom
+        const v = fitView(el, s, st.zoom);
         lastFit = { id: s.id, constrained: v.constrained };
         flyTo(el, v.z, v.x, v.y);
       }, 150);

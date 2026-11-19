@@ -173,8 +173,7 @@ export function ProjectTree(): JSX.Element {
         <div className="tree-closed-block">
           <div className="tree-row tree-closed-head" style={{ paddingLeft: 6 }} onClick={() => toggle('closed')} title="Closed projects: kept with their sessions, layout and history">
             <span className="caret">{expanded.has('closed') ? '▾' : '▸'}</span>
-            <span className="label">Closed</span>
-            <span className="muted" style={{ fontSize: 11 }}>{closedTops.length}</span>
+            <span className="label">Closed<span className="muted tree-count"> ({closedTops.length})</span></span>
           </div>
           {expanded.has('closed') &&
             closedTops.map((p) => {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useStore, type ViewMode } from '@/store';
 import { autoArrange, fitAll, newSessionFor, runCommand } from '@/commands';
 import { kbd } from '@/lib/keys';
@@ -36,17 +36,6 @@ function ToolIcon({ name }: { name: 'arrange' | 'fit' | 'focus' }): JSX.Element 
 }
 
 /** VS Code-style layout toggle: a panel outline with the left or right column filled when open. */
-function PanelIcon({ side, open }: { side: 'left' | 'right'; open: boolean }): JSX.Element {
-  const x = side === 'left' ? 2.5 : 10;
-  return (
-    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-      <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="currentColor" />
-      <rect x={x} y="3.5" width="3.5" height="9" fill={open ? 'currentColor' : 'none'} />
-      <path d={side === 'left' ? 'M6.5 2.5v11' : 'M9.5 2.5v11'} stroke="currentColor" />
-    </svg>
-  );
-}
-
 /** Two stacked windows: open the panels in their own window, or dock them back. */
 function PopOutIcon({ open }: { open: boolean }): JSX.Element {
   return (
@@ -59,6 +48,27 @@ function PopOutIcon({ open }: { open: boolean }): JSX.Element {
 
 export function Toolbar(): JSX.Element {
   const viewMode = useStore((s) => s.viewMode);
+  const segRef = useRef<HTMLDivElement>(null);
+  const [thumb, setThumb] = useState<{ x: number; w: number } | null>(null);
+  const [thumbReady, setThumbReady] = useState(false);
+  // where the active view's button is (again when the bar is resized): the pill goes there
+  useLayoutEffect(() => {
+    const el = segRef.current;
+    if (!el) return;
+    const place = (): void => {
+      const b = el.querySelector<HTMLElement>('button.active');
+      setThumb(b ? { x: b.offsetLeft, w: b.offsetWidth } : null);
+    };
+    place();
+    // the first placement is not animated (the pill is just there); later ones slide
+    const t = requestAnimationFrame(() => setThumbReady(true));
+    const ro = new ResizeObserver(place);
+    ro.observe(el);
+    return () => {
+      cancelAnimationFrame(t);
+      ro.disconnect();
+    };
+  }, [viewMode]);
   const focusMode = useStore((s) => s.focusMode);
   const onToday = viewMode === 'today';
   /** a record / overview page, not a session layout: the layout tools hide */
@@ -67,10 +77,6 @@ export function Toolbar(): JSX.Element {
   const projects = useStore((s) => s.projects);
   const selectedId = useStore((s) => s.selectedId);
   const sessions = useStore((s) => s.sessions);
-  const sidebarOpen = useStore((s) => s.sidebarOpen);
-  const rightOpen = useStore((s) => s.rightOpen);
-  const toggleSidebar = useStore((s) => s.toggleSidebar);
-  const toggleRight = useStore((s) => s.toggleRight);
   const detached = useStore((s) => s.panelsDetached);
 
   const sel = selectedId ? sessions.get(selectedId) : undefined;
@@ -82,12 +88,9 @@ export function Toolbar(): JSX.Element {
 
   return (
     <div className="toolbar">
-      {!detached && (
-        <button className={`icon-btn layout-toggle ${sidebarOpen ? 'on' : ''}`} title={kbd(`${sidebarOpen ? 'Hide' : 'Show'} Sidebar (Ctrl+B)`)} onClick={toggleSidebar}>
-          <PanelIcon side="left" open={sidebarOpen} />
-        </button>
-      )}
-      <div className="segmented">
+      <div className="segmented" ref={segRef}>
+        {/* the raised pill slides from the old view's button to the new one's */}
+        {thumb && <span className={`seg-thumb ${thumbReady ? 'ready' : ''}`} style={{ transform: `translateX(${thumb.x}px)`, width: thumb.w }} />}
         {MODES.map((m) => (
           <button key={m.id} className={viewMode === m.id ? 'active' : ''} onClick={() => setViewMode(m.id)} title={kbd(`${m.label} — ${m.tip} (${m.key})`)}>
             {m.label}
@@ -135,11 +138,6 @@ export function Toolbar(): JSX.Element {
       )}
       {/* the one accented button; a new project is the + at the top of the project tree (and File › New Project) */}
       <button className="btn primary" onClick={() => newSessionFor()}>+ New Session</button>
-      {!detached && (
-        <button className={`icon-btn layout-toggle ${rightOpen ? 'on' : ''}`} title={kbd(`${rightOpen ? 'Hide' : 'Show'} Details Panel (Ctrl+Alt+B)`)} onClick={toggleRight}>
-          <PanelIcon side="right" open={rightOpen} />
-        </button>
-      )}
       <button
         className={`icon-btn layout-toggle ${detached ? 'on' : ''}`}
         title={kbd(detached ? 'Dock Panels to This Window (Ctrl+Shift+B)' : 'Open Panels in Separate Window (Ctrl+Shift+B)')}

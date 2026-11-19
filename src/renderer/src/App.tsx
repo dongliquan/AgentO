@@ -33,6 +33,7 @@ import { Toolbar } from '@/components/Toolbar';
 import { FocusView } from '@/components/FocusView';
 import { PromptDialog } from '@/components/PromptDialog';
 import { ShareSplitter } from '@/components/Splitter';
+import { PanelChip } from '@/components/PanelChip';
 
 function handleKey(e: KeyboardEvent): void {
   const st = useStore.getState();
@@ -126,6 +127,56 @@ function handleKey(e: KeyboardEvent): void {
   }
 }
 
+const RIGHT_TITLE: Record<string, string> = { inbox: 'Inbox', detail: 'Session', files: 'Files', web: 'Web' };
+
+/**
+ * The side panels float over the Ground, so the Ground's own fitting and centring must leave their width free:
+ * --inset-l / --inset-r are the widths the open panels cover, --inset-t the toolbar's height; --tb-l / --tb-r keep the
+ * toolbar clear of an open panel or of a folded panel's title.
+ */
+function usePanelInsets(body: React.RefObject<HTMLDivElement>, sidebarOpen: boolean, rightOpen: boolean): void {
+  useEffect(() => {
+    const root = document.documentElement;
+    const apply = (): void => {
+      const el = body.current;
+      if (!el) return;
+      const W = el.clientWidth;
+      const left = el.querySelector<HTMLElement>(':scope > .sidebar, :scope > .panel-chip.left');
+      const rights = [...el.querySelectorAll<HTMLElement>(':scope > .rightpanel, :scope > .panel-chip.right')];
+      const gap = 8;
+      const lw = left ? left.getBoundingClientRect().right + gap : 0;
+      const rw = rights.length ? W - Math.min(...rights.map((r) => r.getBoundingClientRect().left)) + gap : 0;
+      root.style.setProperty('--tb-l', `${lw}px`);
+      root.style.setProperty('--tb-r', `${rw}px`);
+      root.style.setProperty('--inset-l', sidebarOpen ? `${lw}px` : '0px');
+      root.style.setProperty('--inset-r', rightOpen ? `${rw}px` : '0px');
+      root.style.setProperty('--inset-t', '44px');
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(body.current!);
+    for (const n of body.current!.querySelectorAll(':scope > .sidebar, :scope > .rightpanel, :scope > .panel-chip')) ro.observe(n);
+    window.addEventListener('resize', apply);
+    // a dragged splitter changes a width variable on :root: look again on every pointer move while resizing
+    const move = (): void => {
+      if (document.body.classList.contains('resizing')) apply();
+    };
+    window.addEventListener('pointermove', move);
+    // a panel appearing or going (the second panel, a fold) is a change of the body's children
+    const mo = new MutationObserver(() => {
+      for (const n of body.current!.querySelectorAll(':scope > .sidebar, :scope > .rightpanel, :scope > .panel-chip')) ro.observe(n);
+      apply();
+    });
+    mo.observe(body.current!, { childList: true });
+    return () => {
+      mo.disconnect();
+      ro.disconnect();
+      window.removeEventListener('resize', apply);
+      window.removeEventListener('pointermove', move);
+    };
+  }, [body, sidebarOpen, rightOpen]);
+}
+
 export function App(): JSX.Element {
   useFollowSelection();
   useLastInfoRequests();
@@ -135,8 +186,22 @@ export function App(): JSX.Element {
   }, []);
   const sidebarOpen = useStore((s) => s.sidebarOpen);
   const rightOpen = useStore((s) => s.rightOpen);
+  const rightTab = useStore((s) => s.rightTab);
+  const toggleSidebar = useStore((s) => s.toggleSidebar);
+  const setRightTab = useStore((s) => s.setRightTab);
   const detached = useStore((s) => s.panelsDetached);
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  usePanelInsets(bodyRef, sidebarOpen, rightOpen);
   const viewMode = useStore((s) => s.viewMode);
+  // which way the view slides in: from the right when it is further right in the bar than the one before
+  const prevView = useRef(viewMode);
+  const viewDir = useRef(1);
+  if (prevView.current !== viewMode) {
+    const order = ['board', 'split', 'tabs', 'today'];
+    viewDir.current = order.indexOf(viewMode) >= order.indexOf(prevView.current) ? 1 : -1;
+    prevView.current = viewMode;
+  }
   const focusMode = useStore((s) => s.focusMode);
   const paletteOpen = useStore((s) => s.paletteOpen);
   const newSessionOpen = useStore((s) => s.newSessionOpen);
@@ -192,15 +257,19 @@ export function App(): JSX.Element {
   return (
     <div className="app">
       <TopBar />
-      <div className="app-body">
-        {!detached && sidebarOpen && <Sidebar />}
-        {!detached && sidebarOpen && <ShareSplitter cssVar="--side-share" dir={1} fallback={15} min={8} max={30} />}
-        <div className="center">
+      {/* the side panels float over the Ground (the Ground fills the window); a folded panel is just its title */}
+      <div className={`app-body floating ${detached ? '' : 'with-panels'}`} ref={bodyRef}>
+        <div className={`center ${focusMode ? 'padded focus' : viewMode === 'board' ? 'ground' : 'padded'}`}>
           {!focusMode && <Toolbar />}
-          {center}
+          {/* the view comes in from the side of its button in the bar (a new key = a new mount = the animation) */}
+          <div className="view-anim" key={focusMode ? 'focus' : viewMode} style={{ '--view-dir': viewDir.current } as React.CSSProperties}>
+            {center}
+          </div>
         </div>
+        {!detached && (sidebarOpen ? <Sidebar /> : <PanelChip side="left" title="PROJECTS" onOpen={toggleSidebar} />)}
+        {!detached && sidebarOpen && <ShareSplitter cssVar="--side-share" dir={1} fallback={15} min={8} max={30} />}
         {!detached && rightOpen && <ShareSplitter cssVar="--right-share" dir={-1} fallback={35} min={18} max={60} />}
-        {!detached && rightOpen && <RightPanel />}
+        {!detached && (rightOpen ? <RightPanel /> : <PanelChip side="right" title={RIGHT_TITLE[rightTab] ?? 'Details'} onOpen={() => setRightTab(rightTab)} />)}
         {!detached && rightOpen && <SecondPanel />}
       </div>
       <StatusBar />
