@@ -24,6 +24,7 @@ import { RightPanel, SecondPanel, useFollowSelection } from '@/components/RightP
 import { StatusBar } from '@/components/StatusBar';
 import { Palette } from '@/components/Palette';
 import { NewSessionDialog } from '@/components/NewSessionDialog';
+import { ScheduleDialog } from '@/components/ScheduleDialog';
 import { ImportClaudeDialog } from '@/components/ImportClaudeDialog';
 import { AgentsDialog } from '@/components/AgentsDialog';
 import { SettingsDialog } from '@/components/SettingsDialog';
@@ -275,6 +276,7 @@ export function App(): JSX.Element {
       <StatusBar />
       {paletteOpen && <Palette />}
       {newSessionOpen && <NewSessionDialog />}
+      <ScheduleDialog />
       {importOpen && <ImportClaudeDialog />}
       <AgentsDialog />
       <SettingsDialog />

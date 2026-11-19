@@ -212,6 +212,36 @@ export interface SessionLast {
   at: number;
 }
 
+/**
+ * A scheduled message: the daemon types `text` into the session on schedule (every N minutes or every day at HH:MM, or
+ * once), even with no window open. `{run}` in the text becomes the run number (1, 2, ...).
+ */
+export interface Routine {
+  id: string;
+  name: string;
+  /** the session that gets the message */
+  target: { sessionId: string };
+  text: string;
+  /** every N minutes ... */
+  everyMinutes?: number;
+  /** ... or every day at "HH:MM" (local time) */
+  dailyAt?: string;
+  /** once: at the next "daily at" time, then it removes itself */
+  once?: boolean;
+  enabled: boolean;
+  nextAt: number;
+  runs: number;
+  lastRunAt?: number;
+  createdAt: number;
+}
+
+export type RoutineInput = Pick<Routine, 'name' | 'target' | 'text' | 'everyMinutes' | 'dailyAt' | 'enabled'> & {
+  id?: string;
+  /** first run right away instead of one period from now */
+  runNow?: boolean;
+  once?: boolean;
+};
+
 export interface InboxItem {
   id: string;
   sessionId: string;
@@ -314,6 +344,9 @@ export type ClientMessage =
   /** Claude Code sessions under a folder (answer: claude.sessions) / bring picked ones in */
   | { type: 'claude.sessions.list'; path: string }
   /** a message from the user for a session that is not running: it is started (resumed) and gets it when ready */
+  | { type: 'routine.save'; routine: RoutineInput }   // create (no id) or update
+  | { type: 'routine.delete'; id: string }
+  | { type: 'routine.run'; id: string }               // send now (counts as a run)
   | { type: 'session.message'; id: string; text: string }
   /** type a message into a running session now: bracketed paste + Enter, Enter again if it did not submit */
   | { type: 'session.paste'; id: string; text: string }
@@ -380,7 +413,8 @@ export interface FsEntry {
 }
 
 export type ServerMessage =
-  | { type: 'welcome'; daemonPid: number; version: string; projects: Project[]; sessions: Session[]; inbox: InboxItem[]; usage: UsageInfo[]; agents: AgentDef[]; ledger: TaskRec[]; restorable: { at: number; ids: string[] } }
+  | { type: 'welcome'; daemonPid: number; version: string; projects: Project[]; sessions: Session[]; inbox: InboxItem[]; usage: UsageInfo[]; agents: AgentDef[]; ledger: TaskRec[]; routines: Routine[]; restorable: { at: number; ids: string[] } }
+  | { type: 'routines'; routines: Routine[] }
   | { type: 'usage.report'; report: UsageReport }
   /** answer to project.export: the .agento file contents */
   | { type: 'project.exported'; name: string; data: string }

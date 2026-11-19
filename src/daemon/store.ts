@@ -3,7 +3,7 @@
  */
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
-import { PROJECT_COLORS, type AutopilotState, type Folder, type InboxItem, type Project, type Session, type SessionStatus, type AgentKind } from '@shared/protocol';
+import { PROJECT_COLORS, type AutopilotState, type Folder, type InboxItem, type Project, type Routine, type Session, type SessionStatus, type AgentKind } from '@shared/protocol';
 import path from 'node:path';
 import { dbPath, ensureDir, dataDir } from './paths';
 import { ensureMemory, memoryPath } from './memory';
@@ -23,6 +23,19 @@ interface FolderRow {
   path: string;
   name: string;
   auto_trust: number | null;
+}
+interface RoutineRow {
+  id: string;
+  name: string;
+  target: string;
+  text: string;
+  every_min: number | null;
+  daily_at: string | null;
+  enabled: number;
+  next_at: number;
+  runs: number;
+  last_run_at: number | null;
+  created_at: number;
 }
 interface SessionRow {
   id: string;
@@ -104,6 +117,19 @@ CREATE TABLE IF NOT EXISTS sessions (
   args TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id);
+CREATE TABLE IF NOT EXISTS routines (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  target TEXT NOT NULL,
+  text TEXT NOT NULL,
+  every_min INTEGER,
+  daily_at TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  next_at INTEGER NOT NULL,
+  runs INTEGER NOT NULL DEFAULT 0,
+  last_run_at INTEGER,
+  created_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS inbox (
   id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL,
@@ -160,6 +186,33 @@ function rowToSession(r: SessionRow): StoredSession {
 
 function rowToFolder(f: FolderRow): Folder {
   return { id: f.id, projectId: f.project_id, path: f.path, name: f.name, ...(f.auto_trust ? { autoTrust: true } : {}) };
+}
+
+/** a routine of the 1.x team build aimed at a project / head coach has no session to type into: it is skipped */
+function rowToRoutine(r: RoutineRow): Routine | undefined {
+  let target: { sessionId?: string };
+  try {
+    target = JSON.parse(r.target) as { sessionId?: string };
+  } catch {
+    return undefined;
+  }
+  if (!target.sessionId) return undefined;
+  const once = r.name.startsWith('Once · ');
+  const out: Routine = {
+    id: r.id,
+    name: once ? r.name.slice('Once · '.length) : r.name,
+    target: { sessionId: target.sessionId },
+    text: r.text,
+    enabled: r.enabled === 1,
+    nextAt: r.next_at,
+    runs: r.runs,
+    createdAt: r.created_at
+  };
+  if (once) out.once = true;
+  if (r.every_min != null) out.everyMinutes = r.every_min;
+  if (r.daily_at != null) out.dailyAt = r.daily_at;
+  if (r.last_run_at != null) out.lastRunAt = r.last_run_at;
+  return out;
 }
 
 function rowToInbox(r: InboxRow): InboxItem {
@@ -419,6 +472,44 @@ export class Store {
   getFolder(id: string): Folder | undefined {
     const r = this.stmt('SELECT * FROM folders WHERE id = ?').get(id) as FolderRow | undefined;
     return r ? rowToFolder(r) : undefined;
+  }
+
+  /* ---------- routines (scheduled messages) ---------- */
+
+  listRoutines(): Routine[] {
+    return (this.stmt('SELECT * FROM routines ORDER BY created_at').all() as RoutineRow[]).map(rowToRoutine).filter((r): r is Routine => !!r);
+  }
+
+  getRoutine(id: string): Routine | undefined {
+    const r = this.stmt('SELECT * FROM routines WHERE id = ?').get(id) as RoutineRow | undefined;
+    return r ? rowToRoutine(r) : undefined;
+  }
+
+  saveRoutine(r: Routine): void {
+    this.stmt(
+      `INSERT INTO routines (id, name, target, text, every_min, daily_at, enabled, next_at, runs, last_run_at, created_at)
+       VALUES (@id, @name, @target, @text, @every_min, @daily_at, @enabled, @next_at, @runs, @last_run_at, @created_at)
+       ON CONFLICT(id) DO UPDATE SET name=excluded.name, target=excluded.target, text=excluded.text,
+         every_min=excluded.every_min, daily_at=excluded.daily_at, enabled=excluded.enabled, next_at=excluded.next_at,
+         runs=excluded.runs, last_run_at=excluded.last_run_at`
+    ).run({
+      id: r.id,
+      // a one-time message is marked in its name (the column set has no flag for it)
+      name: r.once ? `Once · ${r.name}` : r.name,
+      target: JSON.stringify(r.target),
+      text: r.text,
+      every_min: r.everyMinutes ?? null,
+      daily_at: r.dailyAt ?? null,
+      enabled: r.enabled ? 1 : 0,
+      next_at: r.nextAt,
+      runs: r.runs,
+      last_run_at: r.lastRunAt ?? null,
+      created_at: r.createdAt
+    });
+  }
+
+  deleteRoutine(id: string): void {
+    this.stmt('DELETE FROM routines WHERE id = ?').run(id);
   }
 
   updateFolder(id: string, folderPath: string, name: string): void {

@@ -326,6 +326,7 @@ Tokens keep being used until then.`
       {live && item('Hibernate', () => send({ type: 'session.hibernate', id: s.id }))}
       {s.status === 'hibernated' && item('Resume', () => send({ type: 'session.resume', id: s.id }))}
       {item('Restart', () => send({ type: 'session.restart', id: s.id }))}
+      {item('Scheduled messages…', () => useStore.getState().openSchedule(s.id))}
       {s.agent === 'claude' &&
         item(
           s.mode === 'headless' ? 'Run in a Terminal (screen; same conversation)' : 'Run Headless (chat only, JSON in / out; same conversation)',

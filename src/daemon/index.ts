@@ -28,6 +28,7 @@ import { TranscriptTail, findTranscript } from './transcript';
 import { Team } from './team';
 import { KeepAwake } from './keepawake';
 import { pruneRuntimes } from './runtime';
+import { Routines } from './routines';
 import { HolderClient } from './holderClient';
 import { exportProject, importProject } from './projectfile';
 import { importClaudeSessions, listClaudeSessions } from './claudeimport';
@@ -308,6 +309,9 @@ async function main(): Promise<void> {
     pushInbox()
   );
   team.removeTeamInstructions();
+  // scheduled messages: typed into their session on schedule, with or without a window
+  const routines = new Routines(store, sessions, team, (list) => broadcast({ type: 'routines', routines: list }));
+  sessions.on('removed', (id) => routines.forgetSession(id));
   sessions.launchExtras = (s) => team.launchExtras(s);
   sessions.launchEnv = (s) => team.launchEnv(s);
   team.ledger.onChange = (changed) => broadcast({ type: 'ledger.delta', upsert: changed });
@@ -328,6 +332,7 @@ async function main(): Promise<void> {
       if (killSessions) store.setKv('lastLive', { at: Date.now(), ids: sessions.list().filter((x) => sessions.isLive(x.id)).map((x) => x.id) });
       sessions.dispose();
       keepAwake.dispose();
+      routines.dispose();
       // a plain shutdown / restart keeps the sessions: their holders carry the processes to the next daemon
       if (killSessions) sessions.killAll();
       else sessions.detachAll();
@@ -437,6 +442,15 @@ async function main(): Promise<void> {
         sendTo(ws, { type: 'chat.created', id: session.id });
         return;
       }
+      case 'routine.save':
+        routines.save(msg.routine);
+        return;
+      case 'routine.delete':
+        routines.delete(msg.id);
+        return;
+      case 'routine.run':
+        routines.run(msg.id);
+        return;
       case 'session.message':
         typed(msg.id);
         team.message(msg.id, msg.text);
@@ -714,6 +728,7 @@ async function main(): Promise<void> {
           usage: collectUsage(),
           agents,
           ledger: team.ledger.list(),
+          routines: routines.list(),
           restorable: restorable(),
         });
         log.info(`client connected (${msg.client}); clients=${clients.size}`);

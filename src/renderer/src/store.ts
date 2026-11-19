@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { useGitSubjects } from '@/lib/gitSubjects';
-import type { AgentConnection, ClaudeSessionInfo, FsEntry, InboxItem, Project, ServerMessage, Session, SessionLast, SessionStatus, TaskRec, UsageInfo, UsageReport } from '@shared/protocol';
+import type { AgentConnection, ClaudeSessionInfo, FsEntry, InboxItem, Project, Routine, ServerMessage, Session, SessionLast, SessionStatus, TaskRec, UsageInfo, UsageReport } from '@shared/protocol';
 import type { AgentDefEx } from '@shared/extra';
 import { emitTerm } from '@/lib/termbus';
 import { appendBuffer, dropBuffer, setBuffer } from '@/lib/buffers';
@@ -76,6 +76,10 @@ export interface AppState {
   activity: ActivityView;
   paletteOpen: boolean;
   paletteMode: 'quick' | 'command';
+  /** scheduled messages (the daemon sends them on schedule) */
+  routines: Routine[];
+  /** the session whose scheduled messages the dialog shows (null = closed) */
+  scheduleFor: string | null;
   newSessionOpen: boolean;
   newSessionPreset: NewSessionPreset;
   /** Import Claude Code Sessions dialog (open with an optional folder) and the sessions the daemon found */
@@ -115,6 +119,8 @@ export interface AppState {
   setActivity(a: ActivityView): void;
   openPalette(mode: 'quick' | 'command'): void;
   closePalette(): void;
+  openSchedule(sessionId: string): void;
+  closeSchedule(): void;
   openNewSession(preset?: NewSessionPreset): void;
   closeNewSession(): void;
   openImportClaude(at?: { projectId?: string; folderId?: string }): void;
@@ -207,6 +213,8 @@ export const useStore = create<AppState>((set, get) => ({
   activity: 'projects',
   paletteOpen: false,
   paletteMode: 'quick',
+  routines: [],
+  scheduleFor: null,
   newSessionOpen: false,
   newSessionPreset: {},
   importClaude: null,
@@ -237,6 +245,7 @@ export const useStore = create<AppState>((set, get) => ({
           sessions,
           inbox: msg.inbox,
           ledger: new Map((msg.ledger ?? []).map((r) => [r.key, r])),
+          routines: msg.routines ?? [],
           restorable: msg.restorable ?? { at: 0, ids: [] },
           usage: msg.usage,
           agents: msg.agents as AgentDefEx[],
@@ -311,6 +320,9 @@ export const useStore = create<AppState>((set, get) => ({
         set({ lastInfo });
         break;
       }
+      case 'routines':
+        set({ routines: msg.routines });
+        break;
       case 'ledger.delta': {
         const ledger = new Map(get().ledger);
         for (const r of msg.upsert) ledger.set(r.key, r);
@@ -423,6 +435,8 @@ export const useStore = create<AppState>((set, get) => ({
   },
   openPalette: (mode) => set({ paletteOpen: true, paletteMode: mode }),
   closePalette: () => set({ paletteOpen: false }),
+  openSchedule: (sessionId) => set({ scheduleFor: sessionId }),
+  closeSchedule: () => set({ scheduleFor: null }),
   openNewSession: (preset) => set({ newSessionOpen: true, newSessionPreset: preset ?? {} }),
   closeNewSession: () => set({ newSessionOpen: false }),
   openImportClaude: (at) => set({ importClaude: at ?? {}, claudeSessions: null }),
