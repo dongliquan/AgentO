@@ -5,11 +5,10 @@ import { pcStyle, projectColor } from '@/lib/format';
 export function useProjectFilter(value: string): { only: string; rootOf: (sessionId: string) => string | undefined } {
   const projects = useStore((s) => s.projects);
   const sessions = useStore((s) => s.sessions);
-  const only = projects.some((p) => p.id === value && !p.parentId && !p.closed) ? value : '';
+  const only = projects.some((p) => p.id === value && !p.closed) ? value : '';
   const rootOf = (sessionId: string): string | undefined => {
     const s = sessions.get(sessionId);
-    const p = s ? projects.find((x) => x.id === s.projectId) : undefined;
-    return p?.parentId ?? p?.id;
+    return s ? projects.find((x) => x.id === s.projectId)?.id : undefined;
   };
   return { only, rootOf };
 }
@@ -17,7 +16,7 @@ export function useProjectFilter(value: string): { only: string; rootOf: (sessio
 /** A row of project chips (All + each open project) that narrows the list below it. */
 export function ProjectFilter({ value, onChange }: { value: string; onChange: (id: string) => void }): JSX.Element | null {
   const projects = useStore((s) => s.projects);
-  const tops = projects.filter((p) => !p.parentId && !p.closed);
+  const tops = projects.filter((p) => !p.closed);
   const { only } = useProjectFilter(value);
   if (tops.length < 2) return null;
   return (

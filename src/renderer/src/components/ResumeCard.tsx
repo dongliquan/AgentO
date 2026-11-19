@@ -3,7 +3,7 @@ import { useStore } from '@/store';
 import { send } from '@/client';
 import { selectAndReveal } from '@/commands';
 import { useClosedSessionIds } from '@/lib/closed';
-import { dayTime, displayTitle, pcStyle, projectColor, relativeTime, rootProject } from '@/lib/format';
+import { dayTime, displayTitle, pcStyle, projectColor, relativeTime } from '@/lib/format';
 import { useNow } from '@/lib/hooks';
 
 /**
@@ -50,7 +50,7 @@ export function ResumeCard(): JSX.Element | null {
   if (rows.length === 0 && wasRunning.length === 0) return null;
   const shown = all ? rows : rows.slice(0, SHOWN);
   const projectOf = (projectId: string): { name: string; color: string } | undefined => {
-    const p = rootProject(projectId, projects);
+    const p = projects.find((x) => x.id === projectId);
     return p ? { name: p.name, color: projectColor(p.id, projects) } : undefined;
   };
   const resumeAll = (): void => {

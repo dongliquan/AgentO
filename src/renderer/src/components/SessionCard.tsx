@@ -5,9 +5,7 @@ import { useStore } from '@/store';
 import { send } from '@/client';
 import { countUse } from '@/lib/uiUsage';
 import { exportSession, focusTerminal, removeSession, selectAndReveal } from '@/commands';
-import { AGENT_LABELS, agentColor, basename, formatElapsed, displayTitle, rootProject } from '@/lib/format';
-import { RoleTag } from './RoleTag';
-import { DelegationChip, useDelegations } from './Delegations';
+import { AGENT_LABELS, agentColor, basename, formatElapsed, displayTitle, projectOf } from '@/lib/format';
 import { ModelChip } from './ModelChip';
 import { useNeedsIds } from './NeedsYou';
 import { lastLines } from '@/lib/ansi';
@@ -142,7 +140,6 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
     });
   };
 
-  const handedOut = useDelegations((st) => st.byCoach.get(s.id)?.length ?? 0);
   const showTerminal = layout !== 'board' || zoom >= 0.6;
   // status and role show in the header only (badge, tag); the card border stays plain
   const cls = ['card', layout === 'board' ? '' : layout, selected ? 'selected' : '']
@@ -172,8 +169,6 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
     >
       <div className="card-header" onPointerDown={onHeaderDown} onDoubleClick={() => { select(s.id); setFocusMode(true); }} title="Double-click for Focus view (rename: F2 or the ⋯ menu)">
         <AgentIcon kind={s.agent} color={s.color} size={16} />
-        <RoleTag s={s} />
-        {s.role !== 'player' && <DelegationChip id={s.id} />}
         {editing ? (
           <input
             className="title-input"
@@ -202,7 +197,7 @@ function SessionCardImpl({ session, layout, zoom = 1, selected }: Props): JSX.El
         )}
         <ContextSize session={s} />
         {needsYou && <span className="needs-badge" title="Waiting for your decision — answer in its chat">Needs you</span>}
-        <StatusBadge status={s.status} attention={s.attention} compact={s.w < 300} waitingOn={handedOut} />
+        <StatusBadge status={s.status} attention={s.attention} compact={s.w < 300} />
         <button
           className="card-menu-btn"
           title="Menu"
@@ -254,9 +249,9 @@ function Preview({ sessionId }: { sessionId: string }): JSX.Element {
 function Footer({ session: s, onAnswer, onFocusMode }: { session: Session; onAnswer: () => void; onFocusMode: () => void }): JSX.Element {
   const now = useNow(1000);
   const live = s.status === 'working' || s.status === 'waiting' || s.status === 'starting';
-  // this session carries its project on by itself (Autopilot without a Coach)
+  // this session carries its project on by itself (Autopilot)
   const apHere = useStore((st) => {
-    const r = rootProject(s.projectId, st.projects);
+    const r = projectOf(s.projectId, st.projects);
     return r?.autopilot?.on === true && r.autopilot.leadId === s.id;
   });
   return (
@@ -306,10 +301,8 @@ function CardMenu({ session: s, x, y, onClose }: { session: Session; x: number; 
     </button>
   );
   const live = s.status === 'working' || s.status === 'waiting' || s.status === 'starting';
-  const projectHasCoach = useStore((st) => [...st.sessions.values()].some((o) => o.role === 'coach' && o.projectId === s.projectId));
-  // Autopilot for this one session: a project without a Coach is carried on by the session itself
-  const root = useStore((st) => rootProject(s.projectId, st.projects));
-  const rootHasHead = useStore((st) => !!root && [...st.sessions.values()].some((o) => o.role === 'head' && o.projectId === root.id));
+  // Autopilot for this one session: it carries its project on by itself
+  const root = useStore((st) => projectOf(s.projectId, st.projects));
   const autopilot = root?.autopilot;
   const apOnHere = autopilot?.on === true && autopilot.leadId === s.id;
   const toggleAutopilot = (): void => {
@@ -347,14 +340,12 @@ Tokens keep being used until then.`
       {s.agent === 'claude' && !!s.prevResumeIds?.length && item('Restore Earlier Conversation', () => restoreEarlier(s))}
       {live && item('Force Kill', () => send({ type: 'session.kill', id: s.id }), 'danger')}
       <div className="sep" />
-      {s.role === 'player' && item('Duplicate', () => send({ type: 'session.create', projectId: s.projectId, folderId: s.folderId, agent: s.agent, title: `${s.title} (copy)`, cols: 100, rows: 30 }))}
+      {item('Duplicate', () => send({ type: 'session.create', projectId: s.projectId, folderId: s.folderId, agent: s.agent, title: `${s.title} (copy)`, cols: 100, rows: 30 }))}
       {item('Open Folder', () => void window.desktop.openPath(s.cwd))}
       {item('Open in VS Code', () => void window.desktop.openInVsCode(s.cwd))}
       {item('External Terminal', () => void window.desktop.openExternalTerminal(s.cwd))}
       {item('Export Log', () => exportSession(s.id))}
-      {s.agent === 'claude' && s.role === 'player' && root && !rootHasHead && item(apOnHere ? 'Autopilot: Turn off' : 'Autopilot: keep going while I am away…', toggleAutopilot)}
-      {s.role === 'player' && !projectHasCoach && item('Make Coach', () => send({ type: 'session.setRole', id: s.id, role: 'coach' }))}
-      {s.role === 'coach' && s.folderId && item('Back to Player', () => send({ type: 'session.setRole', id: s.id, role: 'player' }))}
+      {s.agent === 'claude' && root && item(apOnHere ? 'Autopilot: Turn off' : 'Autopilot: keep going while I am away…', toggleAutopilot)}
       <div className="sep" />
       {item('Remove Session', () => {
         removeSession(s.id);

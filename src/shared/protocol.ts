@@ -30,24 +30,21 @@ export interface AgentDef {
 }
 
 /**
- * A project (one piece of work, e.g. "Shop") or, when parentId is set, a part of one (planning, development, QA).
- * Head coaches belong to a top-level project; coaches and players to a part (or to a project without parts).
- */
-/**
- * Autopilot: the project goes on without the manager — its Coach decides open questions itself (and records them),
- * is told to carry on when it stops with work left, and the run ends with `AUTOPILOT DONE`, a pause, or no progress.
+ * Autopilot: one session carries the project on without the manager — it decides open questions itself (and records
+ * them), is told to carry on when it stops with work left, and the run ends with `AUTOPILOT DONE`, a pause, or no
+ * progress.
  */
 export interface AutopilotState {
   on: boolean;
   /** when it was switched on */
   since: number;
-  /** how many times the Coach was told to carry on (since it was switched on) */
+  /** how many times the session was told to carry on (since it was switched on) */
   continues: number;
   /** the last time it was told to carry on, or finished */
   lastAt?: number;
   /** why it is off (finished / paused / no progress), or the last thing it did */
   note?: string;
-  /** a single session carries the project on (no Coach): the session that does the work itself */
+  /** the session that carries the project on */
   leadId?: string;
 }
 
@@ -56,15 +53,13 @@ export interface Project {
   name: string;
   createdAt: number;
   folders: Folder[];
-  /** set for a part: the project it belongs to (one level only) */
-  parentId?: string;
-  /** closed: its sessions are stopped (resumable) and its routines paused; hidden from the Ground and the tree */
+  /** closed: its sessions are stopped (resumable); hidden from the Ground and the tree */
   closed?: boolean;
-  /** a top-level project's color (parts use their project's): tags, tree, Ground frame, Orders tab */
+  /** the project's color: tags, tree, Ground frame */
   color?: string;
-  /** a top-level project's memory file (team/memory/<id>.md): the short shared note its sessions get at start */
+  /** the project's memory file (team/memory/<id>.md): the short shared note its sessions get at start */
   memory?: string;
-  /** a top-level project's autopilot (see AutopilotState) */
+  /** the project's autopilot (see AutopilotState) */
   autopilot?: AutopilotState;
 }
 
@@ -106,59 +101,14 @@ export interface Folder {
   projectId: string;
   path: string;
   name: string;
-  /** team sessions started here answer Claude's folder-trust prompt automatically (set by the demo setup) */
+  /** sessions started here answer Claude's folder-trust prompt automatically */
   autoTrust?: boolean;
 }
 
-/**
- * Team hierarchy (a football club). The user is the manager and gives orders. head: optional head coach over every
- * project · coach: optional per project (or a player promoted to playing coach) · player: does the work.
- * All of them reach the daemon's MCP tools; see src/daemon/team.ts.
- */
-export type SessionRole = 'head' | 'coach' | 'player';
-
-/**
- * A repeating order (e.g. the daily stand-up). The daemon sends it on schedule even with no UI open.
- * `{day}` / `{run}` in the text become the run number (1, 2, …).
- */
-export interface Routine {
-  id: string;
-  name: string;
-  target: TeamOrderTarget;
-  text: string;
-  /** every N minutes … */
-  everyMinutes?: number;
-  /** … or every day at "HH:MM" (local time) */
-  dailyAt?: string;
-  enabled: boolean;
-  nextAt: number;
-  runs: number;
-  lastRunAt?: number;
-  createdAt: number;
-}
-
-export type RoutineInput = Pick<Routine, 'name' | 'target' | 'text' | 'everyMinutes' | 'dailyAt' | 'enabled'> & {
-  id?: string;
-  /** first run right away instead of one period from now */
-  runNow?: boolean;
-  /** run once at the next "daily at" time, then remove itself (a scheduled to-do) */
-  once?: boolean;
-};
-
-/** Who receives an order from the Orders panel. */
-export type TeamOrderTarget =
-  | { kind: 'all' }                          // every project's head coach (or, without one, each part's lead)
-  | { kind: 'project'; projectId: string }   // project: its head coach (or its parts' leads) · part: its coach (or first player)
-  | { kind: 'projects'; projectIds: string[] } // several projects at once: each one's recipients, told which other projects got it too
-  | { kind: 'session'; sessionId: string };
-
 export interface Session {
   id: string;
-  /** '' for the head coach (it belongs to no project) */
   projectId: string;
-  /** '' for the head coach and dedicated coaches (they run in their own team folder); a playing coach keeps its folder */
   folderId: string;
-  role: SessionRole;
   cwd: string;
   agent: AgentKind;
   title: string;
@@ -188,7 +138,7 @@ export interface Session {
   h: number;
   cols: number;
   rows: number;
-  /** its place among its part's sessions (tree order, Ground order); unset = by creation time */
+  /** its place among its project's sessions (tree order, Ground order); unset = by creation time */
   order?: number;
   /**
    * Claude: how the CLI runs — tui: in a terminal (the card shows its screen); headless: `claude -p` with JSON in and
@@ -238,7 +188,7 @@ export interface TaskRec {
   key: string;
   /** "#T12" */
   id: string;
-  /** top-level project id the number belongs to ('' for the team head coach's counter) */
+  /** the project the number belongs to */
   projectId: string;
   /** sender: a session id, or 'user' */
   from: string;
@@ -319,8 +269,8 @@ export interface UsageBucket {
 export interface UsageSessionInfo {
   key: string;
   title: string;
-  /** head · coach · player · outside */
-  role: string;
+  /** false: a Claude conversation outside AgentO */
+  inAgento: boolean;
   agent: string;
   projectId: string;
   /** largest / latest context (input + cache) of one call, in tokens */
@@ -349,21 +299,19 @@ export type PermissionScope = 'once' | 'tool' | 'session' | 'folder';
 
 export type ClientMessage =
   | { type: 'hello'; token: string; client: 'ui' | 'cli' }
-  | { type: 'project.create'; name: string; parentId?: string } // parentId: create a part of that project
+  | { type: 'project.create'; name: string }
   | { type: 'project.delete'; id: string }
-  /** close a top-level project with its parts (stop sessions, pause routines) / open it again */
+  /** close a project (stop its sessions) / open it again */
   | { type: 'project.close'; id: string }
   | { type: 'project.open'; id: string }
   | { type: 'project.setColor'; id: string; color: string }
-  /** leadId: without a Coach, the one session that carries the project on by itself */
+  /** leadId: the session that carries the project on */
   | { type: 'project.autopilot'; id: string; on: boolean; leadId?: string }
   | { type: 'project.rename'; id: string; name: string }
-  /** Tasks: mark one of the manager's orders (its directive record id) done, or open again */
-  | { type: 'order.done'; id: string; done: boolean }
   /** save a project to a file (the daemon answers this client with project.exported) / open a saved one */
   | { type: 'project.export'; id: string }
   | { type: 'project.import'; data: string }
-  /** Claude Code sessions under a folder (answer: claude.sessions) / bring picked ones in as players */
+  /** Claude Code sessions under a folder (answer: claude.sessions) / bring picked ones in */
   | { type: 'claude.sessions.list'; path: string }
   /** a message from the user for a session that is not running: it is started (resumed) and gets it when ready */
   | { type: 'session.message'; id: string; text: string }
@@ -387,33 +335,18 @@ export type ClientMessage =
   | { type: 'chat.new'; agent: AgentKind }
   /** Agents › Connections: re-detect the CLIs and report their install / sign-in state (answer: agents.status) */
   | { type: 'agents.status' }
-  /** drag and drop in the tree: into a project / part (another part moves it there), before another session */
+  /** drag and drop in the tree: into a project, before another session */
   | { type: 'session.move'; id: string; projectId: string; beforeId?: string }
-  | { type: 'project.move'; id: string; beforeId?: string }   // reorder a project among its siblings (a part among its project's parts)
+  | { type: 'project.move'; id: string; beforeId?: string }   // reorder a project among the others
   /** store an image (base64) for an order / message; answered with attachment.saved (same ref) */
   | { type: 'attachment.save'; ref: string; name: string; data: string }
-  /**
-   * Start a new project from an order: AgentO creates the project, its folders and its head coach, and hands it the
-   * brief; the head coach designs the parts and creates the players. plan: report the plan and wait for the go.
-   */
-  | { type: 'project.start'; name: string; folders: string[]; text: string; plan: boolean }
-  /** create the project's head coach if needed and have it organize the sessions into parts with coaches */
-  | { type: 'team.organize'; projectId: string }
   | { type: 'claude.sessions.import'; projectId: string; folderId: string; ids: string[]; titles?: Record<string, string> }
   | { type: 'folder.add'; projectId: string; path: string; autoTrust?: boolean }
   | { type: 'folder.remove'; id: string }
   /** point a project folder at another place on disk (sessions already in it keep their own working folder) */
   | { type: 'folder.update'; id: string; path: string }
   | { type: 'session.create'; projectId: string; folderId: string; agent: AgentKind; title?: string; command?: string; args?: string[]; cols?: number; rows?: number; mode?: SessionMode; model?: string }
-  | { type: 'head.create'; projectId?: string }      // one head coach per top-level project
-  | { type: 'coach.create'; projectId: string; agent?: 'claude' | 'codex' | 'gemini' } // one coach per project; default claude
-  /** player ⇄ playing coach; quiet: a stopped session is not woken for the note (it rides along with its next work) */
-  | { type: 'session.setRole'; id: string; role: 'coach' | 'player'; quiet?: boolean }
-  | { type: 'team.order'; target: TeamOrderTarget; text: string; task?: boolean }      // the user's order; task: added as a task (Tasks › Add Task)
   | { type: 'usage.report'; days: number; outside: boolean }   // Manager › Usage: token report for the last `days` days
-  | { type: 'routine.save'; routine: RoutineInput }   // create (no id) or update
-  | { type: 'routine.delete'; id: string }
-  | { type: 'routine.run'; id: string }               // run now (counts as a run)
   | { type: 'session.input'; id: string; data: string }
   | { type: 'session.resize'; id: string; cols: number; rows: number }
   | { type: 'session.attach'; id: string }          // request scrollback replay
@@ -447,11 +380,8 @@ export interface FsEntry {
 }
 
 export type ServerMessage =
-  | { type: 'welcome'; daemonPid: number; version: string; projects: Project[]; sessions: Session[]; inbox: InboxItem[]; usage: UsageInfo[]; agents: AgentDef[]; routines: Routine[]; ledger: TaskRec[]; restorable: { at: number; ids: string[] }; doneOrders: Record<string, number>; taskOrders: string[] }
-  /** Tasks: the manager's orders marked done (order record id → when) and the ones added as tasks explicitly */
-  | { type: 'orders.done'; done: Record<string, number>; tasks: string[] }
+  | { type: 'welcome'; daemonPid: number; version: string; projects: Project[]; sessions: Session[]; inbox: InboxItem[]; usage: UsageInfo[]; agents: AgentDef[]; ledger: TaskRec[]; restorable: { at: number; ids: string[] } }
   | { type: 'usage.report'; report: UsageReport }
-  | { type: 'routines'; routines: Routine[] }
   /** answer to project.export: the .agento file contents */
   | { type: 'project.exported'; name: string; data: string }
   | { type: 'claude.sessions'; path: string; items: ClaudeSessionInfo[] }

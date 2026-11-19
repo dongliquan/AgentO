@@ -4,10 +4,8 @@ import { useStore, ZOOM_MAX, ZOOM_MIN } from '@/store';
 import { fitAll, newSessionFor, zoomBy } from '@/commands';
 import { SessionCard } from './SessionCard';
 import { Minimap } from './Minimap';
-import { GroundLinks } from './GroundLinks';
 import { GroundGroups, useGroupLayout } from './GroundGroups';
 import { kbd } from '@/lib/keys';
-import { teamOnly, useTeamMode } from '@/lib/teamMode';
 
 const GRID = 24;
 
@@ -293,8 +291,7 @@ export function Board(): JSX.Element {
   // collapsed groups hide their cards (shown as a small box instead)
   const groups = useGroupLayout();
   const gridSize = GRID * zoom;
-  const team = useTeamMode((t) => t.team);
-  const list = [...sessions.values()].filter((s) => team || !teamOnly(s));
+  const list = [...sessions.values()];
 
   return (
     <div
@@ -306,7 +303,6 @@ export function Board(): JSX.Element {
     >
       <div className="board-canvas" style={{ transform: `translate(${snap(panX)}px, ${snap(panY)}px) scale(${zoom})` }}>
         <GroundGroups layout={groups} />
-        {team && <GroundLinks layout={groups} />}
         {list.filter((s) => !groups.hidden.has(s.id)).map((s) => (
           <SessionCard key={s.id} session={s} layout="board" zoom={zoom} selected={selectedId === s.id} />
         ))}

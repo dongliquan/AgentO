@@ -23,8 +23,6 @@ export const AUTO_FRESH = process.env['AGENTO_AUTO_FRESH'] !== '0';
 // players 150K (was 200K, 2026-10-27): the project memory now carries the rules, map and decisions, so a shorter
 // conversation loses little — and every turn re-reads all of it
 export const AUTO_MIN_CONTEXT = Math.max(20_000, Number(process.env['AGENTO_AUTO_FRESH_MIN'] || 150_000) || 150_000);
-/** head coaches / coaches sooner: every report that reaches them re-reads their whole conversation */
-export const AUTO_MIN_CONTEXT_COORD = Math.max(20_000, Number(process.env['AGENTO_AUTO_FRESH_MIN_COORD'] || 100_000) || 100_000);
 /** a conversation younger than this is left alone (no loop of restarts), and it must have been idle this long */
 export const AUTO_MIN_GAP_MS = 3 * 3600_000;
 /** idle this long, and not open on screen: shortly before it would be auto-hibernated (30 min) anyway */

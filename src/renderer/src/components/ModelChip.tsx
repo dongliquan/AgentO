@@ -80,7 +80,7 @@ export function ModelChip({ session: s }: { session: Session }): JSX.Element | n
             )}
             <button className={`item ${!s.modelPref ? 'on' : ''}`} onClick={() => set('')}>
               <span>Default</span>
-              <span className="muted model-note">{s.agent !== 'claude' ? 'the CLI’s default' : s.role === 'player' ? 'Opus 5.5' : 'the coordinator default (Sonnet)'}</span>
+              <span className="muted model-note">{s.agent !== 'claude' ? 'the CLI’s default' : 'Opus 5.5'}</span>
             </button>
           </div>
         </>,

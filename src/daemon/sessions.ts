@@ -5,14 +5,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
-import type { AgentKind, InboxItem, PermissionRequest, Session, SessionMode, SessionRole, SessionStatus } from '@shared/protocol';
+import type { AgentKind, InboxItem, PermissionRequest, Session, SessionMode, SessionStatus } from '@shared/protocol';
 import { HEADLESS_ARGS, assistantText, toolResultText, toolSummary, toolUses, type StreamJson } from './stream';
 import { HolderClient, type HolderInfo } from './holderClient';
 import { Store, type StoredSession } from './store';
 import { defaultShell, findClaudeResumeId, getAgentDef, resolveCommand } from './agents';
 import { findTranscript } from './transcript';
 import { logsDir } from './paths';
-import { cardSize } from '@shared/layout';
+import { CARD_PORTRAIT } from '@shared/layout';
 import { plainTerminalLines } from '@shared/plaintext';
 import { LIMIT_RE, PROMPT_RE, limitResetText } from '@shared/prompts';
 import { transcriptInfo } from './freshstart';
@@ -27,16 +27,6 @@ const MIN_WORKING_FOR_INBOX_MS = 3000;
 const AUTO_HIBERNATE_MIN = Math.max(1, Number(process.env['ASM_HIBERNATE_MIN'] || 30) || 30);
 
 const OSC_TITLE_RE = /\x1b\](?:0|2);([^\x07\x1b]*)(?:\x07|\x1b\\)/g;
-/** new team sessions (players, coaches) run headless unless switched off; the manager's own sessions stay in a terminal */
-const HEADLESS_DEFAULT = process.env['AGENTO_HEADLESS'] !== '0';
-/**
- * A team player whose title says it reads, researches, documents or tests (rather than builds) starts on Sonnet: the same
- * work for far less usage than the Opus default. Stored as its model pick (visible and changeable on its card);
- * AGENTO_AUTO_MODEL=0 switches it off.
- */
-const AUTO_MODEL = process.env['AGENTO_AUTO_MODEL'] !== '0';
-const LIGHT_ROLE = /조사|분석|검토|리뷰|리서치|문서|정리|기획|테스트|검증|\bQA\b|research|review|analy[sz]|audit|\bdocs?\b|\btest/i;
-const LIGHT_MODEL = 'claude-sonnet-5-5';
 
 /** a headless session's tool call waiting for the manager */
 interface PendingPermission extends PermissionRequest {
@@ -48,7 +38,6 @@ export interface CreateSessionOpts {
   folderId: string;
   cwd: string;
   agent: AgentKind;
-  role?: SessionRole;
   title?: string;
   command?: string;
   args?: string[];
@@ -58,7 +47,7 @@ export interface CreateSessionOpts {
   prompt?: string;
   /** Ground position of the card (default: the first free slot) */
   at?: { x: number; y: number };
-  /** Claude: terminal or headless (default: headless for team roles, terminal otherwise) */
+  /** Claude: terminal or headless (default: terminal) */
   mode?: SessionMode;
   /** the manager's model pick (a Claude / Codex model id); absent = the team default (never the CLI's, which may be Fable) */
   modelPref?: string;
@@ -135,15 +124,6 @@ export class SessionManager extends EventEmitter {
         store.upsertSession(s);
       }
       HolderClient.clearExit(s.id);
-      // head coach cards had other sizes (wide, earlier 1.5x): reshape a stored one about its centre
-      const head = cardSize('head', s.projectId);
-      if (s.role === 'head' && (s.w !== head.w || s.h !== head.h)) {
-        s.x = Math.round(s.x + (s.w - head.w) / 2);
-        s.y = Math.round(s.y + (s.h - head.h) / 2);
-        s.w = head.w;
-        s.h = head.h;
-        store.upsertSession(s);
-      }
       this.readConversation(s);
       this.sessions.set(s.id, s);
       this.buffers.set(s.id, this.loadLogTail(s.id));
@@ -169,13 +149,13 @@ export class SessionManager extends EventEmitter {
   /** Optional hook so the server can tell us which sessions have a UI attached. */
   isAttached: (id: string) => boolean = () => false;
 
-  /** Extra CLI args per launch (team sessions get their MCP connection and project folders); set by the server. */
+  /** Extra CLI args per launch (the MCP connection, project memory and folders); set by the server. */
   launchExtras: (s: StoredSession) => string[] = () => [];
 
   /** True when a 'waiting' transition should not raise an inbox item (team work in progress); set by the server. */
   quietWaiting: (s: StoredSession) => boolean = () => false;
 
-  /** Extra environment per launch (e.g. the MCP bearer token for a Codex coach); set by the server. */
+  /** Extra environment per launch (e.g. the MCP bearer token for Codex); set by the server. */
   launchEnv: (s: StoredSession) => Record<string, string> = () => ({});
 
   /* ---------- queries ---------- */
@@ -664,9 +644,9 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * Where a new card goes on the Ground. A player joins its project (parts included): the first grid cell (3 columns)
-   * from the project's top-left that touches no card and stays out of every other project's area. A project's first
-   * card, or one that finds no such cell, goes to the right of everything. Team sessions: first cell clear of any card.
+   * Where a new card goes on the Ground. A session joins its project: the first grid cell (3 columns) from the
+   * project's top-left that touches no card and stays out of every other project's area. A project's first card, or one
+   * that finds no such cell, goes to the right of everything. projectId null: the first cell clear of any card.
    */
   private freeSlot(projectId: string | null, w: number, h: number): { x: number; y: number } {
     const GAP = 40;
@@ -682,15 +662,13 @@ export class SessionManager extends EventEmitter {
       return { x: GAP, y: GAP };
     }
     if (all.length === 0) return { x: GAP, y: GAP };
-    const projects = this.store.listProjects();
-    const rootOf = (id: string): string => projects.find((p) => p.id === id)?.parentId || id;
-    const root = rootOf(projectId);
-    const own = all.filter((o) => rootOf(o.projectId) === root);
+    const root = projectId;
+    const own = all.filter((o) => o.projectId === root);
     // other projects' areas, with room for their group frame (GroundGroups draws a padded box around the cards)
     const PAD = 160;
     const areas = new Map<string, { x0: number; y0: number; x1: number; y1: number }>();
     for (const o of all) {
-      const r = rootOf(o.projectId);
+      const r = o.projectId;
       if (r === root) continue;
       const a = areas.get(r) ?? { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
       areas.set(r, { x0: Math.min(a.x0, o.x), y0: Math.min(a.y0, o.y), x1: Math.max(a.x1, o.x + o.w), y1: Math.max(a.y1, o.y + o.h) });
@@ -716,16 +694,14 @@ export class SessionManager extends EventEmitter {
   create(opts: CreateSessionOpts): Session {
     const def = getAgentDef(opts.agent);
     const now = Date.now();
-    const role = opts.role ?? 'player';
-    const size = cardSize(role, opts.projectId);
-    const pos = opts.at ?? this.freeSlot(role === 'player' ? opts.projectId : null, size.w, size.h);
+    const size = CARD_PORTRAIT;
+    const pos = opts.at ?? this.freeSlot(opts.projectId, size.w, size.h);
     const s: StoredSession = {
       id: randomUUID(),
       projectId: opts.projectId,
       folderId: opts.folderId,
       cwd: opts.cwd,
       agent: opts.agent,
-      role,
       title: opts.title?.trim() || `${def.label} · ${path.basename(opts.cwd) || opts.cwd}`,
       color: def.color,
       status: 'starting',
@@ -741,9 +717,8 @@ export class SessionManager extends EventEmitter {
     if (opts.command) s.command = opts.command;
     if (opts.args) s.args = opts.args;
     if (opts.modelPref && /^[\w.:\[\]-]{1,80}$/.test(opts.modelPref)) s.modelPref = opts.modelPref;
-    if (AUTO_MODEL && !s.modelPref && role === 'player' && opts.role === 'player' && opts.agent === 'claude' && !opts.command && LIGHT_ROLE.test(s.title)) s.modelPref = LIGHT_MODEL;
-    // Claude: team roles run headless by default (JSON in / out, no screen); the manager's own sessions in a terminal
-    if (opts.agent === 'claude' && !opts.command) s.mode = opts.mode ?? (opts.role && HEADLESS_DEFAULT ? 'headless' : 'tui');
+    // Claude: in a terminal unless headless was asked for (JSON in / out, no screen)
+    if (opts.agent === 'claude' && !opts.command) s.mode = opts.mode ?? 'tui';
     this.buffers.set(s.id, '');
     this.save(s);
     try {
@@ -762,8 +737,8 @@ export class SessionManager extends EventEmitter {
     const def = getAgentDef(opts.agent);
     const now = Date.now();
     // no saved layout: a free spot like a new session
-    const size = { w: opts.w ?? cardSize(opts.role ?? 'player', opts.projectId).w, h: opts.h ?? cardSize(opts.role ?? 'player', opts.projectId).h };
-    // (clear of every card: imports land in several parts at once)
+    const size = { w: opts.w ?? CARD_PORTRAIT.w, h: opts.h ?? CARD_PORTRAIT.h };
+    // (clear of every card)
     const pos = opts.x !== undefined && opts.y !== undefined ? { x: opts.x, y: opts.y } : this.freeSlot(null, size.w, size.h);
     const s: StoredSession = {
       id: randomUUID(),
@@ -771,7 +746,6 @@ export class SessionManager extends EventEmitter {
       folderId: opts.folderId,
       cwd: opts.cwd,
       agent: opts.agent,
-      role: opts.role ?? 'player',
       title: opts.title?.trim() || def.label,
       color: opts.color ?? def.color,
       status: opts.resumeId ? 'hibernated' : 'done',
@@ -839,13 +813,6 @@ export class SessionManager extends EventEmitter {
     return this.live.get(id)?.sinceInput ?? '';
   }
 
-  setRole(id: string, role: SessionRole): void {
-    const s = this.sessions.get(id);
-    if (!s) throw new Error('Session not found');
-    s.role = role;
-    this.save(s);
-  }
-
   setOrder(id: string, order: number): void {
     const s = this.sessions.get(id);
     if (!s || s.order === order) return;
@@ -853,7 +820,7 @@ export class SessionManager extends EventEmitter {
     this.save(s, false);
   }
 
-  /** Into another project / part (its working folder stays: the folder is registered there too). */
+  /** Into another project (its working folder stays: the folder is registered there too). */
   moveTo(id: string, projectId: string, folderId: string): void {
     const s = this.sessions.get(id);
     if (!s) throw new Error('Session not found');

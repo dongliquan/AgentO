@@ -40,7 +40,7 @@ function signedIn(kind: AgentKind): boolean | null {
 }
 
 const NOTES: Partial<Record<AgentKind, string>> = {
-  codex: 'Sign in with a ChatGPT plan (Plus, Pro, Team…). Used for coaches; coding stays on Claude.',
+  codex: 'Sign in with a ChatGPT plan (Plus, Pro, Team…).',
   gemini:
     'Personal Google plans (free, AI Pro, Ultra) can no longer use Gemini CLI since 2026-06-18 — it needs Gemini Code ' +
     'Assist Standard / Enterprise (or a paid API key).'

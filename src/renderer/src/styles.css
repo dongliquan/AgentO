@@ -429,9 +429,7 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 /* sender chips (team feed, chat team bubbles) */
 .team-chip { display: inline-block; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 6px; border-radius: 10px; font-size: 11px; font-weight: 600; line-height: 18px; background: var(--panel2); color: var(--text); }
 .team-chip.manager { background: color-mix(in srgb, var(--role-manager) 16%, transparent); color: var(--role-manager); }
-.team-chip.head { background: color-mix(in srgb, var(--role-head) 16%, transparent); color: var(--role-head); }
 .team-chip.project { background: color-mix(in srgb, var(--pc) 16%, transparent); color: color-mix(in srgb, var(--pc) 75%, var(--text)); }
-.team-chip.coach { background: color-mix(in srgb, var(--role-coach) 16%, transparent); color: var(--role-coach); }
 .team-chip.player { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
 .team-chip.notice { background: var(--panel2); color: var(--muted); }
 /* chat: a message from the team instead of a plain user prompt */
@@ -465,7 +463,6 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
   position: absolute; z-index: 20; right: 12px; top: 12px; box-shadow: var(--shadow-sm); width: 160px; height: 100px;
   background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--border); border-radius: 5px; overflow: hidden;
 }
-.minimap .mm-part { position: absolute; border: 1px dashed color-mix(in srgb, var(--pc) 70%, transparent); border-radius: 2px; }
 .minimap .mm-project { position: absolute; border: 1px solid var(--pc); border-radius: 3px; background: color-mix(in srgb, var(--pc) 14%, transparent); }
 .minimap .mm-rect { position: absolute; border-radius: 1px; opacity: 0.8; }
 .minimap .mm-view { position: absolute; border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
@@ -476,22 +473,12 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
   box-shadow: var(--shadow-sm); overflow: hidden;
 }
-/* Cards keep the plain border in every state and role; status and role show only in the header (badge, tag). */
-.role-tag {
-  flex: none; padding: 0 5px; border-radius: 3px; font-size: 10px; font-weight: 600; line-height: 16px;
-  color: var(--panel); text-transform: uppercase; letter-spacing: 0.04em;
-}
-.role-tag.head { background: var(--role-head); }
-.role-tag.manager { background: var(--role-manager); }
-/* a project's Coach: its project's color */
-.role-tag.project { background: var(--pc); color: #fff; }
+/* Cards keep the plain border in every state; status shows only in the header (badge). */
 /* the manager row sits above the PROJECTS header (the user is above every project) */
 .sidebar-manager { display: flex; align-items: center; gap: 6px; height: var(--toolbar-h); padding: 0 10px; flex: none; cursor: pointer; border-bottom: 1px solid var(--border); font-size: 13px; }
 .sidebar-manager:hover { background: var(--panel2); }
 .sidebar-manager .label { flex: 1; font-weight: 600; }
 .manager-ico { width: 16px; text-align: center; color: var(--role-manager); }
-.role-tag.coach { background: var(--role-coach); }
-.role-tag.player { background: var(--muted); }
 .inbox-item .ic.directive { color: var(--role-head); }
 .inbox-item .ic.report { color: var(--role-coach); }
 /* Orders tab: the user's order box + team feed */
@@ -1674,7 +1661,7 @@ button.tl-all { color: var(--accent); border-color: var(--border); }
 .chat-choice-card.limit { border-left-color: var(--warn); }
 .chat-choice-card.limit .chat-choice-kind { color: var(--warn); }
 .status-dot.limit { background: var(--warn); opacity: 0.8; }
-.status-badge.limit, .role-tag.limit { color: var(--warn); }
+.status-badge.limit { color: var(--warn); }
 .toolbar-sep { flex: none; width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
 /* Split: the picked session's cell is outlined (and scrolled into view) */
 /* the selected ring is on the card only (.card.selected), not on the project › part strip */
@@ -1692,7 +1679,6 @@ button.tl-all { color: var(--accent); border-color: var(--border); }
 .tab-project .pc-dot { width: 8px; height: 8px; }
 .tab-project .count { font-size: 10px; font-weight: 700; color: var(--pc); background: color-mix(in srgb, var(--pc) 14%, transparent); border-radius: 8px; padding: 0 5px; line-height: 15px; }
 .tabstrip { box-shadow: inset 3px 0 0 var(--pc); }
-.tab-part { flex: none; font-size: 10px; font-weight: 700; color: var(--pc); background: color-mix(in srgb, var(--pc) 12%, transparent); border-radius: 3px; padding: 0 4px; line-height: 15px; }
 /* a pan to a picked session is a compositor flight along a straight path (Board.tsx flyTo); dragging and the wheel stay immediate */
 
 .dialog.settings-dialog { width: 480px; }
