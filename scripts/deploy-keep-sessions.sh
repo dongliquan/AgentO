@@ -6,13 +6,14 @@
 # aside with its sessions kept (the holders carry them), the UI of the old build is closed, the new build is started
 # (it starts its own daemon, which re-attaches to the holders), and build folders nobody uses any more are deleted.
 #
-# This deploys the 2.0 DEVELOPMENT app only: its own data folder (%APPDATA%\AgentO-2.0-dev), port 47870 and Electron
-# profile. The everyday app (the released 1.1 exe on %APPDATA%\AgentO) is never stopped, replaced or touched here.
+# 2.0 is the everyday app: it runs on %APPDATA%\AgentO. To deploy a test copy that must not touch it, set
+# AGENTO_DATA_DIR (a separate data folder, port 47870 and Electron profile are used then).
 #
 # usage: bash scripts/deploy-keep-sessions.sh        (from the repo root, in Git Bash)
 set -u
-DEV_DATA="$APPDATA/AgentO-2.0-dev"
+DEV_DATA="${AGENTO_DATA_DIR:-$APPDATA/AgentO}"
 mkdir -p "$DEV_DATA"
+DATA_TAG="$(basename "$DEV_DATA")"
 cd "$(dirname "$0")/.." || exit 1
 NEW="dist-$(date +%m%d%H%M)"
 echo "building into $NEW"
@@ -25,7 +26,7 @@ TMP="$(cygpath -m "${TMPDIR:-/tmp}")"
 cat > "$TMP/agento-stop-keep.cjs" <<'EOF'
 const WebSocket = require(process.cwd() + '/node_modules/ws');
 const fs = require('fs');
-const info = JSON.parse(fs.readFileSync(process.env.APPDATA + '/AgentO-2.0-dev/daemon.json', 'utf8'));
+const info = JSON.parse(fs.readFileSync(process.env.AGENTO_DATA_DIR ? process.env.AGENTO_DATA_DIR + '/daemon.json' : process.env.APPDATA + '/AgentO/daemon.json', 'utf8'));
 const ws = new WebSocket('ws://127.0.0.1:' + info.port);
 ws.on('open', () => {
   ws.send(JSON.stringify({ type: 'hello', token: info.token, client: 'cli' }));
@@ -41,7 +42,12 @@ powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { \
 sleep 2
 
 # the Claude Code shell exports variables that stop Electron from starting as an app
-powershell -NoProfile -Command "Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue; Remove-Item Env:NoDefaultCurrentDirectoryInExePath -ErrorAction SilentlyContinue; \$env:AGENTO_DATA_DIR='$(cygpath -w "$DEV_DATA")'; \$env:ASM_PORT='47870'; Start-Process '$(cygpath -w "$PWD")\\$NEW\\win-unpacked\\AgentO.exe' -ArgumentList '--user-data-dir=$(cygpath -w "$DEV_DATA")'"
+if [ -n "${AGENTO_DATA_DIR:-}" ]; then
+  # a test copy: its own data folder, port and Electron profile
+  powershell -NoProfile -Command "Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue; Remove-Item Env:NoDefaultCurrentDirectoryInExePath -ErrorAction SilentlyContinue; \$env:AGENTO_DATA_DIR='$(cygpath -w "$DEV_DATA")'; \$env:ASM_PORT='47870'; Start-Process '$(cygpath -w "$PWD")\\$NEW\\win-unpacked\\AgentO.exe' -ArgumentList '--user-data-dir=$(cygpath -w "$DEV_DATA")'"
+else
+  powershell -NoProfile -Command "Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue; Remove-Item Env:NoDefaultCurrentDirectoryInExePath -ErrorAction SilentlyContinue; Remove-Item Env:AGENTO_DATA_DIR -ErrorAction SilentlyContinue; Remove-Item Env:ASM_PORT -ErrorAction SilentlyContinue; Start-Process '$(cygpath -w "$PWD")\\$NEW\\win-unpacked\\AgentO.exe'"
+fi
 sleep 15
 grep "daemon starting" "$DEV_DATA/daemon.log" | tail -1
 

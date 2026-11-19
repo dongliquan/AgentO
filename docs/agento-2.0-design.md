@@ -212,6 +212,7 @@ hr { border: 0; margin: 2.2em 0 }   /* 선 없이 여백만 — 챕터 구분은
 <tr style="background:#ffffff"><td><b>D14</b></td><td>Hibernate 기본값</td><td>자동(유휴 시) · 수동만 · 안전 조건을 만족할 때만 자동</td><td><b>초기 기본값 Manual Only(수동만)</b>, 측정 후 자동 Hibernate 허용(「유휴 때 자동」은 선택), 「항상 유지」 지정 가능. Wake 전에 점검하고 불확실하면 「Recovery Required」(A.4, 3.1·4.3과 맞춤)</td></tr>
 <tr style="background:#f8f9fa"><td><b>D15</b></td><td>기본 작업 화면</td><td>Ground(지금) · Focused Workspace(세션 하나 + Active Task)</td><td><b>Focused를 기본, Ground는 고급 배치.</b> 하단에 Task Inbox(Needs You · Running · Blocked · 오늘 완료). 7장·D11과 함께 정한다</td></tr>
 <tr style="background:#ffffff"><td><b>D16</b></td><td>「이어서 하기」 동작을 몇 가지로 나눠 보여 줄까</td><td>지금(세 가지: 재연결 · 대화 재개 · 새로 시작) · 네 가지(+ Task Switch / Context Refresh)</td><td><b>네 동작을 UI와 로그에서 구분</b>(Task Switch, Context Refresh, Fresh start, Wake). 4.1의 세 뜻에 두 가지를 더한다</td></tr>
+<tr style="background:#f8f9fa"><td><b>D17</b></td><td>앱 업데이트 방식</td><td>지금처럼 수동 설치 · 새 버전 알림만 · 자동 업데이트(세션 유지)</td><td><b>새 버전 알림 + 수동 설치부터.</b> 자동 업데이트는 코드 서명과 실행 중인 홀더 보호(4.4, 9.3)가 정해진 뒤. 로드맵 5단계 이후</td></tr>
 </tbody>
 </table>
 
@@ -531,7 +532,20 @@ hr { border: 0; margin: 2.2em 0 }   /* 선 없이 여백만 — 챕터 구분은
 4. 쓰이지 않는 이전 빌드 폴더를 지운다.
 5. `killSessions`는 사용자가 명시적으로 요청할 때만 쓴다.
 
-- D9가 풀리면(고정 런타임) 2번과 4번이 단순해진다.
+- **D9 구현됨(2026-11-19)**: 홀더는 빌드 폴더가 아니라 데이터 폴더의 복사본(`%APPDATA%\AgentOuntime\<키>`, 약 330MB: Electron, 홀더 스크립트, node-pty)에서 실행된다(`runtime.ts`). 키는 홀더가 실행하는 모든 파일의 해시라서 홀더가 바뀔 때만 새로 만든다. 그래서 배포하면 빌드 폴더를 바로 지울 수 있고, 새로 시작하는 세션부터 적용된다(떠 있던 세션은 한 번 재시작해야 옮겨 간다). 못 쓰면 빌드 폴더로 돌아간다(`AGENTO_HOLDER_RUNTIME=0`으로 끔). 안 쓰는 복사본은 30분마다 지운다.
+
+**앱 업데이트 (D17)**
+
+- 지금은 앱 안에 업데이트 기능이 없다(`electron-updater` 없음, 2차 TODO). 배포 사용자는 태그 `v*`를 푸시했을 때 GitHub 워크플로가 만든 exe를 받아 직접 설치한다.
+- 업데이트에서 지킬 것: 실행 중인 세션을 끊지 않는다. 설치 파일이 실행 중인 홀더가 쓰는 폴더를 덮어쓰면 안 된다(4.4).
+- 서명되지 않은 exe는 자동 업데이트가 막히거나 경고가 뜰 수 있어, 서명 여부가 방식 선택을 좌우한다.
+
+**개발 폴더와 환경 (2026-11-19에 겪은 혼선)**
+
+- 매일 쓰는 앱과 개발 중인 앱을 같은 데이터 폴더에 섞지 않는다. 개발 앱은 별도 데이터 폴더, 포트, Electron 프로필로 띄운다(`scripts/run-2.0.cmd`, `deploy-keep-sessions.sh`).
+- 2.0을 매일 쓰는 앱으로 바꾸는 것은 개발 앱을 직접 확인한 뒤 한 번에 한다. 그때 실제 데이터를 백업하고, 폴더는 `C:\ClaudeCode\AgentO` 하나로 합친다(빌드 폴더는 그 안의 `dist-*`).
+- 작업 폴더(worktree)에 `node_modules` junction을 걸지 않는다. 지우는 도구가 junction을 따라가 원본을 비운 사고가 있었다(`npm ci`로 복구).
+- 브랜치: `main` = 개발선, `release/x.y` + 태그 `vX.Y.Z` = 릴리스. 임시 브랜치와 worktree는 합친 뒤 바로 지운다.
 
 ### <span class="n3">9.4</span> 보안
 
