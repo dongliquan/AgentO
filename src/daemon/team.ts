@@ -142,6 +142,11 @@ function codexSandboxChosen(): boolean {
 }
 
 /** Terminal output as plain text: cursor moves become spacing (Claude Code's TUI positions words with CSI n G/C). */
+/** the raw output with its cursor-move / colour codes turned into spaces: a cheap text to test words against ("new[1Cdirectory" reads "new directory") */
+function flatOutput(raw: string): string {
+  return raw.replace(/\[[0-9;?]*[A-Za-z]/g, ' ');
+}
+
 function plainTerminal(raw: string): string {
   return plainTerminalLines(raw)
     .filter((l, i, a) => l.trim() !== '' || (i > 0 && a[i - 1]?.trim() !== ''))
@@ -310,16 +315,17 @@ export class Team {
    */
   private autoTrust(id: string): void {
     const s = this.sessions.get(id);
+    if (s && s.agent === 'claude' && !s.pid && /new\s*directory/i.test(flatOutput(this.sessions.outputSinceInput(id)))) this.noteAddDir(id, s, 'the session has no process id yet');
     if (!s || (s.agent !== 'claude' && s.agent !== 'codex') || !s.pid) return;
     const key = `${id}:${s.pid}`;
     // cheap checks first: this runs on every output chunk
     const out = this.sessions.outputSinceInput(id);
     // every Claude session is started with AgentO's attachments folder (and a session outside its project's folders with those folders): the
     // "Adding a new directory" question can come up in any of them, whatever folder the session works in
-    if (s.agent === 'claude' && /new\s*directory/i.test(out)) this.autoAddDir(id, s, out);
+    if (s.agent === 'claude' && /new\s*directory/i.test(flatOutput(out))) this.autoAddDir(id, s, out);
     if (!this.trustable(s)) return;
     if (this.trustAnswered.has(key)) return;
-    if (!/trust/i.test(out)) return;
+    if (!/trust/i.test(flatOutput(out))) return;
     const screen = plainTerminal(out);
     const prompt = s.agent === 'claude' ? /Yes, I trust this folder/ : /Trust\s*and\s*continue/;
     if (!prompt.test(screen)) return;
@@ -343,14 +349,20 @@ export class Team {
     const screen = plainTerminal(out);
     // a long path wraps onto the next line in a narrow card: read up to the question text, across lines
     const m = /Adding a new directory:\s*([\s\S]*?)\s*This\s*session/i.exec(screen);
-    if (!m || !/Yes,\s*add\s*it/i.test(screen)) return;
+    if (!m || !/Yes,\s*add\s*it/i.test(screen)) {
+      this.noteAddDir(id, s, `dialog not readable (question ${m ? 'found' : 'missing'}, options ${/Yes,\s*add\s*it/i.test(screen) ? 'found' : 'missing'})`);
+      return;
+    }
     // the screen text has lost its spaces ("AgentOProjects"): compare without them
     const squash = (p: string): string => path.resolve(p).toLowerCase().replace(/\s+/g, '');
     const dir = squash(m[1]!);
     const roots = this.store.listProjects().flatMap((p) => p.folders.map((f) => squash(f.path)));
     roots.push(squash(path.join(os.homedir(), 'AgentO Projects')), squash(dataDir()));
     const known = roots.some((root) => dir === root || dir.startsWith(root + path.sep));
-    if (!known) return;
+    if (!known) {
+      this.noteAddDir(id, s, `folder not one of ours: ${dir}`);
+      return;
+    }
     const key = `${id}:${s.pid}:add:${dir}`;
     if (Date.now() - (this.dismissed.get(key) ?? 0) < 30_000) return;
     this.dismissed.set(key, Date.now());
@@ -361,6 +373,15 @@ export class Team {
       setTimeout(() => this.sessions.input(id, '\r'), 300);
     }, 500);
     log.info('team: added directory for', s.title, dir);
+  }
+
+  /** why the add-directory dialog was left to the user (once per process and reason: the log shows what the daemon saw) */
+  private addDirNoted = new Set<string>();
+  private noteAddDir(id: string, s: StoredSession, why: string): void {
+    const k = `${id}:${s.pid}:${why}`;
+    if (this.addDirNoted.has(k)) return;
+    this.addDirNoted.add(k);
+    log.warn('team: add-directory dialog not answered for', s.title, '—', why);
   }
 
   /** when each dialog was last dismissed in a session's process (it may come back: dismissed again after a minute) */
@@ -375,7 +396,7 @@ export class Team {
     if (!s || s.agent !== 'claude' || !s.pid) return;
     const out = this.sessions.outputSinceInput(id);
     // cheap check first: this runs on every output chunk
-    if (!/auto\s*mode/i.test(out)) return;
+    if (!/auto\s*mode/i.test(flatOutput(out))) return;
     const screen = plainTerminal(out);
     const dialog = OPTIONAL_DIALOGS.find((d) => d.test(screen));
     if (!dialog) return;
