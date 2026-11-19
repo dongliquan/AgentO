@@ -240,11 +240,19 @@ function FolderIcon({ open }: { open: boolean }): JSX.Element {
 const norm = (p: string): string => p.replace(/[\\/]+$/, '').toLowerCase().replace(/\//g, '\\');
 
 /**
- * The folders a project actually works in: a folder that contains another of its folders is left out, so a
- * parent and its subfolder never sit side by side at one level.
+ * The outermost folders of a project: one that lies inside another of its folders is already in that folder's tree (a
+ * parent and its sub-folders never sit side by side at one level), and a folder registered twice shows once. A project
+ * often lists a parent and its sub-folders (the sessions' --add-dir): the parent is what was added, so it is what shows.
  */
-export function leafFolders(folders: Folder[]): Folder[] {
-  return folders.filter((f) => !folders.some((o) => o !== f && norm(o.path).startsWith(norm(f.path) + '\\')));
+export function topFolders(folders: Folder[]): Folder[] {
+  return folders.filter((f, i) => {
+    const p = norm(f.path);
+    return !folders.some((o, j) => {
+      if (o === f) return false;
+      const q = norm(o.path);
+      return p.startsWith(q + '\\') || (p === q && j < i);
+    });
+  });
 }
 
 /** A folder's last two path parts ("work\shop-web"): where it sits, not just its name. */

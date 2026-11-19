@@ -7,7 +7,7 @@ import { useTalkProject } from '@/lib/talkFilter';
 import { AGENT_LABELS, pcStyle, projectColor } from '@/lib/format';
 import { openFile } from '@/lib/openfile';
 import { AgentPicker } from './AgentPicker';
-import { FolderTree, leafFolders, useExpanded } from './FileTree';
+import { FolderTree, topFolders, useExpanded } from './FileTree';
 
 const norm = (p: string): string => p.replace(/[\\/]+$/, '').toLowerCase().replace(/\//g, '\\');
 
@@ -87,7 +87,7 @@ export function FilesPanel(): JSX.Element {
   }, [refresh]);
 
   if (!project) return <div className="rp-body muted dock-empty">No open project. Create one in the sidebar with +.</div>;
-  const folders = leafFolders(project.folders);
+  const folders = topFolders(project.folders);
   const pick = (agent: AgentKind): void => {
     if (!picker) return;
     send({ type: 'session.create', projectId: project.id, folderId: picker.folder.id, agent, title: `${AGENT_LABELS[agent]} · ${picker.folder.name}`, cols: 100, rows: 30 });
