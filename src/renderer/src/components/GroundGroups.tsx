@@ -5,7 +5,9 @@ import { useStore } from '@/store';
 import { send } from '@/client';
 import { startDrag } from '@/lib/drag';
 import { groupLayout, shownRect, type GroupLayout } from '@/lib/groups';
-import { pcStyle, projectColor, statusClass, statusLabel } from '@/lib/format';
+import { pcStyle, projectColor } from '@/lib/format';
+import { presence } from '@/lib/presence';
+import { PresenceDot } from './Presence';
 
 const PAD = 24;
 /** room above the cards for the label */
@@ -78,7 +80,7 @@ function CollapsedBox({ project, members, box, label }: { project: Project; memb
       {label}
       <div className="collapsed-dots">
         {members.map((s) => (
-          <span key={s.id} className={`status-dot ${statusClass(s)}`} title={`${s.title} · ${statusLabel(s)}`} />
+          <PresenceDot key={s.id} kind={presence(s).kind} title={`${s.title} · ${presence(s).label}`} />
         ))}
         <span className="muted">{working ? `${working} working` : 'idle'}</span>
       </div>

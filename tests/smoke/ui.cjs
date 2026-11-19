@@ -63,12 +63,9 @@ async function main() {
     if (v === 'Split') check('Split tag strip sits above the card header', await ev(`(() => { const c = document.querySelector('.split .cell'); if (!c) return true; const t = c.querySelector('.cell-tag')?.getBoundingClientRect(); const h = c.querySelector('.card-header')?.getBoundingClientRect(); return !t || !h || t.bottom <= h.top + 1; })()`));
     if (v === 'Tabs') check('Tabs has a project-group row', await ev(`document.querySelectorAll('.tab-projects .tab-project').length > 0`));
   }
-  await click('button', 'Timeline');
-  await sleep(500);
-  check('view Timeline', await ev(`!!document.querySelector('.timeline, .tl-view, [class*=timeline]')`));
   await click('.segmented button', 'Today');
   await sleep(500);
-  const today = await ev(`({ cards: [...document.querySelectorAll('.today-card h3')].map(h => h.textContent.replace(/\d+$/, '').trim()), tools: !!document.querySelector('.toolbar .btn.ghost[title^="Auto Arrange"]') })`);
+  const today = await ev(`({ cards: [...document.querySelectorAll('.today-card h3')].map(h => h.textContent.replace(/\d+$/, '').trim()), tools: !!document.querySelector('.toolbar .tool-group') })`);
   check('view Today has its four cards', ['Needs you', 'Working now', 'Done today', 'To do'].every((c) => today.cards?.some((x) => x.startsWith(c))), (today.cards || []).join(' · '));
   check('layout tools hide on Today', !today.tools);
 

@@ -7,6 +7,9 @@ import { NotifyMenu } from './Toasts';
 import { useNow } from '@/lib/hooks';
 import { useClosedSessionIds } from '@/lib/closed';
 import { kbd } from '@/lib/keys';
+import { presence, type PresenceKind } from '@/lib/presence';
+import { PresenceDot } from './Presence';
+import { useNeedsIds } from './NeedsYou';
 
 /** "claude-opus-5-5" → "Opus 5.5" */
 function shortModel(id: string | undefined): string | null {
@@ -43,8 +46,13 @@ export function StatusBar(): JSX.Element {
   // a closed project's sessions are not counted
   const closed = useClosedSessionIds();
   const list = [...sessions.values()].filter((s) => !closed.has(s.id));
-  const count = (st: string): number => list.filter((s) => s.status === st).length;
-  const waiting = count('waiting');
+  // the same states every screen shows (lib/presence): what is working, what needs the manager, what failed
+  const needsIds = useNeedsIds((n) => n.ids);
+  const kinds = list.map((s) => presence(s, needsIds.has(s.id)).kind);
+  const count = (k: PresenceKind): number => kinds.filter((x) => x === k).length;
+  const working = count('working');
+  const needs = count('needs');
+  const errors = count('error');
   const sel = selectedId ? sessions.get(selectedId) : undefined;
   const own = sel ? projects.find((p) => p.id === sel.projectId) : undefined;
   const project = own && !own.closed ? own : projects.find((p) => !p.closed);
@@ -63,16 +71,22 @@ export function StatusBar(): JSX.Element {
         </span>
       )}
       <span className="seg">{project?.name ?? '-'}</span>
-      <span className="seg" title="Working / Waiting for input / Done / Hibernated">
-        <span style={{ color: 'var(--ok)' }}>▶ {count('working') + count('starting')}</span>
-        <span style={{ color: 'var(--warn)' }}>? {waiting}</span>
-        <span>✓ {count('done')}</span>
-        <span>◌ {count('hibernated')}</span>
-        {count('error') > 0 && <span style={{ color: 'var(--err)' }}>! {count('error')}</span>}
-      </span>
-      {waiting > 0 && (
-        <span className="seg click" style={{ color: 'var(--warn)' }} onClick={gotoNextWaiting}>
-          {kbd('Go to waiting session (Ctrl+Shift+W)')}
+      {needs > 0 && (
+        <span className="seg click presence p-needs" onClick={gotoNextWaiting} title={kbd('Go to the next session that needs you (Ctrl+Shift+W)')}>
+          <PresenceDot kind="needs" />
+          {needs} need{needs === 1 ? 's' : ''} you
+        </span>
+      )}
+      {working > 0 && (
+        <span className="seg presence p-working">
+          <PresenceDot kind="working" />
+          {working} working
+        </span>
+      )}
+      {errors > 0 && (
+        <span className="seg presence p-error">
+          <PresenceDot kind="error" />
+          {errors} error{errors === 1 ? '' : 's'}
         </span>
       )}
       <span className="spacer" />
@@ -113,7 +127,7 @@ export function StatusBar(): JSX.Element {
         );
       })}
       <span className="seg click" title="Refresh usage" onClick={() => send({ type: 'usage.refresh' })}>↻</span>
-      <span className="seg click" onClick={() => setActivity('inbox')}>Inbox {unread}</span>
+      <span className="seg click" onClick={() => setActivity('inbox')} title={`Inbox — ${unread} unread notice${unread === 1 ? '' : 's'}`}>Inbox</span>
       <NotifyMenu />
       <span className="seg">{Math.round(zoom * 100)}%</span>
     </div>

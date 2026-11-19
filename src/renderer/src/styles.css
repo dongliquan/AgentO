@@ -181,7 +181,6 @@ code, pre, .mono { font-family: var(--mono); }
 .topbar.mac { padding-left: 80px; }
 .topbar .search-wrap { min-width: 0; }
 .topbar .search { -webkit-app-region: no-drag; }
-.menubar { display: flex; align-items: center; height: 100%; -webkit-app-region: no-drag; }
 .topbar .grow { flex: 1; }
 /* column resize handle (Splitter.tsx) — sits on the border between two columns */
 .splitter { position: relative; flex: none; width: 5px; margin: 0 -2px; z-index: 5; cursor: col-resize; background: transparent; }
@@ -194,8 +193,6 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 /* left column fixed (draggable via the splitter, --panels-left-w), the right one takes the rest */
 .panels-app .sidebar { flex: none; width: var(--panels-left-w, 320px); min-width: 200px; }
 .panels-app .rightpanel { flex: 1 1 0; width: auto; min-width: 260px; }
-.menubar-item { height: 26px; padding: 0 8px; border-radius: 4px; font-size: 12px; color: var(--text); }
-.menubar-item:hover, .menubar-item.open { background: var(--panel2); }
 /* in-app menu dropdowns (MenuBar.tsx): compact rows, a check column only in menus that have checkboxes */
 .menu-dropdown {
   position: fixed; z-index: 1000; min-width: 180px; padding: 4px;
@@ -519,14 +516,6 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .card-header .title { font-weight: 600; font-size: 12px; max-width: 45%; }
 .card-header .title-input { height: 20px; padding: 0 4px; font-size: 12px; width: 140px; }
 .card-header .folder { color: var(--muted); font-size: 11px; flex: 1; min-width: 0; }
-.status-badge {
-  display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 1px 6px; border-radius: 9px;
-  background: color-mix(in srgb, var(--text) 5%, transparent); color: var(--muted); white-space: nowrap;
-}
-.status-badge.working { color: var(--ok); }
-.status-badge.waiting { color: var(--warn); }
-.status-badge.error { color: var(--err); }
-.status-badge.starting { color: var(--accent); }
 .card-body { flex: 1; min-height: 0; position: relative; background: var(--term-bg); }
 .card-preview {
   position: absolute; inset: 0; padding: 6px 8px; font-family: var(--mono); font-size: 11px; line-height: 1.4;
@@ -873,7 +862,6 @@ button.tree-pc:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, t
 /* a session's icon in the tree with its state as a corner badge (no separate dot) */
 .tree-icon { position: relative; flex: none; display: inline-flex; }
 /* a coordinator waiting on work it handed out (StatusBadge "Waiting on N", the strip under its chat) */
-.status-badge.handed { color: var(--accent); }
 .status-dot.handed { background: var(--accent); }
 .deleg-strip { position: absolute; top: 8px; right: 12px; z-index: 4; width: 230px; max-height: 55%; display: flex; flex-direction: column; gap: 4px; padding: 5px 6px 6px; border: 1px solid var(--border); border-radius: 9px; background: color-mix(in srgb, var(--panel) 92%, transparent); backdrop-filter: blur(4px); box-shadow: var(--shadow-lift, var(--shadow-sm)); }
 .deleg-strip.folded { width: auto; max-height: none; padding: 2px 9px; font-size: 11px; font-weight: 600; color: var(--accent); cursor: pointer; }
@@ -993,6 +981,9 @@ button.tree-pc:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc) 35%, t
 .chat-choice-raw { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .chat-choice-foot { display: flex; justify-content: flex-end; }
 .go-btns { flex: none; display: flex; gap: 4px; align-self: flex-end; }
+/* the quick go-ahead replies show only while the message box is in use (focus inside the composer) — a Ground full of
+   cards does not carry five buttons each */
+.chat-composer:not(:focus-within) .go-btns { display: none; }
 .chat-composer .go-btn { padding-left: 9px; padding-right: 9px; white-space: nowrap; }
 .chat-composer .go-btn { background: color-mix(in srgb, var(--ok) 14%, var(--panel)); border-color: color-mix(in srgb, var(--ok) 50%, var(--border)); color: var(--ok); font-weight: 600; }
 .chat-composer .go-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--ok) 26%, var(--panel)); }
@@ -1661,7 +1652,6 @@ button.tl-all { color: var(--accent); border-color: var(--border); }
 .chat-choice-card.limit { border-left-color: var(--warn); }
 .chat-choice-card.limit .chat-choice-kind { color: var(--warn); }
 .status-dot.limit { background: var(--warn); opacity: 0.8; }
-.status-badge.limit { color: var(--warn); }
 .toolbar-sep { flex: none; width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
 /* Split: the picked session's cell is outlined (and scrolled into view) */
 /* the selected ring is on the card only (.card.selected), not on the project › part strip */
@@ -1747,3 +1737,51 @@ button.tl-all { color: var(--accent); border-color: var(--border); }
 .activity-switch button.active { color: var(--text); border-color: var(--accent); background: var(--panel-2); font-weight: 600; }
 .activity-switch .count { margin-left: 6px; font-size: 10.5px; color: var(--accent); }
 .resume-long { flex: none; padding: 0 7px; border: 1px solid var(--warn, #d9822b); border-radius: 10px; color: var(--warn, #d9822b); font-size: 10.5px; line-height: 16px; }
+
+/* Session state, the same everywhere (lib/presence.ts): one dot and one word. idle and off show no dot. */
+.pdot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
+.pdot.p-working { background: var(--ok); animation: dot-beat 1.1s ease-in-out infinite; }
+.pdot.p-needs { background: var(--warn); animation: dot-fade 1.6s ease-in-out infinite; }
+.pdot.p-limit { background: var(--warn); opacity: 0.55; }
+.pdot.p-error { background: var(--err); }
+.pdot.p-idle, .pdot.p-off { display: none; }
+.presence { display: inline-flex; align-items: center; gap: 5px; flex: none; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.presence.p-working { color: var(--ok); }
+.presence.p-needs, .presence.p-limit { color: var(--warn); }
+.presence.p-error { color: var(--err); }
+.presence.p-off { opacity: 0.75; }
+@media (prefers-reduced-motion: reduce) { .pdot.p-working, .pdot.p-needs { animation: none; } }
+
+/* the Ground / Focus tools: icons in one quiet group (no background until hovered) */
+.tool-group { display: inline-flex; align-items: center; gap: 2px; padding: 0 4px; }
+.tool-group .icon-btn:disabled { opacity: 0.35; cursor: default; }
+
+/* the app menu button (MenuBar.tsx) and the app name in the title row (M1: no menu bar) */
+.app-menu-btn { flex: none; width: 28px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted); -webkit-app-region: no-drag; }
+.app-menu-btn:hover, .app-menu-btn.open { background: var(--panel2); color: var(--text); }
+.topbar .app-name { flex: none; font-size: 12px; font-weight: 600; color: var(--text); }
+
+/* Inbox: what needs the manager on top (its own list, counted on the tab), the history below */
+.inbox-section { display: flex; align-items: center; gap: 6px; margin: 4px 0 6px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.inbox-section + .inbox-list, .inbox-section + .inbox-none { margin-bottom: 14px; }
+.inbox-section .count { color: var(--warn); }
+.inbox-none { font-size: 12px; }
+
+/* ---------- 2.0 look (design 7.5, M2 · M3): rounded from the outside in, fewer lines, a floating left sidebar ---------- */
+:root { --r-panel: 12px; --r-card: 10px; --r-ctl: 6px; --line-soft: color-mix(in srgb, var(--border) 60%, transparent); }
+/* the left sidebar floats over the canvas background: inset, rounded, a soft shadow instead of a border line */
+.app-body { background: var(--bg); }
+.app-body > .sidebar {
+  margin: 8px 0 8px 8px; border: none; border-radius: var(--r-panel); overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 6px 20px -8px var(--shadow-panel);
+}
+/* the right panel stays against the content: no line, its shadow separates it */
+.app-body > .rightpanel { border-left: none; }
+.toolbar { border-bottom-color: var(--line-soft); }
+.sidebar-header, .sidebar-manager, .sidebar-head { border-bottom-color: var(--line-soft); }
+/* cards: one step smaller radius than the panels, a lighter edge */
+.card { border-radius: var(--r-card); border-color: var(--line-soft); }
+.btn { border-radius: var(--r-ctl); }
+.segmented { border-radius: calc(var(--r-ctl) + 1px); border-color: var(--line-soft); }
+.segmented button + button { border-left-color: var(--line-soft); }
+.menu-dropdown { border-radius: var(--r-card); border-color: var(--line-soft); }

@@ -23,9 +23,10 @@ export function TopBar(): JSX.Element {
 
   return (
     <div className={`topbar ${isMac ? 'mac' : ''}`}>
-      <img className="app-logo" src={logo} alt="AgentO" title="AgentO" draggable={false} />
-      {/* macOS keeps the menu in the system menu bar */}
+      {/* macOS keeps the menu in the system menu bar; elsewhere it is one button, and the title row names the app */}
       {!isMac && <MenuBar />}
+      <img className="app-logo" src={logo} alt="" draggable={false} />
+      <span className="app-name">AgentO</span>
       <div className="search-wrap">
         <button className="search" onClick={() => openPalette('quick')} title={kbd('Ctrl+P / Ctrl+Shift+P')}>
           <span>⌕</span>

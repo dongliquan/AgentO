@@ -1,4 +1,3 @@
-import { statusClass } from '@/lib/format';
 import { useEffect, useMemo, useRef } from 'react';
 import { useStore } from '@/store';
 import { treeOrder, type SessionGroup } from '@/lib/order';
@@ -6,6 +5,8 @@ import { pcStyle } from '@/lib/format';
 import { newSessionFor } from '@/commands';
 import { SessionCard } from './SessionCard';
 import { AgentIcon } from './AgentIcon';
+import { presence } from '@/lib/presence';
+import { PresenceDot } from './Presence';
 
 const groupKey = (g: SessionGroup): string => g.project?.id ?? g.name;
 
@@ -69,7 +70,7 @@ export function TabView(): JSX.Element {
       <div className="tabstrip" style={pcStyle(activeGroup?.color ?? '#64748b')}>
         {activeGroup?.items.map(({ session: s }) => (
           <button key={s.id} className={`tab ${s.id === active?.id ? 'active' : ''}`} onClick={() => open(s.id)} title={`${s.title}\n${s.cwd}`}>
-            <span className={`status-dot ${statusClass(s)}`} />
+            <PresenceDot kind={presence(s).kind} title={presence(s).label} />
             <AgentIcon kind={s.agent} color={s.color} />
             <span className="ellipsis">{s.title}</span>
           </button>

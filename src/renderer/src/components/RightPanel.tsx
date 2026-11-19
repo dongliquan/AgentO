@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { InboxItem, Session } from '@shared/protocol';
-import { unreadCount, useStore, type RightTab } from '@/store';
+import { useStore, type RightTab } from '@/store';
 import { requestChanged, send } from '@/client';
 import { exportSession } from '@/commands';
 import { AGENT_LABELS, STATUS_LABELS, projectLabel, displayTitle, basename, formatDateTime, formatTime, relativeTime } from '@/lib/format';
@@ -10,7 +10,7 @@ import { openNeed, useNeedsIds } from './NeedsYou';
 import { RECENT_MS, RecentToggle, useRecentOnly } from './RecentToggle';
 import { useNow } from '@/lib/hooks';
 import { openFile } from '@/lib/openfile';
-import { StatusBadge } from './StatusBadge';
+import { PresenceBadge } from './Presence';
 import { AgentIcon } from './AgentIcon';
 import { ChatView, Composer } from './ChatView';
 import { TerminalView } from './TerminalView';
@@ -32,14 +32,14 @@ import { useBuffer } from '@/lib/buffers';
 const TAB_LABEL: Record<RightTab, string> = { inbox: 'Inbox', detail: 'Session', files: 'Files', web: 'Web' };
 const TAB_TITLE: Partial<Record<RightTab, string>> = {
   files: 'Files — the selected session\'s project folders; a file name clicked in a chat is shown here',
-  inbox: 'Inbox — what happened in your sessions (finished, waiting, errors)',
+  inbox: 'Inbox — what needs your decision (on top, counted on the tab), then what happened in your sessions',
   web: 'Gemini, ChatGPT on the web — your own sign-in and subscription'
 };
 
-/** Badge counts for the tab strip and the docked columns: unread (Inbox). */
+/** Badge counts for the tab strip and the docked columns: what needs the manager (Inbox) — not every unread notice. */
 function useTabCounts(): Partial<Record<RightTab, number>> {
-  const unread = useStore(unreadCount);
-  return { inbox: unread };
+  const needs = useNeedsIds((n) => n.list.length);
+  return { inbox: needs };
 }
 
 /** A tab's content (the Web tab is handled apart: its pages stay mounted). */
@@ -202,7 +202,7 @@ function Detail({ session: s }: { session: Session }): JSX.Element {
         <div className="rp-title">
           <AgentIcon kind={s.agent} color={s.color} size={16} />
           <span className="ellipsis" style={{ flex: 1 }} title={s.title}>{displayTitle(s)}</span>
-          <StatusBadge status={s.status} attention={s.attention} />
+          <PresenceBadge session={s} />
           {!termMode && (
             <button
               className={`icon-btn ${searchOpen || query ? 'on' : ''}`}
@@ -328,7 +328,9 @@ function Inbox(): JSX.Element {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [recentOnly, setRecentOnly] = useRecentOnly();
   const cutoff = Date.now() - RECENT_MS;
-  const scoped = inbox.filter(forUser).filter((it) => !only || rootOf(it.sessionId) === only);
+  // what waits for the manager has its own list on top; the history below is everything else
+  const needsShown = needs.filter((n) => !only || rootOf(n.sessionId) === only);
+  const scoped = inbox.filter(forUser).filter((it) => !needItems.has(it.id)).filter((it) => !only || rootOf(it.sessionId) === only);
   const older = recentOnly ? scoped.filter((it) => it.createdAt < cutoff).length : 0;
   const items = scoped
     .filter((it) => !recentOnly || it.createdAt >= cutoff)
@@ -355,8 +357,42 @@ function Inbox(): JSX.Element {
         <SearchBox value={query} onChange={setQuery} count={items.length} placeholder="Search the inbox" />
       </div>
       <div className="rp-body" ref={body}>
+      <div className="inbox-section">
+        <span>Needs you</span>
+        <span className="count">{needsShown.length}</span>
+      </div>
+      {needsShown.length === 0 ? (
+        <div className="muted inbox-none">Nothing waits for you.</div>
+      ) : (
+        <div className="inbox-list">
+          {needsShown.map((n) => {
+            const s = sessions.get(n.sessionId);
+            const line = n.text.split('\n').map((l) => l.trim()).filter(Boolean).slice(-2).join(' ').replace(/\*\*/g, '');
+            return (
+              <div key={n.key} className="inbox-item needs" title={n.text} onClick={() => openNeed(n.sessionId)}>
+                <span className="ic waiting">?</span>
+                <div className="body">
+                  <div className="st">
+                    {s && s.projectId && <span className="project-tag" style={pcStyle(projectColor(s.projectId, projects))}>{projectLabel(s.projectId, projects)}</span>}
+                    <span className="ellipsis inbox-who">{s ? displayTitle(s) : '(deleted session)'}</span>
+                    <span className="inbox-label">{n.kind === 'prompt' ? 'Needs input' : n.kind === 'context' ? 'Large chat' : 'Asks you'}</span>
+                    <span className="time" title={formatDateTime(n.at)}>{relativeTime(n.at, now)}</span>
+                    <button className="btn sm ghost inbox-open" title="Open the session's conversation (to answer it)" onClick={(e) => { e.stopPropagation(); openNeed(n.sessionId); }}>
+                      Open
+                    </button>
+                  </div>
+                  <div className="tx">{line}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div className="inbox-section">
+        <span>History</span>
+      </div>
       {items.length === 0 ? (
-        <div className="muted" style={{ fontSize: 12 }}>{query ? 'No matches.' : only ? 'No notifications for this project.' : 'No notifications.'}</div>
+        <div className="muted inbox-none">{query ? 'No matches.' : only ? 'No notifications for this project.' : 'No notifications.'}</div>
       ) : (
         <div className="inbox-list">
           {items.map((it) => {
@@ -365,14 +401,13 @@ function Inbox(): JSX.Element {
             const v = inboxViewOf(it, s?.title);
             const who = !s ? '(deleted session)' : displayTitle(s);
             return (
-            <div key={it.id} className={`inbox-item ${it.read ? '' : 'unread'} ${needItems.has(it.id) ? 'needs' : ''} ${expanded.has(it.id) ? 'open' : ''}`} onClick={() => toggle(it)}>
+            <div key={it.id} className={`inbox-item ${it.read ? '' : 'unread'} ${expanded.has(it.id) ? 'open' : ''}`} onClick={() => toggle(it)}>
               <span className={`ic ${it.kind}`}>{KIND_ICON[it.kind]}</span>
               <div className="body">
                 <div className="st">
                   {s && s.projectId && <span className="project-tag" style={pcStyle(projectColor(s.projectId, projects))} title={projectLabel(s.projectId, projects)}>{projectLabel(s.projectId, projects)}</span>}
                   <span className="ellipsis inbox-who">{who}</span>
                   <span className={`inbox-label ${v.tone}`}>{v.label}</span>
-                  {needItems.has(it.id) && <span className="needs-badge">Needs you</span>}
                   <span className="time" title={formatDateTime(it.createdAt)}>{relativeTime(it.createdAt, now)}</span>
                   <CopyButton text={v.body} title="Copy this notification" />
                   {sessions.has(it.sessionId) && (

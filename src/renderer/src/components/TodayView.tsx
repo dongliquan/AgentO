@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '@/store';
-import { pcStyle, projectColor, relativeTime, statusClass } from '@/lib/format';
+import { pcStyle, projectColor, relativeTime } from '@/lib/format';
 import { useNow } from '@/lib/hooks';
 import { selectAndReveal } from '@/commands';
 import { useNeedsIds, openNeed } from './NeedsYou';
 import { useTodos, saveTodos, newTodo } from '@/lib/todos';
 import { AwayCard } from './AwayCard';
 import { ResumeCard } from './ResumeCard';
+import { presence } from '@/lib/presence';
+import { PresenceDot } from './Presence';
 
 const NEED_LABEL = { prompt: 'Prompt', question: 'Question', context: 'Large chat' } as const;
 
@@ -94,7 +96,7 @@ export function TodayView(): JSX.Element {
             const p = projectOf(s.id);
             return (
               <button key={s.id} className="today-row" onClick={() => selectAndReveal(s.id)}>
-                <span className={`status-dot ${statusClass(s)}`} />
+                <PresenceDot kind={presence(s).kind} title={presence(s).label} />
                 {p && <span className="today-proj" style={pcStyle(p.color)}>{p.name}</span>}
                 <span className="today-title ellipsis">{s.title}</span>
                 <span className="today-text muted">{s.status === 'working' || s.status === 'starting' ? 'working' : ''}</span>

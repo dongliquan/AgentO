@@ -4,7 +4,9 @@ import { useStore } from '@/store';
 import { send } from '@/client';
 import { siteHost, siteOf, useWebPages, WEB_PARTITION, WEB_SITES, WEB_ZOOM, type WebPage } from '@/lib/webpages';
 import { closedSessionIds } from '@/lib/closedIds';
-import { displayTitle, statusClass } from '@/lib/format';
+import { displayTitle } from '@/lib/format';
+import { presence } from '@/lib/presence';
+import { PresenceDot } from './Presence';
 
 /** The bits of Electron's <webview> element a web page uses. */
 interface WebviewEl extends HTMLElement {
@@ -184,7 +186,7 @@ function SessionPick({ text, source, onClose }: { text: string; source: string; 
               onClose();
             }}
           >
-            <span className={`status-dot ${statusClass(s)}`} />
+            <PresenceDot kind={presence(s).kind} title={presence(s).label} />
             <span className="ellipsis">{displayTitle(s)}</span>
           </button>
         ))}
