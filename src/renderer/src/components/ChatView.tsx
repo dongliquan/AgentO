@@ -800,7 +800,25 @@ function readArrowChoice(screen: string[]): { question: string; context: string[
 type Choice = { question: string; context: string[]; options: ChoiceOption[]; limit?: boolean };
 
 function readChoice(screen: string[]): Choice | null {
-  return readSetupDialog(screen) ?? readNumberedChoice(screen) ?? readArrowChoice(screen);
+  return readSetupDialog(screen) ?? readAddDirDialog(screen) ?? readNumberedChoice(screen) ?? readArrowChoice(screen);
+}
+
+/**
+ * Claude Code's "Adding a new directory: <folder> — is this a directory you trust?" (No, exit is selected): a session
+ * started with --add-dir stops here and takes every message as a key press. Yes is ↓ + Enter; No would end the session.
+ */
+function readAddDirDialog(screen: string[]): { question: string; context: string[]; options: ChoiceOption[] } | null {
+  const text = screen.join(' ').replace(/\s+/g, ' ');
+  const m = /Adding a new directory:\s*(.+?)\s*This\s*session/i.exec(text);
+  if (!m || !/Yes,\s*add\s*it/i.test(text)) return null;
+  return {
+    question: 'Claude Code asks whether it may use another folder (trust it?) — messages cannot reach the session until this is answered.',
+    context: [m[1]!],
+    options: [
+      { n: '1', label: 'Yes, add it', current: false, keys: '\x1b[B\r' },
+      { n: '2', label: 'No, exit — this ends the session', current: true, keys: '\r' }
+    ]
+  };
 }
 
 /** Claude Code waiting for the usage limit to reset: nothing to answer — shown as that, with a way to stop waiting. */

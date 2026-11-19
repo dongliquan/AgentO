@@ -369,6 +369,8 @@ export class SessionManager extends EventEmitter {
       // positional prompt before the variadic options (--add-dir, --mcp-config, --allowedTools)
       if (s.agent === 'claude' && mode === 'fresh' && prompt) args = [...args, prompt];
       args = [...args, ...this.launchExtras(s)];
+      // inline mode: the Codex screen scrolls back like any terminal (its full-screen mode keeps no scrollback)
+      if (s.agent === 'codex') args = ['--no-alt-screen', ...args];
     }
     if (!command) throw new Error('No command specified');
     const resolved = resolveCommand(command);
@@ -909,6 +911,12 @@ export class SessionManager extends EventEmitter {
     setTimeout(() => {
       if (this.live.get(id) !== live || this.taken(id, sent)) return;
       // busy: it took the message (or is still taking in the paste) — look again later, press nothing now
+      // a question with "No, exit" selected is open: Enter would answer it (No) instead of submitting the message
+      const tail = plainTerminalLines((this.buffers.get(id) ?? '').slice(-8_000)).slice(-14).join(' ');
+      if (/No,\s*exit/i.test(tail)) {
+        this.confirmSubmit(id, live, sent, tries + 1);
+        return;
+      }
       if (this.sessions.get(id)?.status === 'waiting') {
         log.warn('session: the message was not submitted, pressing Enter again', id);
         live.holder.write('\r');

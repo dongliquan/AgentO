@@ -237,6 +237,56 @@ async function main() {
   const oldCall = await mcp(oldInfo, sid, 'tools/list', {});
   check('team tools still reachable at the old address', sameAddr && (oldCall?.result?.tools ?? []).length > 0, sameAddr ? 'same port and token' : `port ${oldInfo.port}→${info.port}, token ${oldInfo.token === info.token ? 'same' : 'changed'}`);
 
+  // ---------- failures: the daemon dies hard, the CLI dies, the holder dies ----------
+  const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const holderInfo = () => { try { return JSON.parse(fs.readFileSync(path.join(dataDir, 'holders', `${sid}.json`), 'utf8')); } catch { return null; } };
+  const liveStatus = (st) => st === 'waiting' || st === 'working';
+  const takesInput = async (word) => {
+    c.send({ type: 'session.attach', id: sid });
+    await sleep(800);
+    c.send({ type: 'session.input', id: sid, data: `echo ${word}\r` });
+    return !!(await c.waitFor((m) => m.type === 'session.data' && m.id === sid && m.data.includes(word), 10000));
+  };
+  {
+    // 1. the daemon is killed hard (no shutdown message): the next daemon finds the holder and reattaches
+    const hi = holderInfo();
+    process.kill(info.pid);
+    const gone = await until(() => !alive(info.pid), 10000);
+    check('a hard-killed daemon is gone', !!gone);
+    check('the holder survives a hard-killed daemon', !!hi && alive(hi.pid));
+    info = await startDaemon();
+    c = await connect(info);
+    const w = await c.waitFor((m) => m.type === 'welcome');
+    const s1 = w?.sessions.find((x) => x.id === sid);
+    check('a new daemon reattaches after a hard kill', !!s1 && liveStatus(s1.status), s1 ? s1.status : 'session missing');
+    check('the session takes input after a hard kill', await takesInput('smoke-after-hard-kill'));
+  }
+  {
+    // 2. only the CLI inside the holder dies: the session ends (it is recorded, not left looking alive) and can be restarted
+    const hi = holderInfo();
+    const mark = c.msgs.length;
+    if (hi?.childPid) process.kill(hi.childPid);
+    const ended = await c.waitFor((m) => m.type === 'session.upsert' && m.session.id === sid && !liveStatus(m.session.status), 15000);
+    check('a CLI that exits alone is recorded as ended', !!ended, ended ? `${ended.session.status}${ended.session.exitCode !== undefined ? `, code ${ended.session.exitCode}` : ''}` : 'still shown alive');
+    c.send({ type: 'session.restart', id: sid });
+    const back = await c.waitFor((m, i) => m.type === 'session.upsert' && m.session.id === sid && liveStatus(m.session.status) && c.msgs.indexOf(m) > mark + 1, 15000);
+    check('it can be restarted after that', !!back);
+    check('the restarted session takes input', await takesInput('smoke-after-cli-exit'));
+  }
+  {
+    // 3. only the holder dies (the CLI may be left behind): the daemon must not keep showing the session as alive
+    const hi = holderInfo();
+    const orphan = hi?.childPid;
+    const mark = c.msgs.length;
+    if (hi?.pid) process.kill(hi.pid);
+    const ended = await c.waitFor((m) => m.type === 'session.upsert' && m.session.id === sid && !liveStatus(m.session.status) && c.msgs.indexOf(m) > mark, 20000);
+    check('a holder that dies alone is noticed', !!ended, ended ? ended.session.status : 'still shown alive');
+    if (orphan && alive(orphan)) { try { process.kill(orphan); } catch { /* gone */ } }
+    c.send({ type: 'session.restart', id: sid });
+    const back = await c.waitFor((m) => m.type === 'session.upsert' && m.session.id === sid && liveStatus(m.session.status) && c.msgs.indexOf(m) > mark + 1, 15000);
+    check('it can be restarted after that too', !!back);
+  }
+
   // ---------- delete and stop ----------
   c.send({ type: 'project.delete', id: project.id });
   const gone = await c.waitFor((m) => m.type === 'session.removed' && m.id === sid, 10000);

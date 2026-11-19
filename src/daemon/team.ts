@@ -546,8 +546,9 @@ export class Team {
    */
   private autoAddDir(id: string, s: StoredSession, out: string): void {
     const screen = plainTerminal(out);
-    const m = /Adding a new directory:\s*(\S.*?)\s*(?:This session|$)/im.exec(screen);
-    if (!m || !/Yes, add it/.test(screen)) return;
+    // a long path wraps onto the next line in a narrow card: read up to the question text, across lines
+    const m = /Adding a new directory:\s*([\s\S]*?)\s*This\s*session/i.exec(screen);
+    if (!m || !/Yes,\s*add\s*it/i.test(screen)) return;
     // the screen text has lost its spaces ("AgentOProjects"): compare without them
     const squash = (p: string): string => path.resolve(p).toLowerCase().replace(/\s+/g, '');
     const dir = squash(m[1]!);
@@ -1688,7 +1689,7 @@ export class Team {
       report: true,
       // a head coach / coach whose turn ended after handing the work on: its real result comes later with report_up —
       // this note rides along with that instead of costing the sender a turn now
-      ...(state === 'replied' ? { ride: true } : {})
+      ...(state === 'replied' && p.delegated ? { ride: true } : {})
     });
     this.record(sender, 'report', s, `${state}: ${reply}`, true, p.task);
   }

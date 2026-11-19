@@ -26,6 +26,7 @@ import { gitChanged, listDir, readFileCapped, searchFiles, warmIndex, commitSubj
 import { TranscriptTail, findTranscript } from './transcript';
 import { Team, REVIEWER_TITLE } from './team';
 import { Routines } from './routines';
+import { KeepAwake } from './keepawake';
 import { parseDemoCommand, runDemo } from './demo';
 import { exportProject, importProject } from './projectfile';
 import { importClaudeSessions, listClaudeSessions } from './claudeimport';
@@ -283,6 +284,11 @@ async function main(): Promise<void> {
     chats.delete(id);
   };
 
+  // the computer stays awake while a session works (a locked screen is fine, a sleeping system is not)
+  const keepAwake = new KeepAwake();
+  const anyBusy = (): boolean => sessions.list().some((x) => x.status === 'working' || x.status === 'starting');
+  keepAwake.update(anyBusy());
+  sessions.on('upsert', () => keepAwake.update(anyBusy()));
   sessions.on('upsert', (session) => {
     broadcast({ type: 'session.upsert', session });
     // new conversation (restart) → fresh transcript; tell clients to reset
@@ -405,6 +411,7 @@ async function main(): Promise<void> {
       if (killSessions) store.setKv('lastLive', { at: Date.now(), ids: sessions.list().filter((x) => sessions.isLive(x.id)).map((x) => x.id) });
       sessions.dispose();
       routines.dispose();
+      keepAwake.dispose();
       // a plain shutdown / restart keeps the sessions: their holders carry the processes to the next daemon
       if (killSessions) sessions.killAll();
       else sessions.detachAll();
