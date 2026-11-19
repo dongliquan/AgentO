@@ -66,7 +66,7 @@ function emit(msg: Record<string, unknown>): void {
 }
 
 function writeInfo(): void {
-  fs.writeFileSync(infoFile, JSON.stringify({ id: spec.id, nonce: spec.nonce, pid: process.pid, childPid, pipe, kind: spec.kind, startedAt }));
+  fs.writeFileSync(infoFile, JSON.stringify({ id: spec.id, nonce: spec.nonce, pid: process.pid, childPid, pipe, kind: spec.kind, startedAt, exe: process.execPath }));
 }
 
 /** the info file still names this holder (a newer holder of the same session may have replaced it) */

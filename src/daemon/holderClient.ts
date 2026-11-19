@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { holderRuntime } from './runtime';
 import { EventEmitter } from 'node:events';
 import { holdersDir } from './paths';
 import { log } from './log';
@@ -32,6 +33,8 @@ export interface HolderInfo {
   pipe: string;
   kind: 'pty' | 'stream';
   startedAt: number;
+  /** the executable the holder runs from (a runtime copy in the data folder, or a build folder) */
+  exe?: string;
 }
 
 export interface HolderExit {
@@ -127,7 +130,8 @@ export class HolderClient extends EventEmitter {
     fs.writeFileSync(specFile, JSON.stringify({ ...spec, nonce }));
     HolderClient.clearExit(spec.id);
     const env: NodeJS.ProcessEnv = { ...process.env, ELECTRON_RUN_AS_NODE: '1' };
-    const child = spawn(process.execPath, [HolderClient.scriptPath(), specFile], { detached: true, stdio: 'ignore', env, windowsHide: true });
+    const rt = holderRuntime(HolderClient.scriptPath());
+    const child = spawn(rt.exe, [rt.script, specFile], { detached: true, stdio: 'ignore', env, windowsHide: true });
     child.on('error', (e) => log.warn('holder: spawn failed', spec.id, e));
     child.unref();
     const infoFile = path.join(holdersDir(), `${spec.id}.json`);

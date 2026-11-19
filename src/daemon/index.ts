@@ -26,6 +26,8 @@ import { gitChanged, listDir, readFileCapped, searchFiles, warmIndex, commitSubj
 import { TranscriptTail, findTranscript } from './transcript';
 import { Team } from './team';
 import { KeepAwake } from './keepawake';
+import { pruneRuntimes } from './runtime';
+import { HolderClient } from './holderClient';
 import { exportProject, importProject } from './projectfile';
 import { importClaudeSessions, listClaudeSessions } from './claudeimport';
 import { agentConnections } from './agentstatus';
@@ -192,6 +194,10 @@ async function main(): Promise<void> {
   // every open project has its memory file (the Files tab opens it; sessions get it at start)
   for (const p of store.listProjects()) ensureMemory(p.id, p.name);
   const sessions = new SessionManager(store);
+  // holder runtime copies (data folder) that no holder runs from any more are removed — now and every half hour
+  const pruneHolderRuntimes = (): void => pruneRuntimes([...HolderClient.listHolders().values()].map((h) => h.exe));
+  setTimeout(pruneHolderRuntimes, 30_000).unref();
+  setInterval(pruneHolderRuntimes, 30 * 60_000).unref();
   let agents = detectAgents();
 
   /** authenticated clients -> attached session ids */
