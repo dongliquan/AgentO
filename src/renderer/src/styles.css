@@ -1988,3 +1988,31 @@ button.tl-all { color: var(--accent); border-color: var(--border); }
 .schedule-meta { font-size: 11px; margin-top: 2px; }
 .schedule-dialog textarea { width: 100%; resize: vertical; padding: 6px 8px; border: 1px solid var(--line-soft); border-radius: var(--r-ctl); background: var(--bg); color: var(--text); font: inherit; font-size: 12.5px; }
 
+/* the Log tab: requests between sessions */
+.log-mine { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); padding: 2px 2px 0; cursor: pointer; }
+.log-task { padding: 9px 11px; border-radius: var(--r-card); background: var(--panel2); box-shadow: inset 0 0 0 1px var(--line-soft); display: flex; flex-direction: column; gap: 5px; }
+.log-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; }
+.log-head .grow { flex: 1; }
+.log-chip { padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; background: color-mix(in srgb, var(--accent) 12%, var(--panel)); color: var(--accent); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-chip.static { background: var(--panel); color: var(--muted); box-shadow: inset 0 0 0 1px var(--line-soft); }
+button.log-chip:hover { filter: brightness(0.95); }
+.log-arrow { color: var(--muted); }
+.log-state { padding: 0 7px; border-radius: 999px; font-size: 10.5px; font-weight: 700; line-height: 17px; background: var(--panel); color: var(--muted); box-shadow: inset 0 0 0 1px var(--line-soft); }
+.log-state.s-working { color: var(--ok); } .log-state.s-asking, .log-state.s-blocked { color: var(--warn); } .log-state.s-reported { color: var(--accent); }
+.log-time { font-size: 11px; }
+.log-summary { font-size: 12.5px; line-height: 1.45; }
+.log-note { font-size: 11.5px; }
+.log-toggle { align-self: flex-start; font-size: 11.5px; color: var(--accent); padding: 0; }
+.log-msg { padding: 6px 9px; border-radius: 8px; background: var(--panel); box-shadow: inset 0 0 0 1px var(--line-soft); }
+.log-msg.k-report { box-shadow: inset 3px 0 0 var(--accent); }
+.log-msg-head { font-size: 10.5px; margin-bottom: 2px; }
+.log-msg-text { font-size: 12px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+
+/* the list a Ground link opens */
+.link-msg-list { display: flex; flex-direction: column; gap: 6px; padding: 8px; max-height: 340px; overflow: auto; }
+.link-msg { padding: 7px 10px; border-radius: 9px; background: var(--panel2); box-shadow: inset 0 0 0 1px var(--line-soft); }
+.link-msg.k-report { box-shadow: inset 3px 0 0 var(--role-coach, var(--accent)), inset 0 0 0 1px var(--line-soft); }
+.link-msg-head { display: flex; align-items: center; gap: 6px; font-size: 11px; margin-bottom: 3px; }
+.link-msg-head .grow { flex: 1; }
+.link-msg-text { font-size: 12px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+

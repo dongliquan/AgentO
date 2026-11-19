@@ -16,6 +16,7 @@ import { ChatView, Composer } from './ChatView';
 import { TerminalView } from './TerminalView';
 import { screenLines } from '@/lib/screen';
 import { FilesPanel } from './FilesPanel';
+import { SessionLog } from './SessionLog';
 import { WebPanel } from './WebPanel';
 import { TAB_ORDER, useDock } from '@/lib/dock';
 import { ShareSplitter } from './Splitter';
@@ -29,10 +30,11 @@ import { ContextSize } from './ContextSize';
 import { pcStyle, projectColor } from '@/lib/format';
 import { useBuffer } from '@/lib/buffers';
 
-const TAB_LABEL: Record<RightTab, string> = { inbox: 'Inbox', detail: 'Session', files: 'Files', web: 'Web' };
+const TAB_LABEL: Record<RightTab, string> = { inbox: 'Inbox', log: 'Logs', detail: 'Session', files: 'Files', web: 'Web' };
 const TAB_TITLE: Partial<Record<RightTab, string>> = {
   files: 'Files — the selected session\'s project folders; a file name clicked in a chat is shown here',
   inbox: 'Inbox — what needs your decision (on top, counted on the tab), then what happened in your sessions',
+  log: 'Logs — what the sessions asked of each other: who sent what to whom, how it stands, the answers',
   web: 'Gemini, ChatGPT on the web — your own sign-in and subscription'
 };
 
@@ -46,6 +48,7 @@ function useTabCounts(): Partial<Record<RightTab, number>> {
 function TabContent({ tab, session }: { tab: RightTab; session: Session | undefined }): JSX.Element | null {
   if (tab === 'detail') return session ? <Detail session={session} /> : <div className="rp-body muted dock-empty">Select a session on the Ground or in the tree.</div>;
   if (tab === 'inbox') return <Inbox />;
+  if (tab === 'log') return <SessionLog />;
   if (tab === 'files') return <FilesPanel />;
   return null;
 }

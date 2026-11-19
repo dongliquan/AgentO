@@ -5,6 +5,7 @@ import { fitAll, newSessionFor, zoomBy } from '@/commands';
 import { SessionCard } from './SessionCard';
 import { Minimap } from './Minimap';
 import { GroundGroups, useGroupLayout } from './GroundGroups';
+import { GroundLinks } from './GroundLinks';
 import { kbd } from '@/lib/keys';
 
 const GRID = 24;
@@ -320,6 +321,7 @@ export function Board(): JSX.Element {
     >
       <div className="board-canvas" style={{ transform: `translate(${snap(panX)}px, ${snap(panY)}px) scale(${zoom})` }}>
         <GroundGroups layout={groups} />
+        <GroundLinks layout={groups} />
         {list.filter((s) => !groups.hidden.has(s.id)).map((s) => (
           <SessionCard key={s.id} session={s} layout="board" zoom={zoom} selected={selectedId === s.id} />
         ))}

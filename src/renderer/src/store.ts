@@ -12,7 +12,7 @@ export const ZOOM_MIN = 0.2;
 export const ZOOM_MAX = 2.5;
 export type ViewMode = 'board' | 'split' | 'tabs' | 'today';
 /** orders: the Manager tab (conversation + order box) */
-export type RightTab = 'detail' | 'files' | 'inbox' | 'web';
+export type RightTab = 'detail' | 'files' | 'inbox' | 'log' | 'web';
 /** projects: the left sidebar's tree · inbox: also opens the right panel's Inbox tab */
 export type ActivityView = 'projects' | 'inbox';
 
