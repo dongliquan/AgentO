@@ -7,6 +7,7 @@ import { MarkdownView } from './MarkdownView';
 import { JsonTree } from './JsonTree';
 import { CsvTable } from './CsvTable';
 import { languageOf } from '@/lib/highlight';
+import { openInReadO } from '@/lib/openfile';
 
 type Mode = 'render' | 'raw' | 'edit';
 
@@ -67,6 +68,7 @@ export function Viewer({ path }: { path: string }): JSX.Element {
         <span className="muted ellipsis" style={{ flex: 1, fontSize: 12 }} title={path}>{path}</span>
         {file && !image && !binary && <span className="muted" style={{ fontSize: 11 }}>{lang ? `${lang} · ` : ''}{formatBytes(file.content.length)}{file.truncated ? ' (truncated)' : ''}</span>}
         <button className="btn sm" onClick={() => requestRead(path, true)}>Refresh</button>
+        <button className="btn sm" onClick={() => openInReadO(path)} title="For a closer look: edit, search, git">ReadO</button>
         <button className="btn sm" onClick={() => void window.desktop.openInVsCode(path)}>VS Code</button>
       </div>
       <div className="viewer-main">{body}</div>

@@ -2081,3 +2081,11 @@ button.log-chip:hover { filter: brightness(0.95); }
 .topbar .search:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent), 0 2px 6px -2px rgba(27, 31, 36, 0.16); }
 :root[data-theme="dark"] .topbar { box-shadow: var(--float-hi), 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 18px -10px rgba(0, 0, 0, 0.7); }
 :root[data-theme="dark"] .statusbar { box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.5), 0 -8px 18px -10px rgba(0, 0, 0, 0.7); }
+
+/* Focus card: it sits inside the view wrapper, so it must drop the 12 px margin of a tab card itself — its edges then line up with the panels (8 px from the window) */
+.app-body.floating > .center.padded.focus > .view-anim > .tab-main.focus-view { margin: 0; flex: 1; min-height: 0; border-radius: var(--r-panel); }
+
+/* a CLI menu shown in the chat as read-only text */
+.screen-mirror { margin: 10px 0; border: 1px solid var(--border); border-radius: 8px; background: var(--panel2); overflow: hidden; }
+.screen-mirror-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 11px; font-weight: 600; color: var(--muted); border-bottom: 1px solid var(--border); }
+.screen-mirror-body { margin: 0; padding: 8px 10px; max-height: 360px; overflow: auto; font: 12px/1.4 var(--mono); white-space: pre; color: var(--text); }
