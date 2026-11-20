@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import type { AgentKind } from '@shared/protocol';
 import { useStore } from '@/store';
 import { AGENT_LABELS, agentColor } from '@/lib/format';
@@ -43,7 +44,8 @@ export function AgentPicker({ x, y, onPick, onMore, onClose, kinds, title }: Pro
   const left = Math.min(x, window.innerWidth - 200);
   const top = Math.min(y, window.innerHeight - 40 * (list.length + 2));
 
-  return (
+  // drawn on the body: the sidebar is frosted (backdrop-filter), which would make this fixed menu relative to it and clip it
+  return createPortal(
     <div className="popover" ref={ref} style={{ left, top }}>
       {title && <div className="popover-title">{title}</div>}
       {list.map((a) => (
@@ -59,6 +61,7 @@ export function AgentPicker({ x, y, onPick, onMore, onClose, kinds, title }: Pro
           <button className="item" onClick={onMore}>New Session with Options…</button>
         </>
       )}
-    </div>
+    </div>,
+    document.body
   );
 }

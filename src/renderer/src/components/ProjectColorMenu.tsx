@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { create } from 'zustand';
 import { PROJECT_COLORS } from '@shared/protocol';
 import { send } from '@/client';
@@ -25,7 +26,7 @@ export function ProjectColorMenu(): JSX.Element | null {
     send({ type: 'project.setColor', id: project.id, color });
     hide();
   };
-  return (
+  return createPortal(
     <>
       <div className="fileref-scrim" onMouseDown={hide} />
       <div className="popover pc-menu" style={{ left: Math.min(at.x, window.innerWidth - 200), top: Math.min(at.y + 6, window.innerHeight - 130) }}>
@@ -40,6 +41,7 @@ export function ProjectColorMenu(): JSX.Element | null {
           Custom…
         </label>
       </div>
-    </>
+    </>,
+    document.body
   );
 }

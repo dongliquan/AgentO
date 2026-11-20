@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { create } from 'zustand';
 import { openFile, openInReadO } from '@/lib/openfile';
 import { useToasts } from '@/lib/notify';
@@ -44,7 +45,7 @@ export function PathMenu(): JSX.Element | null {
     fn();
     hide();
   };
-  return (
+  return createPortal(
     <>
       <div className="fileref-scrim" onMouseDown={hide} onContextMenu={(e) => { e.preventDefault(); hide(); }} />
       <div className="popover fileref-menu" style={{ left: Math.min(at.x, window.innerWidth - 260), top: Math.min(at.y + 4, window.innerHeight - 200) }}>
@@ -55,6 +56,7 @@ export function PathMenu(): JSX.Element | null {
         <button className="item" onClick={act(() => copyPath(relative(at.path, at.base), 'Relative path'))}>Copy Relative Path</button>
         <button className="item" onClick={act(() => copyPath(name, 'Name'))}>Copy Name</button>
       </div>
-    </>
+    </>,
+    document.body
   );
 }
