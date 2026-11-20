@@ -25,6 +25,7 @@ import { recentInputs, recordInput } from '@/lib/inputHistory';
 import { countUse } from '@/lib/uiUsage';
 import { askedLines } from '@/lib/needsYou';
 import { findOrigin } from '@/lib/askedOrigin';
+import { ScreenMirror, useMenuScreen } from './ScreenMirror';
 
 /** Searchable text of a transcript entry: its text, or a tool's name, input and result. */
 function entryText(e: ChatEntry): string {
@@ -121,7 +122,10 @@ export function ChatView({
   const src = useMemo(() => sources(all), [all]);
   const hasTeam = useMemo(() => [...src.values()].includes('team'), [src]);
   const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
-  const working = s.status === 'working' || s.status === 'starting';
+  // a CLI menu (/plugin, /model, setup) is on the terminal screen and nowhere in the conversation: show it here too, and
+  // do not call the session busy while only the menu redraws
+  const menu = useMenuScreen(s, s.mode !== 'headless' && (s.agent === 'claude' || s.agent === 'codex') && !s.permission && (s.status === 'waiting' || s.status === 'working') && (all.length === 0 || s.status === 'waiting'));
+  const working = !menu && (s.status === 'working' || s.status === 'starting');
   // the answer ends with a question and options: quick-reply buttons instead of typing (not while it works or asks the TUI)
   const quick = useMemo(() => (working ? null : quickReplyOf(all)), [all, working]);
   // what the last answer asks the manager, apart from its report (not when quick-reply buttons already offer the answer);
@@ -222,7 +226,7 @@ export function ChatView({
             <button className="btn sm" onClick={onShowTerminal}>Show Terminal</button>
           </div>
         )}
-        {chat?.available && entries.length === 0 && (
+        {chat?.available && entries.length === 0 && !menu && (
           <div className="chat-empty">{searching ? 'No matches in this conversation.' : 'Send a message to start the conversation.'}</div>
         )}
         {!!s.prevResumeIds?.length && hidden === 0 && entries.length < 40 && !searching && (
@@ -273,6 +277,7 @@ export function ChatView({
                 <Entry entry={e} cwd={s.cwd} sid={s.id} {...marks.get(e.id)} />
               </Fragment>
             ))}
+        {menu && !choice && !s.permission && <ScreenMirror lines={menu} onShowTerminal={onShowTerminal} />}
         {working && <WorkingLine entries={all} cwd={s.cwd} />}
         </div>
       </div>
